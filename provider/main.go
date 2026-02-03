@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -25,15 +26,22 @@ const (
 	BridgeBaseURL  = "http://localhost:" + BridgeBasePort
 
 	// Ory Hydra Configuration
-	HydraPublicURL = "http://localhost:4444" // The public issuer URL of Hydra
-	ClientID       = "service-bridge-client"
-	ClientSecret   = "secret" // Ensure this matches what you set in Hydra
+	ClientID     = "service-bridge-client"
+	ClientSecret = "secret" // Ensure this matches what you set in Hydra
 
 	// Service Configuration
 	// This is the ACS (Assertion Consumer Service) URL provided by the service
 	ServiceACS      = "http://localhost:8083/saml/acs"
 	ServiceEntityID = "http://localhost:8083/saml/metadata" // Service's entity ID (metadata URL)
 )
+
+// getEnv retrieves an environment variable or returns a default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
 
 var (
 	oauth2Config *oauth2.Config
@@ -56,8 +64,13 @@ func main() {
 	// -------------------------------------------------------------------------
 	// 1. Initialize OIDC Provider (Hydra)
 	// -------------------------------------------------------------------------
-	log.Println("Connecting to Ory Hydra...")
-	provider, err := oidc.NewProvider(ctx, HydraPublicURL)
+	// Load Hydra URL from environment variable or use default
+	hydraPublicURL := getEnv("HYDRA_PUBLIC_URL", "http://localhost:4444")
+	log.Printf("Connecting to Ory Hydra at %s...", hydraPublicURL)
+	// InsecureIssuerURLContext is used here for local testing where the URL
+	// used by the provider does not match the public facing URL.
+	ctx = oidc.InsecureIssuerURLContext(ctx, hydraPublicURL)
+	provider, err := oidc.NewProvider(ctx, hydraPublicURL)
 	if err != nil {
 		log.Fatalf("Failed to query Hydra provider: %v", err)
 	}

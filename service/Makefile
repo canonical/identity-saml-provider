@@ -19,18 +19,18 @@ run: certs build
 	./saml-service
 
 # Generate self-signed certificates
-# Creates myservice.cert and myservice.key valid for 365 days
+# Creates myservice.crt and myservice.key valid for 365 days
 certs:
-	@if [ ! -f myservice.key ] || [ ! -f myservice.cert ]; then \
+	@if [ ! -f myservice.key ] || [ ! -f myservice.crt ]; then \
 		echo "Generating self-signed certificates..."; \
-		openssl req -x509 -newkey rsa:2048 -keyout myservice.key -out myservice.cert \
+		openssl req -x509 -newkey rsa:2048 -keyout myservice.key -out myservice.crt \
 			-days 365 -nodes \
 			-subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"; \
-		echo "Certificates generated: myservice.cert and myservice.key"; \
+		echo "Certificates generated: myservice.crt and myservice.key"; \
 	else \
 		echo "Certificates already exist"; \
 	fi
 
 # Clean build artifacts and certificates
 clean:
-	rm -f saml-service myservice.cert myservice.key
+	rm -f saml-service myservice.crt myservice.key
