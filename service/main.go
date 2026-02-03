@@ -6,16 +6,18 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"os"
 
 	"github.com/crewjam/saml/samlsp"
 )
 
 const (
-	serviceURL        = "http://localhost:8083"
-	idpMetadataURLStr = "http://localhost:8082/saml/metadata"
-	listenPort        = ":8083"
+	serviceURL               = "http://localhost:8083"
+	defaultIDPMetadataURLStr = "http://localhost:8082/saml/metadata"
+	listenPort               = ":8083"
 )
 
 func hello(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +48,11 @@ func main() {
 		panic(err) // TODO handle error
 	}
 
+	idpMetadataURLStr := os.Getenv("IDP_METADATA_URL")
+	if idpMetadataURLStr == "" {
+		idpMetadataURLStr = defaultIDPMetadataURLStr
+	}
+
 	idpMetadataURL, err := url.Parse(idpMetadataURLStr)
 	if err != nil {
 		panic(err) // TODO handle error
@@ -55,6 +62,7 @@ func main() {
 	if err != nil {
 		panic(err) // TODO handle error
 	}
+	log.Printf("Fetched IdP metadata from %s\n", idpMetadataURLStr)
 
 	rootURL, err := url.Parse(serviceURL)
 	if err != nil {

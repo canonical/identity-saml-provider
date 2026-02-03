@@ -1,0 +1,43 @@
+include:
+  - docker-compose.dev.yml
+services:
+  hydra-setup:
+    image: ghcr.io/canonical/hydra:25.4.0
+    depends_on:
+      - hydra
+    restart: on-failure
+    volumes:
+      - type: bind
+        source: ./docker/hydra
+        target: /etc/config/hydra
+    # command: exec hydra import client --endpoint http://hydra:4445 /etc/config/hydra/clients.json
+    command: exec hydra create client --endpoint http://hydra:4445 --id service-bridge-client --secret secret --grant-type authorization_code,refresh_token --response-type code,id_token --scope openid,email,profile --redirect-uri http://localhost:8082/callback
+    networks:
+      - intranet
+    labels:
+      - "traefik.enable=false"
+  saml-provider:
+    build:
+      context: ./provider
+    ports:
+      - "8082:8082"
+    environment:
+      - HYDRA_PUBLIC_URL=${HYDRA_PUBLIC_URL:-http://hydra:4444}
+    depends_on:
+      - hydra
+      - hydra-setup
+    networks:
+      - intranet
+    restart: on-failure
+  saml-service:
+    build:
+      context: ./service
+    ports:
+      - "8083:8083"
+    environment:
+      - IDP_METADATA_URL=${IDP_METADATA_URL:-http://saml-provider:8082/saml/metadata}
+    depends_on:
+      - saml-provider
+    networks:
+      - intranet
+    restart: on-failure
