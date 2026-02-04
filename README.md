@@ -17,7 +17,7 @@ graph TD
     B["SAML Provider<br/>(This Bridge)"]
     C["Ory Hydra<br/>(OIDC Provider)"]
     D["User Authentication<br/>System"]
-    
+
     A -->|SAML Protocol| B
     B -->|OIDC Protocol| C
     C -->|User Data| D
@@ -43,30 +43,39 @@ graph TD
 
 ### Running Locally
 
-1. **Generate certificates** for both provider and service:
-
-   ```bash
-   make certs
-   ```
-
-2. **Run in development mode** (generates certs and starts both services):
+1. **Run the supporting services** (generates certs and starts the supporting services):
 
    ```bash
    make dev
    ```
 
-   Or run individual services:
+2. **Run the SAML service**:
+
+   Then, run the saml-service:
 
    ```bash
-   make run-provider  # Run SAML provider
-   make run-service   # Run identity service
+   make run-service
    ```
 
-### Running with Docker Compose
+3. **Run the SAML provider**:
 
-```bash
-docker-compose up -d --build
-```
+   In another terminal, run the saml-provider:
+
+   ```bash
+   make run-provider
+   ```
+
+4. **Access the services**:
+
+   In a browser, access the SAML Service (Client): <https://localhost:8083/hello>
+
+5. **Shut down supporting services**:
+
+   To stop all running services, use:
+
+   ```bash
+   make down
+   ```
 
 ## Configuration
 
@@ -94,30 +103,6 @@ Add the following entries to your `/etc/hosts` file for local testing:
 This is necessary for Ory Hydra to function correctly in the local environment, because the container needs to use the same address / hostname as your browser. There's probably a better way to accomplish this, but this is the simplest for now.
 
 You will also need to modify the Ory Kratos configuration file in `docker/kratos/kratos.yml` to set the issuer URL to `http://hydra:4444/` instead of `http://localhost:4444/`.
-
-### Building
-
-```bash
-make build
-```
-
-### Running Tests
-
-Refer to individual service READMEs for testing instructions.
-
-### Cleaning Up
-
-Remove all build artifacts and certificates:
-
-```bash
-make clean
-```
-
-## Documentation
-
-- [SAML Provider Documentation](provider/README.md)
-- [Ory Hydra Documentation](https://www.ory.sh/hydra/docs/)
-- [Ory Kratos Documentation](https://www.ory.sh/kratos/docs/)
 
 ## License
 
