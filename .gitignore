@@ -15,6 +15,9 @@
 # Go workspace file
 go.work
 
+# Delve debugger
+__debug_bin*
+
 # IDEs
 .idea/
 .vscode/

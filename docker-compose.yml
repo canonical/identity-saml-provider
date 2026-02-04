@@ -1,20 +1,12 @@
+# For this file to work, you need to have your hosts file configured as described in the README.md,
+# so that the hydra service is reachable at the expected hostname.
+#
+# It is recommended to use the docker-compose.dev.yml file for local development, and run the SAML
+# provider and service instances directly on localhost.
+
 include:
   - docker-compose.dev.yml
 services:
-  hydra-setup:
-    image: ghcr.io/canonical/hydra:25.4.0
-    depends_on:
-      - hydra
-    restart: on-failure
-    volumes:
-      - type: bind
-        source: ./docker/hydra
-        target: /etc/config/hydra
-    command: exec hydra create client --endpoint http://hydra:4445 --id ${SAML_PROVIDER_OIDC_CLIENT_ID:-service-bridge-client} --secret ${SAML_PROVIDER_OIDC_CLIENT_SECRET:-secret} --grant-type authorization_code,refresh_token --response-type code,id_token --scope openid,email,profile --redirect-uri ${SAML_PROVIDER_BRIDGE_BASE_URL:-http://localhost:8082}/callback
-    networks:
-      - intranet
-    labels:
-      - "traefik.enable=false"
   saml-provider:
     build:
       context: ./provider

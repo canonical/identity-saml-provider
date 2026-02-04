@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
+	"github.com/crewjam/saml"
 	"github.com/crewjam/saml/samlsp"
 )
 
@@ -38,6 +40,32 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func fetchIDPMetadataWithRetry(idpURL *url.URL) *saml.EntityDescriptor {
+	maxWait := 30 * time.Second
+	initialDelay := time.Second
+	delay := initialDelay
+	elapsed := time.Duration(0)
+
+	for {
+		idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient, *idpURL)
+		if err == nil {
+			return idpMetadata
+		}
+
+		if elapsed+delay > maxWait {
+			panic(fmt.Sprintf("Failed to fetch IdP metadata after %v: %v", maxWait, err))
+		}
+
+		log.Printf("Failed to fetch IdP metadata: %v. Retrying in %v...", err, delay)
+		time.Sleep(delay)
+		elapsed += delay
+		delay = delay * 2
+		if delay > maxWait-elapsed {
+			delay = maxWait - elapsed
+		}
+	}
+}
+
 func main() {
 	keyPair, err := tls.LoadX509KeyPair("myservice.crt", "myservice.key")
 	if err != nil {
@@ -57,11 +85,7 @@ func main() {
 	if err != nil {
 		panic(err) // TODO handle error
 	}
-	idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient,
-		*idpMetadataURL)
-	if err != nil {
-		panic(err) // TODO handle error
-	}
+	idpMetadata := fetchIDPMetadataWithRetry(idpMetadataURL)
 	log.Printf("Fetched IdP metadata from %s\n", idpMetadataURLStr)
 
 	rootURL, err := url.Parse(serviceURL)

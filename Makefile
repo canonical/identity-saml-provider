@@ -29,17 +29,6 @@ build-service:
 	@echo "Building service..."
 	cd service && $(MAKE) build
 
-# Run targets
-run: certs run-provider run-service
-
-run-provider: certs-provider build-provider
-	@echo "Running provider..."
-	cd provider && $(MAKE) run
-
-run-service: certs-service build-service
-	@echo "Running service..."
-	cd service && $(MAKE) run
-
 # Certificate targets
 certs: certs-provider certs-service
 

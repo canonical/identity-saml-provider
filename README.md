@@ -70,16 +70,6 @@ docker-compose up -d --build
 
 ## Configuration
 
-### Configure hosts file
-
-Add the following entries to your `/etc/hosts` file for local testing:
-
-```text
-127.0.0.1 hydra
-```
-
-This is necessary for Ory Hydra to function correctly in the local environment, because the container needs to use the same address / hostname as your browser. There's probably a better way to accomplish this, but this is the simplest for now.
-
 ### Environment Variables and Kratos OIDC Configuration
 
 For `saml-provider` specific configuration, see [provider/README.md](provider/README.md#configuration).
@@ -93,6 +83,17 @@ KRATOS_OIDC_PROVIDER_CLIENT_ID=my-client-id
 KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
 ```
 
+### Configure for complete Docker Compose setup
+
+Add the following entries to your `/etc/hosts` file for local testing:
+
+```text
+127.0.0.1 hydra
+```
+
+This is necessary for Ory Hydra to function correctly in the local environment, because the container needs to use the same address / hostname as your browser. There's probably a better way to accomplish this, but this is the simplest for now.
+
+You will also need to modify the Ory Kratos configuration file in `docker/kratos/kratos.yml` to set the issuer URL to `http://hydra:4444/` instead of `http://localhost:4444/`.
 
 ### Building
 
