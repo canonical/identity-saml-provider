@@ -1,4 +1,4 @@
-.PHONY: build run certs clean help
+.PHONY: build run debug certs clean help
 
 # Default target
 help:
@@ -6,17 +6,19 @@ help:
 	@echo "Available targets:"
 	@echo "  build     - Build the SAML service binary"
 	@echo "  run       - Build and run the SAML service"
+	@echo "  debug     - Run the SAML service with debugger"
 	@echo "  certs     - Generate self-signed certificates for the service"
 	@echo "  clean     - Remove generated binaries and certificates"
 	@echo "  help      - Show this help message"
 
-# Build the binary
 build:
 	go build -o ../bin/saml-service
 
-# Run the service
-run: certs build
-	./saml-service
+run:
+	go run .
+
+debug:
+	dlv debug .
 
 # Generate self-signed certificates
 # Creates myservice.crt and myservice.key valid for 365 days

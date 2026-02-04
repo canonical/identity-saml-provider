@@ -112,6 +112,7 @@ func main() {
 type BridgeSessionProvider struct{}
 
 func (sp *BridgeSessionProvider) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) *saml.Session {
+	log.Println("Checking for existing SAML session...")
 	// Check if we have a session cookie from the OIDC callback
 	sessionCookie, err := r.Cookie("saml_session")
 
@@ -156,6 +157,7 @@ func (sp *BridgeSessionProvider) GetSession(w http.ResponseWriter, r *http.Reque
 // STEP 2: Handle Return from Hydra
 // -------------------------------------------------------------------------
 func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	log.Println("Handling OIDC callback from Hydra...")
 	ctx := context.Background()
 
 	// 1. Exchange the Authorization Code for tokens
