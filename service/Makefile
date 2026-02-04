@@ -36,3 +36,6 @@ certs:
 # Clean build artifacts and certificates
 clean:
 	rm -f saml-service myservice.crt myservice.key
+
+dev:
+	@echo "No dev target, did you mean to run at the root level?"

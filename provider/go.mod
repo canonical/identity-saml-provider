@@ -14,6 +14,7 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
+	github.com/lib/pq v1.11.1 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	github.com/russellhaering/goxmldsig v1.5.0 // indirect
 	golang.org/x/crypto v0.47.0 // indirect

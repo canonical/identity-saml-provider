@@ -35,7 +35,7 @@ clean:
 # Development target - generates certs and runs both services
 dev: certs
 	@echo "Starting development environment..."
-	docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
+	docker compose -f docker-compose.dev.yml up -d --build --remove-orphans --force-recreate
 	@echo "Development services are up and running"
 	@echo "Next steps:"
 	@echo "1. In one terminal, run the provider (by going to provider/ and running \`make run\`)"

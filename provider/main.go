@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,9 +25,8 @@ var (
 	oauth2Config *oauth2.Config
 	oidcVerifier *oidc.IDTokenVerifier
 	samlIdp      *saml.IdentityProvider
-	// Store authenticated sessions temporarily (in production, use Redis or a database)
-	sessions = make(map[string]*saml.Session)
-	// Store pending SAML requests until OIDC login completes
+	db           *sql.DB
+	// Store pending SAML requests until OIDC login completes (kept in-memory as they're short-lived)
 	pendingRequests = make(map[string]pendingAuthnRequest)
 )
 
@@ -44,7 +44,31 @@ func main() {
 	}
 
 	// -------------------------------------------------------------------------
-	// 1. Initialize OIDC Provider (Hydra)
+	// 1. Initialize Database Connection
+	// -------------------------------------------------------------------------
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		config.DBHost, config.DBPort, config.DBUser, config.DBPassword, config.DBName)
+	log.Printf("Connecting to PostgreSQL at %s:%s...", config.DBHost, config.DBPort)
+	var err error
+	db, err = sql.Open("postgres", dsn)
+	if err != nil {
+		log.Fatalf("Failed to open database connection: %v", err)
+	}
+	defer db.Close()
+
+	// Verify the connection
+	if err = db.PingContext(ctx); err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	log.Println("Database connection established")
+
+	// Initialize database schema
+	if err = initDatabase(); err != nil {
+		log.Fatalf("Failed to initialize database schema: %v", err)
+	}
+
+	// -------------------------------------------------------------------------
+	// 2. Initialize OIDC Provider (Hydra)
 	// -------------------------------------------------------------------------
 	log.Printf("Connecting to Ory Hydra at %s...", config.HydraPublicURL)
 	// InsecureIssuerURLContext is used here for local testing where the URL
@@ -66,7 +90,7 @@ func main() {
 	}
 
 	// -------------------------------------------------------------------------
-	// 2. Initialize SAML Identity Provider
+	// 3. Initialize SAML Identity Provider
 	// -------------------------------------------------------------------------
 	log.Println("Loading SAML Keys...")
 	keyPair, err := tls.LoadX509KeyPair("bridge.crt", "bridge.key")
@@ -90,7 +114,7 @@ func main() {
 	}
 
 	// -------------------------------------------------------------------------
-	// 3. Define HTTP Routes
+	// 4. Define HTTP Routes
 	// -------------------------------------------------------------------------
 
 	// A. Metadata Endpoint (Greenhouse will need this to configure the connection)
@@ -119,7 +143,10 @@ func (sp *BridgeSessionProvider) GetSession(w http.ResponseWriter, r *http.Reque
 	// Retrieve the session if cookie exists
 	var session *saml.Session
 	if err == nil && sessionCookie.Value != "" {
-		session, _ = sessions[sessionCookie.Value]
+		log.Printf("Found session cookie with ID: %s", sessionCookie.Value)
+		session = getSessionFromDB(sessionCookie.Value)
+	} else {
+		log.Printf("No session cookie found: %v", err)
 	}
 
 	// If no valid session, redirect to Hydra for authentication
@@ -214,8 +241,12 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		UserCommonName: claims.Email, // Use email as display name
 		Groups:         []string{},
 	}
-	// Store the session
-	sessions[sessionID] = samlSession
+	// Store the session in database
+	if err := saveSessionToDB(samlSession); err != nil {
+		log.Printf("Failed to save session to database: %v", err)
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
 
 	// Set a session cookie
 	http.SetCookie(w, &http.Cookie{
