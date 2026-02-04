@@ -41,6 +41,3 @@ Thumbs.db
 # Build output
 bin/
 dist/
-
-# Docker
-docker/

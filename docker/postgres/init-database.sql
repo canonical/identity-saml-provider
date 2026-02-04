@@ -18,3 +18,4 @@ CREATE USER saml_provider WITH PASSWORD 'saml_provider';
 CREATE DATABASE saml_provider;
 GRANT ALL PRIVILEGES ON DATABASE saml_provider TO saml_provider;
 ALTER DATABASE saml_provider OWNER TO saml_provider;
+

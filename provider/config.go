@@ -14,4 +14,11 @@ type Config struct {
 	// Service Configuration
 	ServiceACS      string `envconfig:"SAML_PROVIDER_SERVICE_ACS" default:"http://localhost:8083/saml/acs"`
 	ServiceEntityID string `envconfig:"SAML_PROVIDER_SERVICE_ENTITY_ID" default:"http://localhost:8083/saml/metadata"`
+
+	// Database Configuration
+	DBHost     string `envconfig:"SAML_PROVIDER_DB_HOST" default:"localhost"`
+	DBPort     string `envconfig:"SAML_PROVIDER_DB_PORT" default:"5432"`
+	DBName     string `envconfig:"SAML_PROVIDER_DB_NAME" default:"saml_provider"`
+	DBUser     string `envconfig:"SAML_PROVIDER_DB_USER" default:"saml_provider"`
+	DBPassword string `envconfig:"SAML_PROVIDER_DB_PASSWORD" default:"saml_provider"`
 }

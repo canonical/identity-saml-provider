@@ -39,4 +39,5 @@ certs:
 		echo "Certificates already exist"; \
 	fi
 
-dev: certs run
+dev:
+	@echo "No dev target, did you mean to run at the root level?"
