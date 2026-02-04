@@ -9,39 +9,16 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/crewjam/saml"
+	"github.com/kelseyhightower/envconfig"
 	"golang.org/x/oauth2"
 )
 
-// --- CONFIGURATION ---
-// In production, load these from Environment Variables
-const (
-	// The URL where this Bridge App is running
-	BridgeBasePort = "8082"
-	BridgeBaseURL  = "http://localhost:" + BridgeBasePort
-
-	// Ory Hydra Configuration
-	ClientID     = "service-bridge-client"
-	ClientSecret = "secret" // Ensure this matches what you set in Hydra
-
-	// Service Configuration
-	// This is the ACS (Assertion Consumer Service) URL provided by the service
-	ServiceACS      = "http://localhost:8083/saml/acs"
-	ServiceEntityID = "http://localhost:8083/saml/metadata" // Service's entity ID (metadata URL)
-)
-
-// getEnv retrieves an environment variable or returns a default value
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
-}
+var config Config
 
 var (
 	oauth2Config *oauth2.Config
@@ -61,26 +38,29 @@ type pendingAuthnRequest struct {
 func main() {
 	ctx := context.Background()
 
+	// Load configuration from environment variables
+	if err := envconfig.Process("", &config); err != nil {
+		log.Fatalf("Failed to process configuration: %v", err)
+	}
+
 	// -------------------------------------------------------------------------
 	// 1. Initialize OIDC Provider (Hydra)
 	// -------------------------------------------------------------------------
-	// Load Hydra URL from environment variable or use default
-	hydraPublicURL := getEnv("HYDRA_PUBLIC_URL", "http://localhost:4444")
-	log.Printf("Connecting to Ory Hydra at %s...", hydraPublicURL)
+	log.Printf("Connecting to Ory Hydra at %s...", config.HydraPublicURL)
 	// InsecureIssuerURLContext is used here for local testing where the URL
 	// used by the provider does not match the public facing URL.
-	ctx = oidc.InsecureIssuerURLContext(ctx, hydraPublicURL)
-	provider, err := oidc.NewProvider(ctx, hydraPublicURL)
+	ctx = oidc.InsecureIssuerURLContext(ctx, config.HydraPublicURL)
+	provider, err := oidc.NewProvider(ctx, config.HydraPublicURL)
 	if err != nil {
 		log.Fatalf("Failed to query Hydra provider: %v", err)
 	}
 
-	oidcVerifier = provider.Verifier(&oidc.Config{ClientID: ClientID})
+	oidcVerifier = provider.Verifier(&oidc.Config{ClientID: config.ClientID})
 
 	oauth2Config = &oauth2.Config{
-		ClientID:     ClientID,
-		ClientSecret: ClientSecret,
-		RedirectURL:  BridgeBaseURL + "/callback",
+		ClientID:     config.ClientID,
+		ClientSecret: config.ClientSecret,
+		RedirectURL:  config.BridgeBaseURL + "/callback",
 		Endpoint:     provider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 	}
@@ -101,8 +81,8 @@ func main() {
 		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
 		Certificate: x509Cert,
 		Logger:      log.Default(),
-		SSOURL:      parseURL(BridgeBaseURL + "/saml/sso"),
-		MetadataURL: parseURL(BridgeBaseURL + "/saml/metadata"),
+		SSOURL:      parseURL(config.BridgeBaseURL + "/saml/sso"),
+		MetadataURL: parseURL(config.BridgeBaseURL + "/saml/metadata"),
 		// This provider handles looking up the SP (Service) details
 		ServiceProviderProvider: &ServiceProvider{},
 		// Session provider handles authentication state
@@ -122,8 +102,8 @@ func main() {
 	// C. OIDC Callback (Hydra redirects users back here)
 	http.HandleFunc("/callback", handleOIDCCallback)
 
-	log.Printf("SAML-OIDC Bridge listening on %s", BridgeBaseURL)
-	log.Fatal(http.ListenAndServe(":"+BridgeBasePort, nil))
+	log.Printf("SAML-OIDC Bridge listening on %s", config.BridgeBaseURL)
+	log.Fatal(http.ListenAndServe(":"+config.BridgeBasePort, nil))
 }
 
 // -------------------------------------------------------------------------
@@ -261,7 +241,7 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		log.Printf("OIDC callback for SAML request: %s", requestID)
 	}
 
-	redirectURL := fmt.Sprintf("%s/saml/sso", BridgeBaseURL)
+	redirectURL := fmt.Sprintf("%s/saml/sso", config.BridgeBaseURL)
 
 	// Retrieve and replay the original SAMLRequest if available
 	if requestID != "" {
@@ -296,13 +276,13 @@ func (s *ServiceProvider) GetServiceProvider(r *http.Request, serviceProviderID 
 	// Here we return the hardcoded configuration for the Service.
 
 	return &saml.EntityDescriptor{
-		EntityID: ServiceEntityID,
+		EntityID: config.ServiceEntityID,
 		SPSSODescriptors: []saml.SPSSODescriptor{
 			{
 				AssertionConsumerServices: []saml.IndexedEndpoint{
 					{
 						Binding:  saml.HTTPPostBinding,
-						Location: ServiceACS,
+						Location: config.ServiceACS,
 						Index:    1,
 					},
 				},

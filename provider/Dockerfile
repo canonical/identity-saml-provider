@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN go build -o saml-provider main.go
+RUN go build -o saml-provider .
 
 # Generate certificates
 RUN openssl req -x509 -newkey rsa:2048 -keyout bridge.key -out bridge.crt -days 365 -nodes \

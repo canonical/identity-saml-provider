@@ -80,6 +80,20 @@ Add the following entries to your `/etc/hosts` file for local testing:
 
 This is necessary for Ory Hydra to function correctly in the local environment, because the container needs to use the same address / hostname as your browser. There's probably a better way to accomplish this, but this is the simplest for now.
 
+### Environment Variables and Kratos OIDC Configuration
+
+For `saml-provider` specific configuration, see [provider/README.md](provider/README.md#configuration).
+
+To use an OIDC provider like GitHub or Google with Ory Kratos, you will need to set the appropriate environment variables. There are several other variables you may need to set depending on your setup. Check the docker compose files for reference.
+
+A `.env` file is recommended for this purpose. Commonly used variables include:
+
+```bash
+KRATOS_OIDC_PROVIDER_CLIENT_ID=my-client-id
+KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
+```
+
+
 ### Building
 
 ```bash

@@ -10,8 +10,7 @@ services:
       - type: bind
         source: ./docker/hydra
         target: /etc/config/hydra
-    # command: exec hydra import client --endpoint http://hydra:4445 /etc/config/hydra/clients.json
-    command: exec hydra create client --endpoint http://hydra:4445 --id service-bridge-client --secret secret --grant-type authorization_code,refresh_token --response-type code,id_token --scope openid,email,profile --redirect-uri http://localhost:8082/callback
+    command: exec hydra create client --endpoint http://hydra:4445 --id ${SAML_PROVIDER_OIDC_CLIENT_ID:-service-bridge-client} --secret ${SAML_PROVIDER_OIDC_CLIENT_SECRET:-secret} --grant-type authorization_code,refresh_token --response-type code,id_token --scope openid,email,profile --redirect-uri ${SAML_PROVIDER_BRIDGE_BASE_URL:-http://localhost:8082}/callback
     networks:
       - intranet
     labels:
@@ -22,7 +21,13 @@ services:
     ports:
       - "8082:8082"
     environment:
-      - HYDRA_PUBLIC_URL=${HYDRA_PUBLIC_URL:-http://hydra:4444}
+      - SAML_PROVIDER_BRIDGE_BASE_PORT=${SAML_PROVIDER_BRIDGE_BASE_PORT:-8082}
+      - SAML_PROVIDER_BRIDGE_BASE_URL=${SAML_PROVIDER_BRIDGE_BASE_URL:-http://localhost:8082}
+      - SAML_PROVIDER_HYDRA_PUBLIC_URL=${SAML_PROVIDER_HYDRA_PUBLIC_URL:-http://hydra:4444}
+      - SAML_PROVIDER_OIDC_CLIENT_ID=${SAML_PROVIDER_OIDC_CLIENT_ID:-service-bridge-client}
+      - SAML_PROVIDER_OIDC_CLIENT_SECRET=${SAML_PROVIDER_OIDC_CLIENT_SECRET:-secret}
+      - SAML_PROVIDER_SERVICE_ACS=${SAML_PROVIDER_SERVICE_ACS:-http://localhost:8083/saml/acs}
+      - SAML_PROVIDER_SERVICE_ENTITY_ID=${SAML_PROVIDER_SERVICE_ENTITY_ID:-http://localhost:8083/saml/metadata}
     depends_on:
       - hydra
       - hydra-setup
