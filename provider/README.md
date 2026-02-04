@@ -41,12 +41,7 @@ The application will start on `http://localhost:8080`.
 
 ## Configuration
 
-Edit the constants at the top of `main.go`:
-
-- `BridgeBaseURL`: URL where this bridge is running
-- `HydraPublicURL`: Ory Hydra public issuer URL
-- `ClientID` / `ClientSecret`: Hydra OAuth2 credentials
-- Service Provider configuration (ACS URL and Entity ID)
+See the [`config.go`](config.go) file for configuration options, which can all be set via environment variables.
 
 ## Endpoints
 

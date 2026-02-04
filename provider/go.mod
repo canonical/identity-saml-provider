@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/crewjam/saml v0.5.1
+	github.com/kelseyhightower/envconfig v1.4.0
 	golang.org/x/oauth2 v0.34.0
 )
 

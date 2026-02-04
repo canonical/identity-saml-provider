@@ -10,7 +10,7 @@ help:
 	@echo "  make certs    - Generate self-signed certificates"
 
 build:
-	go build -o ../bin/saml-provider main.go
+	go build -o ../bin/saml-provider .
 
 run:
 	go run main.go
