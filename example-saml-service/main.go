@@ -5,11 +5,11 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 
 	"github.com/crewjam/saml"
@@ -67,7 +67,12 @@ func fetchIDPMetadataWithRetry(idpURL *url.URL) *saml.EntityDescriptor {
 }
 
 func main() {
-	keyPair, err := tls.LoadX509KeyPair("myservice.crt", "myservice.key")
+	certPath := flag.String("cert", "etc/certs/myservice.crt", "Path to the SAML service certificate")
+	keyPath := flag.String("key", "etc/certs/myservice.key", "Path to the SAML service private key")
+	idpMetadataURLStr := flag.String("idp-metadata-url", defaultIDPMetadataURLStr, "URL to the IdP metadata")
+	flag.Parse()
+
+	keyPair, err := tls.LoadX509KeyPair(*certPath, *keyPath)
 	if err != nil {
 		panic(err) // TODO handle error
 	}
@@ -76,17 +81,12 @@ func main() {
 		panic(err) // TODO handle error
 	}
 
-	idpMetadataURLStr := os.Getenv("IDP_METADATA_URL")
-	if idpMetadataURLStr == "" {
-		idpMetadataURLStr = defaultIDPMetadataURLStr
-	}
-
-	idpMetadataURL, err := url.Parse(idpMetadataURLStr)
+	idpMetadataURL, err := url.Parse(*idpMetadataURLStr)
 	if err != nil {
 		panic(err) // TODO handle error
 	}
 	idpMetadata := fetchIDPMetadataWithRetry(idpMetadataURL)
-	log.Printf("Fetched IdP metadata from %s\n", idpMetadataURLStr)
+	log.Printf("Fetched IdP metadata from %s\n", *idpMetadataURLStr)
 
 	rootURL, err := url.Parse(serviceURL)
 	if err != nil {

@@ -21,4 +21,8 @@ type Config struct {
 	DBName     string `envconfig:"SAML_PROVIDER_DB_NAME" default:"saml_provider"`
 	DBUser     string `envconfig:"SAML_PROVIDER_DB_USER" default:"saml_provider"`
 	DBPassword string `envconfig:"SAML_PROVIDER_DB_PASSWORD" default:"saml_provider"`
+
+	// Certificate Configuration
+	SAMLCertPath string `envconfig:"SAML_PROVIDER_CERT_PATH" default:"etc/certs/bridge.crt"`
+	SAMLKeyPath  string `envconfig:"SAML_PROVIDER_KEY_PATH" default:"etc/certs/bridge.key"`
 }

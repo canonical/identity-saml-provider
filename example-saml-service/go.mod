@@ -1,4 +1,4 @@
-module github.com/canonical/saml-service
+module github.com/canonical/identity-saml-provider/example-service
 
 go 1.25.6
 
