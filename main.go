@@ -93,9 +93,17 @@ func main() {
 	// 3. Initialize SAML Identity Provider
 	// -------------------------------------------------------------------------
 	log.Println("Loading SAML Keys...")
-	keyPair, err := tls.LoadX509KeyPair("bridge.crt", "bridge.key")
+	certPath := config.SAMLCertPath
+	keyPath := config.SAMLKeyPath
+	if certPath == "" {
+		certPath = "etc/certs/bridge.crt"
+	}
+	if keyPath == "" {
+		keyPath = "etc/certs/bridge.key"
+	}
+	keyPair, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
-		log.Fatalf("Failed to load key pair: %v. Did you run the openssl command?", err)
+		log.Fatalf("Failed to load key pair from %s, %s: %v. Did you run the openssl command?", certPath, keyPath, err)
 	}
 
 	x509Cert, _ := x509.ParseCertificate(keyPair.Certificate[0])
