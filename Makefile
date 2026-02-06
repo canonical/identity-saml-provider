@@ -14,25 +14,25 @@ help:
 	@echo "  help               - Show this help message"
 
 build:
-	go build -o bin/identity-saml-provider .
+	go build -o bin/identity-saml-provider ./cmd/identity-saml-provider
 
 certs:
-	@mkdir -p etc/certs
-	@if [ ! -f etc/certs/bridge.key ] || [ ! -f etc/certs/bridge.crt ]; then \
+	@mkdir -p .local/certs
+	@if [ ! -f .local/certs/bridge.key ] || [ ! -f .local/certs/bridge.crt ]; then \
 		echo "Generating provider certificates..."; \
-		openssl req -x509 -newkey rsa:2048 -keyout etc/certs/bridge.key -out etc/certs/bridge.crt -days 365 -nodes \
+		openssl req -x509 -newkey rsa:2048 -keyout .local/certs/bridge.key -out .local/certs/bridge.crt -days 365 -nodes \
 			-subj "/CN=localhost"; \
-		echo "Certificates generated: etc/certs/bridge.crt and etc/certs/bridge.key"; \
+		echo "Certificates generated: .local/certs/bridge.crt and .local/certs/bridge.key"; \
 	else \
 		echo "Provider certificates already exist"; \
 	fi
 
 run: certs
-	go run .
+	go run ./cmd/identity-saml-provider
 
 clean:
 	rm -rf bin/
-	rm -rf etc/certs/
+	rm -rf .local/
 
 dev:
 	@echo "Starting development environment..."

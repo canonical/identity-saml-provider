@@ -41,3 +41,6 @@ Thumbs.db
 # Build output
 bin/
 dist/
+
+# Local development artifacts
+.local/

@@ -1,6 +1,6 @@
-package main
+package provider
 
-// --- CONFIGURATION ---
+// Config defines the configuration for the SAML provider
 type Config struct {
 	// Bridge Configuration
 	BridgeBasePort string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_PORT" default:"8082"`
@@ -23,6 +23,6 @@ type Config struct {
 	DBPassword string `envconfig:"SAML_PROVIDER_DB_PASSWORD" default:"saml_provider"`
 
 	// Certificate Configuration
-	SAMLCertPath string `envconfig:"SAML_PROVIDER_CERT_PATH" default:"etc/certs/bridge.crt"`
-	SAMLKeyPath  string `envconfig:"SAML_PROVIDER_KEY_PATH" default:"etc/certs/bridge.key"`
+	SAMLCertPath string `envconfig:"SAML_PROVIDER_CERT_PATH" default:".local/certs/bridge.crt"`
+	SAMLKeyPath  string `envconfig:"SAML_PROVIDER_KEY_PATH" default:".local/certs/bridge.key"`
 }
