@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"log"
 
 	"github.com/crewjam/saml"
 	"github.com/lib/pq"
@@ -21,9 +20,9 @@ func initDatabase() error {
 			user_common_name TEXT NOT NULL,
 			groups TEXT[] DEFAULT '{}'
 		);
-		
+
 		CREATE INDEX IF NOT EXISTS idx_sessions_expire_time ON sessions(expire_time);
-		
+
 		CREATE TABLE IF NOT EXISTS service_providers (
 			entity_id TEXT PRIMARY KEY,
 			acs_url TEXT NOT NULL,
@@ -35,13 +34,13 @@ func initDatabase() error {
 	if err != nil {
 		return err
 	}
-	log.Println("Database schema initialized")
+	logger.Info("Database schema initialized")
 	return nil
 }
 
 // saveSessionToDB saves a SAML session to the database
 func saveSessionToDB(session *saml.Session) error {
-	log.Printf("Saving session to database: ID=%s, Email=%s, ExpireTime=%s", session.ID, session.UserEmail, session.ExpireTime)
+	logger.Infow("Saving session to database", "sessionID", session.ID, "email", session.UserEmail, "expireTime", session.ExpireTime)
 	query := `
 		INSERT INTO sessions (id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -65,29 +64,16 @@ func saveSessionToDB(session *saml.Session) error {
 		pq.Array(session.Groups),
 	)
 	if err != nil {
-		log.Printf("Error saving session to database: %v", err)
+		logger.Errorw("Error saving session to database", "sessionID", session.ID, "error", err)
 	} else {
-		log.Printf("Session saved successfully to database: ID=%s", session.ID)
+		logger.Infow("Session saved successfully to database", "sessionID", session.ID)
 	}
 	return err
 }
 
 // getSessionFromDB retrieves a SAML session from the database by ID
 func getSessionFromDB(sessionID string) *saml.Session {
-	log.Printf("Attempting to retrieve session from database: ID=%s", sessionID)
-
-	// Debug: Check what time PostgreSQL thinks it is
-	var dbNow string
-	db.QueryRow("SELECT NOW()::TEXT").Scan(&dbNow)
-	log.Printf("Database NOW(): %s", dbNow)
-
-	// Debug: Check if session exists at all
-	var existsCheck bool
-	var storedExpireTime string
-	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM sessions WHERE id = $1), (SELECT expire_time::TEXT FROM sessions WHERE id = $1)", sessionID).Scan(&existsCheck, &storedExpireTime)
-	if err == nil {
-		log.Printf("Session exists check: %v, Stored expire_time: %s", existsCheck, storedExpireTime)
-	}
+	logger.Infow("Attempting to retrieve session from database", "sessionID", sessionID)
 
 	query := `
 		SELECT id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups
@@ -96,7 +82,7 @@ func getSessionFromDB(sessionID string) *saml.Session {
 	`
 	var session saml.Session
 	var groups []string
-	err = db.QueryRow(query, sessionID).Scan(
+	err := db.QueryRow(query, sessionID).Scan(
 		&session.ID,
 		&session.CreateTime,
 		&session.ExpireTime,
@@ -108,14 +94,14 @@ func getSessionFromDB(sessionID string) *saml.Session {
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("Session not found in database: ID=%s", sessionID)
+			logger.Infow("Session not found in database", "sessionID", sessionID)
 		} else {
-			log.Printf("Error retrieving session from database: %v", err)
+			logger.Errorw("Error retrieving session from database", "sessionID", sessionID, "error", err)
 		}
 		return nil
 	}
 	session.Groups = groups
-	log.Printf("Session retrieved successfully from database: ID=%s, Email=%s", session.ID, session.UserEmail)
+	logger.Infow("Session retrieved successfully from database", "sessionID", session.ID, "email", session.UserEmail)
 	return &session
 }
 
@@ -128,7 +114,7 @@ func cleanupExpiredSessions() error {
 
 // saveServiceProviderToDB saves a service provider to the database
 func saveServiceProviderToDB(entityID, acsURL, acsBinding string) error {
-	log.Printf("Saving service provider to database: EntityID=%s, ACS URL=%s", entityID, acsURL)
+	logger.Infow("Saving service provider to database", "entityID", entityID, "acsURL", acsURL)
 	query := `
 		INSERT INTO service_providers (entity_id, acs_url, acs_binding)
 		VALUES ($1, $2, $3)
@@ -138,16 +124,16 @@ func saveServiceProviderToDB(entityID, acsURL, acsBinding string) error {
 	`
 	_, err := db.Exec(query, entityID, acsURL, acsBinding)
 	if err != nil {
-		log.Printf("Error saving service provider to database: %v", err)
+		logger.Errorw("Error saving service provider to database", "entityID", entityID, "error", err)
 	} else {
-		log.Printf("Service provider saved successfully: EntityID=%s", entityID)
+		logger.Infow("Service provider saved successfully", "entityID", entityID)
 	}
 	return err
 }
 
 // getServiceProviderFromDB retrieves a service provider from the database by entity ID
 func getServiceProviderFromDB(entityID string) (*saml.EntityDescriptor, error) {
-	log.Printf("Retrieving service provider from database: EntityID=%s", entityID)
+	logger.Infow("Retrieving service provider from database", "entityID", entityID)
 	query := `
 		SELECT entity_id, acs_url, acs_binding
 		FROM service_providers
@@ -158,14 +144,14 @@ func getServiceProviderFromDB(entityID string) (*saml.EntityDescriptor, error) {
 	err := db.QueryRow(query, entityID).Scan(&retrievedEntityID, &acsURL, &acsBinding)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("Service provider not found in database: EntityID=%s", entityID)
+			logger.Infow("Service provider not found in database", "entityID", entityID)
 		} else {
-			log.Printf("Error retrieving service provider from database: %v", err)
+			logger.Errorw("Error retrieving service provider from database", "entityID", entityID, "error", err)
 		}
 		return nil, err
 	}
 
-	log.Printf("Service provider retrieved successfully: EntityID=%s, ACS URL=%s", retrievedEntityID, acsURL)
+	logger.Infow("Service provider retrieved successfully", "entityID", retrievedEntityID, "acsURL", acsURL)
 	return &saml.EntityDescriptor{
 		EntityID: retrievedEntityID,
 		SPSSODescriptors: []saml.SPSSODescriptor{
