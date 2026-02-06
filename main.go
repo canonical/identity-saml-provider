@@ -6,10 +6,12 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -133,6 +135,9 @@ func main() {
 
 	// C. OIDC Callback (Hydra redirects users back here)
 	http.HandleFunc("/callback", handleOIDCCallback)
+
+	// D. Service Provider Registration Endpoint
+	http.HandleFunc("/admin/service-providers", handleServiceProviderRegistration)
 
 	log.Printf("SAML-OIDC Bridge listening on %s", config.BridgeBaseURL)
 	log.Fatal(http.ListenAndServe(":"+config.BridgeBasePort, nil))
@@ -309,27 +314,116 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 // -------------------------------------------------------------------------
 // Helper: Service Provider Definition
 // -------------------------------------------------------------------------
-// This struct mocks a database lookup for the Service Provider
 type ServiceProvider struct{}
 
 func (s *ServiceProvider) GetServiceProvider(r *http.Request, serviceProviderID string) (*saml.EntityDescriptor, error) {
-	// In a real app, you might look up 'serviceProviderID' in a database.
-	// Here we return the hardcoded configuration for the Service.
+	log.Printf("Looking up service provider in database: %s", serviceProviderID)
 
-	return &saml.EntityDescriptor{
-		EntityID: config.ServiceEntityID,
-		SPSSODescriptors: []saml.SPSSODescriptor{
-			{
-				AssertionConsumerServices: []saml.IndexedEndpoint{
-					{
-						Binding:  saml.HTTPPostBinding,
-						Location: config.ServiceACS,
-						Index:    1,
-					},
-				},
-			},
-		},
-	}, nil
+	// Look up the service provider in the database
+	descriptor, err := getServiceProviderFromDB(serviceProviderID)
+	if err != nil {
+		log.Printf("Failed to retrieve service provider %s: %v. Did you forget to register it?", serviceProviderID, err)
+		return nil, os.ErrNotExist
+	}
+
+	return descriptor, nil
+}
+
+// -------------------------------------------------------------------------
+// Service Provider Registration Handler
+// -------------------------------------------------------------------------
+func handleServiceProviderRegistration(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed. Use POST to register a new service provider.", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse the JSON request body
+	var req struct {
+		EntityID   string `json:"entity_id"`
+		ACSURL     string `json:"acs_url"`
+		ACSBinding string `json:"acs_binding"`
+	}
+
+	contentType := strings.ToLower(r.Header.Get("Content-Type"))
+	if strings.Contains(contentType, "application/json") {
+		// Parse JSON request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Failed to parse JSON request", http.StatusBadRequest)
+			return
+		}
+	} else if strings.Contains(contentType, "application/x-www-form-urlencoded") || contentType == "" {
+		// Support form-encoded requests (default if no Content-Type)
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Failed to parse form request", http.StatusBadRequest)
+			return
+		}
+		req.EntityID = r.FormValue("entity_id")
+		req.ACSURL = r.FormValue("acs_url")
+		req.ACSBinding = r.FormValue("acs_binding")
+	} else {
+		http.Error(w, "Unsupported Content-Type", http.StatusBadRequest)
+		return
+	}
+
+	// Validate required fields
+	if req.EntityID == "" || req.ACSURL == "" {
+		http.Error(w, "Missing required fields: entity_id and acs_url are required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate that ACSURL is a valid URL
+	acsURL, err := url.Parse(req.ACSURL)
+	if err != nil || acsURL.Scheme == "" || acsURL.Host == "" {
+		http.Error(w, "Invalid acs_url: must be a valid URL with scheme and host", http.StatusBadRequest)
+		return
+	}
+	if acsURL.Scheme != "http" && acsURL.Scheme != "https" {
+		http.Error(w, "Invalid acs_url: scheme must be http or https", http.StatusBadRequest)
+		return
+	}
+
+	// Validate that EntityID is a valid URL
+	entityURL, err := url.Parse(req.EntityID)
+	if err != nil || entityURL.Scheme == "" || entityURL.Host == "" {
+		http.Error(w, "Invalid entity_id: must be a valid URL with scheme and host", http.StatusBadRequest)
+		return
+	}
+	if entityURL.Scheme != "http" && entityURL.Scheme != "https" {
+		http.Error(w, "Invalid entity_id: scheme must be http or https", http.StatusBadRequest)
+		return
+	}
+
+	validBindings := map[string]bool{
+		saml.HTTPPostBinding:     true,
+		saml.HTTPRedirectBinding: true,
+	}
+	if req.ACSBinding == "" {
+		// Apply default binding when not provided
+		req.ACSBinding = saml.HTTPPostBinding
+	} else if !validBindings[req.ACSBinding] {
+		http.Error(w, "Invalid acs_binding value", http.StatusBadRequest)
+		return
+	}
+
+	// Save to database
+	if err := saveServiceProviderToDB(req.EntityID, req.ACSURL, req.ACSBinding); err != nil {
+		log.Printf("Failed to save service provider: %v", err)
+		http.Error(w, "Failed to save service provider", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Service provider registered successfully: %s", req.EntityID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	response := map[string]string{
+		"status":    "success",
+		"message":   "Service provider registered",
+		"entity_id": req.EntityID,
+	}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Failed to encode JSON response: %v", err)
+	}
 }
 
 func parseURL(u string) url.URL {

@@ -53,11 +53,20 @@ graph TD
    make run
    ```
 
-4. **Access the services**:
+4. **Register the example SAML service**:
+
+   In another terminal, register the example SAML service with the SAML provider:
+
+   ```bash
+   cd example-saml-service
+   make register
+   ```
+
+5. **Access the services**:
 
    In a browser, access the Example SAML Service: <https://localhost:8083/hello>
 
-5. **Shut down supporting services**:
+6. **Shut down supporting services**:
 
    To stop all running services, use:
 
