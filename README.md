@@ -77,6 +77,7 @@ graph TD
 ## Configuration
 
 ### Environment Variables and Kratos OIDC Configuration
+
 See the [`config.go`](config.go) file for configuration options, which can all be set via environment variables.
 
 To use an OIDC provider like GitHub or Google with Ory Kratos, you will need to set the appropriate environment variables. There are several other variables you may need to set depending on your setup. Check the docker compose files for reference.
