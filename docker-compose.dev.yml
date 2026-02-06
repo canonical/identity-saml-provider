@@ -6,7 +6,7 @@ services:
     restart: on-failure
     volumes:
       - type: bind
-        source: ./docker/hydra
+        source: ./deployments/docker/hydra
         target: /etc/config/hydra
     command: exec hydra create client --endpoint http://hydra:4445 --id ${SAML_PROVIDER_OIDC_CLIENT_ID:-service-bridge-client} --secret ${SAML_PROVIDER_OIDC_CLIENT_SECRET:-secret} --grant-type authorization_code,refresh_token --response-type code,id_token --scope openid,email,profile --redirect-uri ${SAML_PROVIDER_BRIDGE_BASE_URL:-http://localhost:8082}/callback
     networks:
@@ -53,7 +53,7 @@ services:
       - "--entrypoints.websecure.address=:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./docker/traefik:/etc/traefik
+      - ./deployments/docker/traefik:/etc/traefik
     networks:
       - intranet
   kratos-migrate:
@@ -66,7 +66,7 @@ services:
         target: /var/lib/sqlite
         read_only: false
       - type: bind
-        source: ./docker/kratos
+        source: ./deployments/docker/kratos
         target: /etc/config/kratos
     command: exec kratos -c /etc/config/kratos/kratos.yml migrate sql -e --yes
     restart: on-failure
@@ -95,7 +95,7 @@ services:
         target: /var/lib/sqlite
         read_only: false
       - type: bind
-        source: ./docker/kratos
+        source: ./deployments/docker/kratos
         target: /etc/config/kratos
     networks:
       - intranet
@@ -146,7 +146,7 @@ services:
         target: /var/lib/sqlite
         read_only: false
       - type: bind
-        source: ./docker/kratos
+        source: ./deployments/docker/kratos
         target: /etc/config/kratos
     command: exec kratos import identities /etc/config/kratos/identity.json --endpoint http://kratos:4434
     networks:
@@ -161,7 +161,7 @@ services:
     command: exec hydra serve -c /etc/config/hydra/hydra.yml all --dev
     volumes:
       - type: bind
-        source: ./docker/hydra
+        source: ./deployments/docker/hydra
         target: /etc/config/hydra
     environment:
       - DSN=postgres://hydra:hydra@postgres/hydra?sslmode=disable
@@ -217,7 +217,7 @@ services:
     command: exec hydra migrate -c /etc/config/hydra/hydra.yml sql -e --yes
     volumes:
       - type: bind
-        source: ./docker/hydra
+        source: ./deployments/docker/hydra
         target: /etc/config/hydra
     restart: on-failure
     networks:
@@ -240,7 +240,7 @@ services:
     ports:
       - 5432:5432
     volumes:
-      - ./docker/postgres/init-database.sql:/docker-entrypoint-initdb.d/init-database.sql
+      - ./deployments/docker/postgres/init-database.sql:/docker-entrypoint-initdb.d/init-database.sql
     environment:
       POSTGRES_USER: openfga
       POSTGRES_PASSWORD: openfga

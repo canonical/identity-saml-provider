@@ -1,4 +1,4 @@
-package main
+package provider
 
 import (
 	"context"
@@ -16,158 +16,132 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/crewjam/saml"
-	"github.com/kelseyhightower/envconfig"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
 
-var config Config
-
-var (
-	logger       *zap.SugaredLogger
-	oauth2Config *oauth2.Config
-	oidcVerifier *oidc.IDTokenVerifier
-	samlIdp      *saml.IdentityProvider
-	db           *sql.DB
-	// Store pending SAML requests until OIDC login completes (kept in-memory as they're short-lived)
-	pendingRequests = make(map[string]pendingAuthnRequest)
-)
+// Server represents the SAML-OIDC bridge server
+type Server struct {
+	config          Config
+	logger          *zap.SugaredLogger
+	oauth2Config    *oauth2.Config
+	oidcVerifier    *oidc.IDTokenVerifier
+	samlIdp         *saml.IdentityProvider
+	db              *Database
+	pendingRequests map[string]pendingAuthnRequest
+}
 
 type pendingAuthnRequest struct {
 	samlRequest string
 	relayState  string
 }
 
-func main() {
-	ctx := context.Background()
-
-	// Initialize zap logger
-	zapLogger, err := zap.NewProduction()
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
+// NewServer creates a new SAML-OIDC bridge server
+func NewServer(cfg Config, logger *zap.SugaredLogger, sqlDB *sql.DB) (*Server, error) {
+	s := &Server{
+		config:          cfg,
+		logger:          logger,
+		db:              NewDatabase(sqlDB, logger),
+		pendingRequests: make(map[string]pendingAuthnRequest),
 	}
-	defer zapLogger.Sync()
-	logger = zapLogger.Sugar()
+	return s, nil
+}
 
-	// Load configuration from environment variables
-	if err := envconfig.Process("", &config); err != nil {
-		logger.Fatalw("Failed to process configuration", "error", err)
-	}
-
-	// -------------------------------------------------------------------------
-	// 1. Initialize Database Connection
-	// -------------------------------------------------------------------------
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		config.DBHost, config.DBPort, config.DBUser, config.DBPassword, config.DBName)
-	logger.Infow("Connecting to PostgreSQL", "host", config.DBHost, "port", config.DBPort)
-	db, err = sql.Open("postgres", dsn)
-	if err != nil {
-		logger.Fatalw("Failed to open database connection", "error", err)
-	}
-	defer db.Close()
-
-	// Verify the connection
-	if err = db.PingContext(ctx); err != nil {
-		logger.Fatalw("Failed to connect to database", "error", err)
-	}
-	logger.Info("Database connection established")
-
-	// Initialize database schema
-	if err = initDatabase(); err != nil {
-		logger.Fatalw("Failed to initialize database schema", "error", err)
-	}
-
-	// -------------------------------------------------------------------------
-	// 2. Initialize OIDC Provider (Hydra)
-	// -------------------------------------------------------------------------
-	logger.Infow("Connecting to Ory Hydra", "url", config.HydraPublicURL)
+// Initialize sets up the OIDC and SAML providers
+func (s *Server) Initialize(ctx context.Context, zapLogger *zap.Logger) error {
+	// Initialize OIDC Provider (Hydra)
+	s.logger.Infow("Connecting to Ory Hydra", "url", s.config.HydraPublicURL)
 	// InsecureIssuerURLContext is used here for local testing where the URL
 	// used by the provider does not match the public facing URL.
-	ctx = oidc.InsecureIssuerURLContext(ctx, config.HydraPublicURL)
-	provider, err := oidc.NewProvider(ctx, config.HydraPublicURL)
+	ctx = oidc.InsecureIssuerURLContext(ctx, s.config.HydraPublicURL)
+	provider, err := oidc.NewProvider(ctx, s.config.HydraPublicURL)
 	if err != nil {
-		logger.Fatalw("Failed to query Hydra provider", "error", err)
+		return fmt.Errorf("failed to query Hydra provider: %w", err)
 	}
 
-	oidcVerifier = provider.Verifier(&oidc.Config{ClientID: config.ClientID})
+	s.oidcVerifier = provider.Verifier(&oidc.Config{ClientID: s.config.ClientID})
 
-	oauth2Config = &oauth2.Config{
-		ClientID:     config.ClientID,
-		ClientSecret: config.ClientSecret,
-		RedirectURL:  config.BridgeBaseURL + "/callback",
+	s.oauth2Config = &oauth2.Config{
+		ClientID:     s.config.ClientID,
+		ClientSecret: s.config.ClientSecret,
+		RedirectURL:  s.config.BridgeBaseURL + "/callback",
 		Endpoint:     provider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 	}
 
-	// -------------------------------------------------------------------------
-	// 3. Initialize SAML Identity Provider
-	// -------------------------------------------------------------------------
-	logger.Info("Loading SAML keys")
-	certPath := config.SAMLCertPath
-	keyPath := config.SAMLKeyPath
+	// Initialize SAML Identity Provider
+	s.logger.Info("Loading SAML keys")
+	certPath := s.config.SAMLCertPath
+	keyPath := s.config.SAMLKeyPath
 	if certPath == "" {
-		certPath = "etc/certs/bridge.crt"
+		certPath = ".local/certs/bridge.crt"
 	}
 	if keyPath == "" {
-		keyPath = "etc/certs/bridge.key"
+		keyPath = ".local/certs/bridge.key"
 	}
 	keyPair, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
-		logger.Fatalw("Failed to load key pair", "certPath", certPath, "keyPath", keyPath, "error", err)
+		return fmt.Errorf("failed to load key pair: %w", err)
 	}
 
 	x509Cert, _ := x509.ParseCertificate(keyPair.Certificate[0])
 
 	// Create the IdP instance
-	samlIdp = &saml.IdentityProvider{
+	s.samlIdp = &saml.IdentityProvider{
 		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
 		Certificate: x509Cert,
-		Logger:      newZapStdLogger(zapLogger),
-		SSOURL:      parseURL(config.BridgeBaseURL + "/saml/sso"),
-		MetadataURL: parseURL(config.BridgeBaseURL + "/saml/metadata"),
+		Logger:      NewZapStdLogger(zapLogger),
+		SSOURL:      s.parseURL(s.config.BridgeBaseURL + "/saml/sso"),
+		MetadataURL: s.parseURL(s.config.BridgeBaseURL + "/saml/metadata"),
 		// This provider handles looking up the SP (Service) details
-		ServiceProviderProvider: &ServiceProvider{},
+		ServiceProviderProvider: &serviceProviderAdapter{db: s.db},
 		// Session provider handles authentication state
-		SessionProvider: &BridgeSessionProvider{},
+		SessionProvider: &sessionProviderAdapter{server: s},
 	}
 
-	// -------------------------------------------------------------------------
-	// 4. Define HTTP Routes
-	// -------------------------------------------------------------------------
+	return nil
+}
 
-	// A. Metadata Endpoint (Greenhouse will need this to configure the connection)
-	http.HandleFunc("/saml/metadata", samlIdp.ServeMetadata)
+// SetupRoutes configures the HTTP routes for the server
+func (s *Server) SetupRoutes() {
+	// A. Metadata Endpoint (Service providers need this to configure the connection)
+	http.HandleFunc("/saml/metadata", s.samlIdp.ServeMetadata)
 
-	// B. SSO Entry Point (Greenhouse redirects users here)
-	http.HandleFunc("/saml/sso", samlIdp.ServeSSO)
+	// B. SSO Entry Point (Service providers redirect users here)
+	http.HandleFunc("/saml/sso", s.samlIdp.ServeSSO)
 
 	// C. OIDC Callback (Hydra redirects users back here)
-	http.HandleFunc("/callback", handleOIDCCallback)
+	http.HandleFunc("/callback", s.handleOIDCCallback)
 
 	// D. Service Provider Registration Endpoint
-	http.HandleFunc("/admin/service-providers", handleServiceProviderRegistration)
+	http.HandleFunc("/admin/service-providers", s.handleServiceProviderRegistration)
+}
 
-	logger.Infow("SAML-OIDC Bridge listening", "url", config.BridgeBaseURL)
-	logger.Fatalw("Server error", "error", http.ListenAndServe(":"+config.BridgeBasePort, nil))
+// Start starts the HTTP server
+func (s *Server) Start() error {
+	s.logger.Infow("SAML-OIDC Bridge listening", "url", s.config.BridgeBaseURL)
+	return http.ListenAndServe(":"+s.config.BridgeBasePort, nil)
 }
 
 // -------------------------------------------------------------------------
-// STEP 1: Session Provider - Handles authentication state
+// Session Provider Adapter
 // -------------------------------------------------------------------------
-type BridgeSessionProvider struct{}
+type sessionProviderAdapter struct {
+	server *Server
+}
 
-func (sp *BridgeSessionProvider) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) *saml.Session {
-	logger.Info("Checking for existing SAML session")
+func (sp *sessionProviderAdapter) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) *saml.Session {
+	sp.server.logger.Info("Checking for existing SAML session")
 	// Check if we have a session cookie from the OIDC callback
 	sessionCookie, err := r.Cookie("saml_session")
 
 	// Retrieve the session if cookie exists
 	var session *saml.Session
 	if err == nil && sessionCookie.Value != "" {
-		logger.Infow("Found session cookie", "sessionID", sessionCookie.Value)
-		session = getSessionFromDB(sessionCookie.Value)
+		sp.server.logger.Infow("Found session cookie", "sessionID", sessionCookie.Value)
+		session = sp.server.db.GetSession(sessionCookie.Value)
 	} else {
-		logger.Infow("No session cookie found", "error", err)
+		sp.server.logger.Infow("No session cookie found", "error", err)
 	}
 
 	// If no valid session, redirect to Hydra for authentication
@@ -181,7 +155,7 @@ func (sp *BridgeSessionProvider) GetSession(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		if samlRequest != "" {
-			pendingRequests[req.Request.ID] = pendingAuthnRequest{
+			sp.server.pendingRequests[req.Request.ID] = pendingAuthnRequest{
 				samlRequest: samlRequest,
 				relayState:  req.RelayState,
 			}
@@ -193,8 +167,8 @@ func (sp *BridgeSessionProvider) GetSession(w http.ResponseWriter, r *http.Reque
 			state += ":" + req.RelayState
 		}
 
-		logger.Info("No valid session found, redirecting to Hydra for authentication")
-		http.Redirect(w, r, oauth2Config.AuthCodeURL(state), http.StatusFound)
+		sp.server.logger.Info("No valid session found, redirecting to Hydra for authentication")
+		http.Redirect(w, r, sp.server.oauth2Config.AuthCodeURL(state), http.StatusFound)
 		return nil
 	}
 
@@ -202,10 +176,10 @@ func (sp *BridgeSessionProvider) GetSession(w http.ResponseWriter, r *http.Reque
 }
 
 // -------------------------------------------------------------------------
-// STEP 2: Handle Return from Hydra
+// OIDC Callback Handler
 // -------------------------------------------------------------------------
-func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
-	logger.Info("Handling OIDC callback from Hydra")
+func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	s.logger.Info("Handling OIDC callback from Hydra")
 	ctx := context.Background()
 
 	// 1. Exchange the Authorization Code for tokens
@@ -215,7 +189,7 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := oauth2Config.Exchange(ctx, code)
+	token, err := s.oauth2Config.Exchange(ctx, code)
 	if err != nil {
 		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -227,13 +201,13 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No id_token field in oauth2 token", http.StatusInternalServerError)
 		return
 	}
-	idToken, err := oidcVerifier.Verify(ctx, rawIDToken)
+	idToken, err := s.oidcVerifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		http.Error(w, "Failed to verify ID Token: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// 3. Extract User Claims (Email is critical for Greenhouse)
+	// 3. Extract User Claims (Email is critical for service)
 	var claims struct {
 		Email string `json:"email"`
 		Sub   string `json:"sub"`
@@ -248,7 +222,7 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Debugw("User authenticated, creating SAML session", "email", claims.Email)
+	s.logger.Debugw("User authenticated, creating SAML session", "email", claims.Email)
 
 	// 4. Create a SAML Session
 	sessionID := fmt.Sprintf("_%d", time.Now().UnixNano())
@@ -263,8 +237,8 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		Groups:         []string{},
 	}
 	// Store the session in database
-	if err := saveSessionToDB(samlSession); err != nil {
-		logger.Errorw("Failed to save session to database", "error", err)
+	if err := s.db.SaveSession(samlSession); err != nil {
+		s.logger.Errorw("Failed to save session to database", "error", err)
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
@@ -292,15 +266,15 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if requestID != "" {
-		logger.Infow("OIDC callback for SAML request", "requestID", requestID)
+		s.logger.Infow("OIDC callback for SAML request", "requestID", requestID)
 	}
 
-	redirectURL := fmt.Sprintf("%s/saml/sso", config.BridgeBaseURL)
+	redirectURL := fmt.Sprintf("%s/saml/sso", s.config.BridgeBaseURL)
 
 	// Retrieve and replay the original SAMLRequest if available
 	if requestID != "" {
-		if pending, ok := pendingRequests[requestID]; ok {
-			delete(pendingRequests, requestID)
+		if pending, ok := s.pendingRequests[requestID]; ok {
+			delete(s.pendingRequests, requestID)
 			query := url.Values{}
 			query.Set("SAMLRequest", pending.samlRequest)
 			if pending.relayState != "" {
@@ -315,22 +289,21 @@ func handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 6. Redirect back to the SAML SSO handler to continue the flow
-	logger.Info("Session created, redirecting back to SAML SSO handler")
+	s.logger.Info("Session created, redirecting back to SAML SSO handler")
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 // -------------------------------------------------------------------------
-// Helper: Service Provider Definition
+// Service Provider Adapter
 // -------------------------------------------------------------------------
-type ServiceProvider struct{}
+type serviceProviderAdapter struct {
+	db *Database
+}
 
-func (s *ServiceProvider) GetServiceProvider(r *http.Request, serviceProviderID string) (*saml.EntityDescriptor, error) {
-	logger.Infow("Looking up service provider in database", "serviceProviderID", serviceProviderID)
-
+func (sp *serviceProviderAdapter) GetServiceProvider(r *http.Request, serviceProviderID string) (*saml.EntityDescriptor, error) {
 	// Look up the service provider in the database
-	descriptor, err := getServiceProviderFromDB(serviceProviderID)
+	descriptor, err := sp.db.GetServiceProvider(serviceProviderID)
 	if err != nil {
-		logger.Errorw("Failed to retrieve service provider", "serviceProviderID", serviceProviderID, "error", err)
 		return nil, os.ErrNotExist
 	}
 
@@ -340,7 +313,7 @@ func (s *ServiceProvider) GetServiceProvider(r *http.Request, serviceProviderID 
 // -------------------------------------------------------------------------
 // Service Provider Registration Handler
 // -------------------------------------------------------------------------
-func handleServiceProviderRegistration(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleServiceProviderRegistration(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed. Use POST to register a new service provider.", http.StatusMethodNotAllowed)
 		return
@@ -415,13 +388,13 @@ func handleServiceProviderRegistration(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Save to database
-	if err := saveServiceProviderToDB(req.EntityID, req.ACSURL, req.ACSBinding); err != nil {
-		logger.Errorw("Failed to save service provider", "error", err)
+	if err := s.db.SaveServiceProvider(req.EntityID, req.ACSURL, req.ACSBinding); err != nil {
+		s.logger.Errorw("Failed to save service provider", "error", err)
 		http.Error(w, "Failed to save service provider", http.StatusInternalServerError)
 		return
 	}
 
-	logger.Infow("Service provider registered successfully", "entityID", req.EntityID)
+	s.logger.Infow("Service provider registered successfully", "entityID", req.EntityID)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	response := map[string]string{
@@ -430,11 +403,11 @@ func handleServiceProviderRegistration(w http.ResponseWriter, r *http.Request) {
 		"entity_id": req.EntityID,
 	}
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		logger.Errorw("Failed to encode JSON response", "error", err)
+		s.logger.Errorw("Failed to encode JSON response", "error", err)
 	}
 }
 
-func parseURL(u string) url.URL {
+func (s *Server) parseURL(u string) url.URL {
 	parsed, _ := url.Parse(u)
 	return *parsed
 }

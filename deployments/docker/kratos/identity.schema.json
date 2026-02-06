@@ -52,25 +52,25 @@
           "format": "email",
           "title": "E-Mail",
           "minLength": 3,
-            "ory.sh/kratos": {
-              "credentials": {
-                "password": {
-                  "identifier": true
-                },
-                "totp": {
-                   "account_name": true
-                },
-                "webauthn": {
-                  "identifier": true
-                }
+          "ory.sh/kratos": {
+            "credentials": {
+              "password": {
+                "identifier": true
               },
-              "verification": {
-                "via": "email"
+              "totp": {
+                "account_name": true
               },
-              "recovery": {
-                "via": "email"
+              "webauthn": {
+                "identifier": true
               }
+            },
+            "verification": {
+              "via": "email"
+            },
+            "recovery": {
+              "via": "email"
             }
+          }
         },
         "gender": {
           "type": "string",
@@ -97,7 +97,9 @@
           "title": "Address"
         }
       },
-      "required": ["email"]
+      "required": [
+        "email"
+      ]
     },
     "additionalProperties": true
   }
