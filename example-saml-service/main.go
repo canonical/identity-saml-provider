@@ -102,5 +102,7 @@ func main() {
 	app := http.HandlerFunc(hello)
 	http.Handle("/hello", samlSP.RequireAccount(app))
 	http.Handle("/saml/", samlSP)
+
+	log.Printf("Starting Example SAML Service at %s/hello\n", serviceURL)
 	http.ListenAndServe(listenPort, nil)
 }

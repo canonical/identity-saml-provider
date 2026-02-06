@@ -8,7 +8,7 @@ import (
 	"github.com/lib/pq"
 )
 
-// initDatabase creates the sessions table if it doesn't exist
+// initDatabase creates the sessions and service_providers tables if they don't exist
 func initDatabase() error {
 	query := `
 		CREATE TABLE IF NOT EXISTS sessions (
@@ -23,6 +23,13 @@ func initDatabase() error {
 		);
 		
 		CREATE INDEX IF NOT EXISTS idx_sessions_expire_time ON sessions(expire_time);
+		
+		CREATE TABLE IF NOT EXISTS service_providers (
+			entity_id TEXT PRIMARY KEY,
+			acs_url TEXT NOT NULL,
+			acs_binding TEXT NOT NULL DEFAULT 'urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);
 	`
 	_, err := db.Exec(query)
 	if err != nil {
@@ -117,4 +124,60 @@ func cleanupExpiredSessions() error {
 	query := `DELETE FROM sessions WHERE expire_time < NOW()`
 	_, err := db.Exec(query)
 	return err
+}
+
+// saveServiceProviderToDB saves a service provider to the database
+func saveServiceProviderToDB(entityID, acsURL, acsBinding string) error {
+	log.Printf("Saving service provider to database: EntityID=%s, ACS URL=%s", entityID, acsURL)
+	query := `
+		INSERT INTO service_providers (entity_id, acs_url, acs_binding)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (entity_id) DO UPDATE SET
+			acs_url = EXCLUDED.acs_url,
+			acs_binding = EXCLUDED.acs_binding
+	`
+	_, err := db.Exec(query, entityID, acsURL, acsBinding)
+	if err != nil {
+		log.Printf("Error saving service provider to database: %v", err)
+	} else {
+		log.Printf("Service provider saved successfully: EntityID=%s", entityID)
+	}
+	return err
+}
+
+// getServiceProviderFromDB retrieves a service provider from the database by entity ID
+func getServiceProviderFromDB(entityID string) (*saml.EntityDescriptor, error) {
+	log.Printf("Retrieving service provider from database: EntityID=%s", entityID)
+	query := `
+		SELECT entity_id, acs_url, acs_binding
+		FROM service_providers
+		WHERE entity_id = $1
+	`
+	var acsURL, acsBinding string
+	var retrievedEntityID string
+	err := db.QueryRow(query, entityID).Scan(&retrievedEntityID, &acsURL, &acsBinding)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("Service provider not found in database: EntityID=%s", entityID)
+		} else {
+			log.Printf("Error retrieving service provider from database: %v", err)
+		}
+		return nil, err
+	}
+
+	log.Printf("Service provider retrieved successfully: EntityID=%s, ACS URL=%s", retrievedEntityID, acsURL)
+	return &saml.EntityDescriptor{
+		EntityID: retrievedEntityID,
+		SPSSODescriptors: []saml.SPSSODescriptor{
+			{
+				AssertionConsumerServices: []saml.IndexedEndpoint{
+					{
+						Binding:  acsBinding,
+						Location: acsURL,
+						Index:    1,
+					},
+				},
+			},
+		},
+	}, nil
 }

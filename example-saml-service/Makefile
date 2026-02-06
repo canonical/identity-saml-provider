@@ -17,7 +17,10 @@ build:
 	go build -o bin/example-saml-service
 
 run: certs
-	go run . --cert etc/certs/myservice.crt --key etc/certs/myservice.key
+	go run .
+
+register:
+	curl -X POST -H "Content-Type: application/x-www-form-urlencoded" http://localhost:8082/admin/service-providers -d "entity_id=http://localhost:8083/saml/metadata" -d "acs_url=http://localhost:8083/saml/acs"
 
 certs:
 	@mkdir -p etc/certs
