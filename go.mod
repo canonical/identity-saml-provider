@@ -5,6 +5,7 @@ go 1.24.0
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/crewjam/saml v0.5.1
+	github.com/go-chi/chi/v5 v5.1.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/lib/pq v1.11.1
 	go.uber.org/zap v1.27.1
