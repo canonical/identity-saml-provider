@@ -1,0 +1,18 @@
+name: ci
+run-name: CI for ${{ github.sha }} on ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "release-**"
+    tags:
+      - "v**"
+  pull_request:
+    branches:
+      - "*"
+
+jobs:
+  unit-test:
+    uses: ./.github/workflows/unittest.yaml
