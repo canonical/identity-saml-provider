@@ -16,6 +16,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/crewjam/saml"
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
@@ -29,6 +30,7 @@ type Server struct {
 	samlIdp         *saml.IdentityProvider
 	db              *Database
 	pendingRequests map[string]pendingAuthnRequest
+	router          chi.Router
 }
 
 type pendingAuthnRequest struct {
@@ -43,6 +45,7 @@ func NewServer(cfg Config, logger *zap.SugaredLogger, sqlDB *sql.DB) (*Server, e
 		logger:          logger,
 		db:              NewDatabase(sqlDB, logger),
 		pendingRequests: make(map[string]pendingAuthnRequest),
+		router:          chi.NewRouter(),
 	}
 	return s, nil
 }
@@ -105,22 +108,22 @@ func (s *Server) Initialize(ctx context.Context, zapLogger *zap.Logger) error {
 // SetupRoutes configures the HTTP routes for the server
 func (s *Server) SetupRoutes() {
 	// A. Metadata Endpoint (Service providers need this to configure the connection)
-	http.HandleFunc("/saml/metadata", s.samlIdp.ServeMetadata)
+	s.router.HandleFunc("/saml/metadata", s.samlIdp.ServeMetadata)
 
 	// B. SSO Entry Point (Service providers redirect users here)
-	http.HandleFunc("/saml/sso", s.samlIdp.ServeSSO)
+	s.router.HandleFunc("/saml/sso", s.samlIdp.ServeSSO)
 
 	// C. OIDC Callback (Hydra redirects users back here)
-	http.HandleFunc("/callback", s.handleOIDCCallback)
+	s.router.HandleFunc("/callback", s.handleOIDCCallback)
 
 	// D. Service Provider Registration Endpoint
-	http.HandleFunc("/admin/service-providers", s.handleServiceProviderRegistration)
+	s.router.Post("/admin/service-providers", s.handleServiceProviderRegistration)
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
 	s.logger.Infow("SAML-OIDC Bridge listening", "url", s.config.BridgeBaseURL)
-	return http.ListenAndServe(":"+s.config.BridgeBasePort, nil)
+	return http.ListenAndServe(":"+s.config.BridgeBasePort, s.router)
 }
 
 // -------------------------------------------------------------------------
@@ -314,10 +317,6 @@ func (sp *serviceProviderAdapter) GetServiceProvider(r *http.Request, servicePro
 // Service Provider Registration Handler
 // -------------------------------------------------------------------------
 func (s *Server) handleServiceProviderRegistration(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed. Use POST to register a new service provider.", http.StatusMethodNotAllowed)
-		return
-	}
 
 	// Parse the JSON request body
 	var req struct {
