@@ -5,11 +5,11 @@ go 1.24.0
 require (
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/crewjam/saml v0.5.1
-	github.com/go-chi/chi/v5 v5.1.0
+	github.com/go-chi/chi/v5 v5.2.5
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/lib/pq v1.11.1
 	go.uber.org/zap v1.27.1
-	golang.org/x/oauth2 v0.34.0
+	golang.org/x/oauth2 v0.35.0
 )
 
 require (
@@ -19,6 +19,6 @@ require (
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	github.com/russellhaering/goxmldsig v1.5.0 // indirect
-	go.uber.org/multierr v1.10.0 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
+	go.uber.org/multierr v1.11.0 // indirect
+	golang.org/x/crypto v0.48.0 // indirect
 )
