@@ -1,4 +1,4 @@
-.PHONY: help build certs clean dev down provider-certs service-certs
+.PHONY: help build certs clean dev down provider-certs service-certs test run
 
 help:
 	@echo "SAML Provider Root Makefile"
@@ -12,9 +12,14 @@ help:
 	@echo "  dev                - Generate certs and start Docker environment"
 	@echo "  down               - Tear down the development environment"
 	@echo "  help               - Show this help message"
+	@echo "  run                - Run the provider locally"
+	@echo "  test               - Run all tests"
 
 build:
 	go build -o bin/identity-saml-provider ./cmd/identity-saml-provider
+
+test:
+	go test -v ./...
 
 certs:
 	@mkdir -p .local/certs

@@ -19,3 +19,7 @@ CREATE DATABASE saml_provider;
 GRANT ALL PRIVILEGES ON DATABASE saml_provider TO saml_provider;
 ALTER DATABASE saml_provider OWNER TO saml_provider;
 
+-- SAML Provider Tests
+CREATE DATABASE saml_provider_tests;
+GRANT ALL PRIVILEGES ON DATABASE saml_provider_tests TO saml_provider;
+ALTER DATABASE saml_provider_tests OWNER TO saml_provider;
