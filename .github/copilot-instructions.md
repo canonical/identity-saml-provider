@@ -20,6 +20,8 @@ The system has three layers:
 | Config | `internal/provider/config.go` | Environment-driven configuration for all services |
 | Main | `cmd/identity-saml-provider/main.go` | Orchestrates initialization: DB → Logger → Server |
 
+See the [directory structure](../CONTRIBUTING.md#directory-structure) section in CONTRIBUTING.md for more details on file organization.
+
 ### Data Flow
 
 1. SAML Service Provider sends SAML AuthnRequest → `/saml/sso` endpoint
@@ -32,11 +34,18 @@ The system has three layers:
 ## Development Workflows
 
 ### Initial Setup
+
 ```bash
 make dev           # Starts Docker containers: Hydra, Kratos, Postgres, Traefik
 make run           # Runs the SAML provider (requires make dev running)
-cd test/saml-service && make run  # Runs example SAML service provider
-cd test/saml-service && make register  # Registers example service with provider
+```
+
+In another terminal, set up the example SAML service provider:
+
+```bash
+cd test/saml-service
+make register  # Registers example service with provider
+make run  # Runs example SAML service provider
 ```
 
 ### Testing Flow
@@ -44,6 +53,16 @@ cd test/saml-service && make register  # Registers example service with provider
 - Service redirects to SAML provider
 - Provider redirects to Hydra login
 - Post-login: user data flows back to example service
+
+#### Makefile
+
+All commands are defined in the root `Makefile` for convenience. Make sure to test these when changing things related to development environment setup or testing, and make sure to update the `Makefile` if you add new commands or change existing ones.
+
+#### Running unit tests
+
+```bash
+make test
+```
 
 ### Key Environment Setup
 - Add `127.0.0.1 hydra` to `/etc/hosts` (critical for container-to-browser communication)
