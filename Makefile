@@ -1,10 +1,11 @@
-.PHONY: help build certs clean dev down provider-certs service-certs test run
+.PHONY: help build build-cli certs clean dev down provider-certs service-certs test run
 
 help:
 	@echo "SAML Provider Root Makefile"
 	@echo ""
 	@echo "Build & Clean:"
-	@echo "  build              - Build both provider and service"
+	@echo "  build              - Build provider and CLI tools"
+	@echo "  build-cli          - Build service-provider-admin CLI only"
 	@echo "  clean              - Clean all build artifacts and certificates"
 	@echo "  certs              - Generate certificates for both provider and service"
 	@echo ""
@@ -17,6 +18,10 @@ help:
 
 build:
 	go build -o bin/identity-saml-provider ./cmd/identity-saml-provider
+	go build -o bin/service-provider-admin ./cmd/service-provider-admin
+
+build-cli:
+	go build -o bin/service-provider-admin ./cmd/service-provider-admin
 
 test:
 	go test -v ./...
