@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"flag"
 	"fmt"
 
 	"github.com/canonical/identity-saml-provider/internal/provider"
@@ -14,8 +15,18 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Initialize zap logger
-	zapLogger, err := zap.NewProduction()
+	// Parse command-line flags
+	verbose := flag.Bool("verbose", false, "Enable verbose (development) logging")
+	flag.Parse()
+
+	// Initialize zap logger with appropriate level
+	var zapLogger *zap.Logger
+	var err error
+	if *verbose {
+		zapLogger, err = zap.NewDevelopment()
+	} else {
+		zapLogger, err = zap.NewProduction()
+	}
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
