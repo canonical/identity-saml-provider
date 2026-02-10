@@ -10,6 +10,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}",
+            "args": ["--verbose"]
         },
         {
             "name": "Service (SAML Client)",
