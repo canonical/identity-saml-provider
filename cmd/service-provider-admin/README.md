@@ -26,6 +26,7 @@ Register a new SAML service provider with the Identity SAML Provider:
 - `--acs-url, -a` (required): Assertion Consumer Service (ACS) URL where SAML responses are sent (e.g., `https://example.com/saml/acs`)
 - `--acs-binding, -b` (optional): ACS binding type. Defaults to `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST`
 - `--server` (optional): Base URL of the Identity SAML Provider server. Defaults to `http://localhost:8082`
+- `--output` (optional): Output format: `human` for human-readable output (default) or `json` for machine-readable JSON
 
 #### Examples
 
@@ -49,14 +50,29 @@ Register a new SAML service provider with the Identity SAML Provider:
 
 #### Response
 
-On success, the CLI returns a JSON response confirming the registration:
+**Human-Readable Output (default):**
 
 ```
 ✓ Service provider registered successfully!
   Entity ID: https://myapp.local:8083
   ACS URL: https://myapp.local:8083/saml/acs
   ACS Binding: urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST
-  Server Response: map[entity_id:https://myapp.local:8083 message:Service provider registered status:success]
+```
+
+**JSON Output (with `--output json`):**
+
+```json
+{
+  "success": true,
+  "entity_id": "https://myapp.local:8083",
+  "acs_url": "https://myapp.local:8083/saml/acs",
+  "acs_binding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+  "response": {
+    "entity_id": "https://myapp.local:8083",
+    "message": "Service provider registered",
+    "status": "success"
+  }
+}
 ```
 
 ## API Endpoint

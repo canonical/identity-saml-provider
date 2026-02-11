@@ -8,15 +8,17 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	serverURL  string
-	entityID   string
-	acsURL     string
-	acsBinding string
+	serverURL    string
+	entityID     string
+	acsURL       string
+	acsBinding   string
+	outputFormat string
 )
 
 func main() {
@@ -38,6 +40,7 @@ func main() {
 	addCmd.Flags().StringVarP(&entityID, "entity-id", "e", "", "Entity ID (unique identifier) of the service provider (required, must be a valid URL)")
 	addCmd.Flags().StringVarP(&acsURL, "acs-url", "a", "", "Assertion Consumer Service (ACS) URL (required, must be a valid URL)")
 	addCmd.Flags().StringVarP(&acsBinding, "acs-binding", "b", "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST", "ACS binding type (optional, defaults to HTTP-POST)")
+	addCmd.Flags().StringVar(&outputFormat, "output", "human", "Output format: 'human' for human-readable or 'json' for JSON")
 
 	// Mark required flags
 	addCmd.MarkFlagRequired("entity-id")
@@ -77,8 +80,10 @@ func runAdd(cmd *cobra.Command, args []string) error {
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// Send request
-	client := &http.Client{}
+	// Send request with timeout
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send request to %s: %w", endpoint, err)
@@ -91,23 +96,39 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Parse response
-	var response map[string]interface{}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	// Check status code
+	// Check status code first
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("server returned error (status %d): %s", resp.StatusCode, string(body))
 	}
 
-	// Print success message
-	fmt.Printf("✓ Service provider registered successfully!\n")
-	fmt.Printf("  Entity ID: %s\n", entityID)
-	fmt.Printf("  ACS URL: %s\n", acsURL)
-	fmt.Printf("  ACS Binding: %s\n", acsBinding)
-	fmt.Printf("  Server Response: %v\n", response)
+	// Parse response only on success
+	var response map[string]interface{}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return fmt.Errorf("server returned success status but response was not valid JSON: %w", err)
+	}
+
+	// Print output based on format
+	if outputFormat == "json" {
+		// Build JSON response
+		jsonOutput := map[string]interface{}{
+			"success":    true,
+			"entity_id":  entityID,
+			"acs_url":    acsURL,
+			"acs_binding": acsBinding,
+			"response":   response,
+		}
+		jsonBytes, err := json.MarshalIndent(jsonOutput, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal JSON output: %w", err)
+		}
+		fmt.Println(string(jsonBytes))
+	} else {
+		// Human-readable output
+		fmt.Printf("✓ Service provider registered successfully!\n")
+		fmt.Printf("  Entity ID: %s\n", entityID)
+		fmt.Printf("  ACS URL: %s\n", acsURL)
+		fmt.Printf("  ACS Binding: %s\n", acsBinding)
+	}
 
 	return nil
 }
