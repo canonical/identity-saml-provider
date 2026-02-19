@@ -212,8 +212,9 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	// 3. Extract User Claims (Email is critical for service)
 	var claims struct {
-		Email string `json:"email"`
-		Sub   string `json:"sub"`
+		Email  string   `json:"email"`
+		Sub    string   `json:"sub"`
+		Groups []string `json:"groups"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		http.Error(w, "Failed to parse claims", http.StatusInternalServerError)
@@ -237,7 +238,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		NameID:         claims.Email, // Service matches users by NameID (Email)
 		UserEmail:      claims.Email,
 		UserCommonName: claims.Email, // Use email as display name
-		Groups:         []string{},
+		Groups:         claims.Groups,
 	}
 	// Store the session in database
 	if err := s.db.SaveSession(samlSession); err != nil {

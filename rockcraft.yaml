@@ -1,0 +1,49 @@
+name: identity-saml-provider
+# keeping base as ubuntu for now due to debugging phase
+base: bare
+build-base: ubuntu@24.04
+version: 1.0.0
+summary: Canonical Identity SAML Provider
+description: >
+  This is the Canonical Identity SAML Provider used for bridging SAML authentication to OIDC flows
+license: Apache-2.0
+platforms:
+  amd64: null
+services:
+  identity-saml-provider:
+    override: replace
+    command: /usr/bin/identity-saml-provider
+    startup: enabled
+parts:
+  go-build:
+    plugin: go
+    source: .
+    source-type: local
+    build-snaps:
+      - go/1.25/stable
+    build-environment:
+      - CGO_ENABLED: "0"
+    build-packages:
+      - make
+      - git
+    override-build: |
+      make build
+      install -D -m755 ./bin/identity-saml-provider ${CRAFT_PART_INSTALL}/opt/identity-saml-provider/bin/identity-saml-provider
+    organize:
+      opt/identity-saml-provider/bin/identity-saml-provider: usr/bin/identity-saml-provider
+      etc/ssl/certs/ca-certificates.crt: etc/ssl/certs/ca-certificates.crt
+    stage-packages:
+      - ca-certificates_data
+      - base-files_var
+      - base-files_chisel
+    prime:
+      - usr/bin/identity-saml-provider
+      - etc/ssl/certs/ca-certificates.crt
+
+
+  deb-security-manifest:
+    plugin: make
+    source: https://github.com/canonical/rocks-security-manifest
+    source-type: git
+    source-branch: main
+    override-prime: gen_manifest

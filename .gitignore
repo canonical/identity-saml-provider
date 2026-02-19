@@ -44,3 +44,6 @@ dist/
 
 # Local development artifacts
 .local/
+
+*.rock
+k8s/secrets

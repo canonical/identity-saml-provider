@@ -33,6 +33,7 @@ func hello(w http.ResponseWriter, r *http.Request) {
 	}
 	attrs := sa.GetAttributes()
 	displayName := attrs.Get("cn")
+
 	fmt.Fprintf(w, "Hello, %s!\n", displayName)
 	fmt.Fprintf(w, "\nAll attributes:\n")
 	for name, values := range attrs {

@@ -1,0 +1,53 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deployment.yaml
+  - service.yaml
+  - dependencies.yaml
+  - traefik.yaml
+  - jobs.yaml
+
+configMapGenerator:
+  - name: postgres-init
+    files:
+      - ../deployments/docker/postgres/init-database.sql
+  - name: hydra-config
+    files:
+      - hydra/hydra.yml
+  - name: kratos-config
+    files:
+      - kratos/kratos.yml
+      - kratos/identity.json
+      - kratos/identity.schema.json
+      - kratos/schema.jsonnet
+
+secretGenerator:
+  - name: postgres-credentials
+    literals:
+      # NOTE: This password is intended for local development only. Do NOT use this manifest as-is in production;
+      #       override this secret via a production overlay or external secret management.
+      - password=postgres
+  - name: hydra-credentials
+    literals:
+      - client-secret=secret
+  - name: saml-certs
+    files: # Assuming certs are generated locally by make certs
+      - bridge.crt=../.local/certs/bridge.crt
+      - bridge.key=../.local/certs/bridge.key
+    type: Opaque
+    options:
+      disableNameSuffixHash: true # Keep name stable if needed, but for secrets usually better with hash. However, deployment references specific specific names.
+      # Deployment uses:
+      # secretKeyRef: name: postgres-credentials
+      # secretKeyRef: name: hydra-credentials
+      # secretKeyRef: name: saml-certs
+      # Kustomize adds suffix hash by default. We need to update deployment.yaml or disable suffix hash.
+      # Or let Kustomize update the deployment automatically (it does for configMaps/secrets generated here).
+  - name: kratos
+    envs:
+      - secrets/kratos.env
+generatorOptions:
+  disableNameSuffixHash: true # Match existing manifests that reference fixed secret/configMap names.
+  # When deployment.yaml is included in resources, Kustomize can update references to match generated secret/configMap names.
+  # Files referenced via `files:` (such as certs) must exist at Kustomize/Skaffold render time.

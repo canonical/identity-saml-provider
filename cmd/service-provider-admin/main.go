@@ -46,6 +46,14 @@ func main() {
 	addCmd.MarkFlagRequired("entity-id")
 	addCmd.MarkFlagRequired("acs-url")
 
+	// Add validation for output format
+	addCmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if outputFormat != "human" && outputFormat != "json" {
+			return fmt.Errorf("invalid output format: %q (must be 'human' or 'json')", outputFormat)
+		}
+		return nil
+	}
+
 	rootCmd.AddCommand(addCmd)
 
 	if err := rootCmd.Execute(); err != nil {

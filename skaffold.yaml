@@ -1,0 +1,53 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+build:
+  artifacts:
+  - image: identity-saml-provider
+    custom:
+      buildCommand: ./build.sh
+      dependencies:
+        paths:
+          - rockcraft.yaml
+    platforms: ["linux/amd64"]
+manifests:
+  kustomize:
+    paths:
+    - k8s
+    buildArgs:
+    - "--load-restrictor"
+    - "LoadRestrictionsNone"  # To load the init-database.sql which lives outside the k8s directory. We could move it inside k8s if we want to avoid this.
+deploy:
+  kubectl: {}
+portForward:
+  - resourceType: service
+    resourceName: traefik
+    port: 80
+    localPort: 8080
+  - resourceType: service
+    resourceName: identity-saml-provider
+    port: 8082
+    localPort: 8082
+  - resourceType: service
+    resourceName: hydra
+    port: 4444
+    localPort: 4444
+  - resourceType: service
+    resourceName: hydra
+    port: 4445
+    localPort: 4445
+  - resourceType: service
+    resourceName: postgres
+    port: 5432
+    localPort: 5432
+  - resourceType: service
+    resourceName: login-ui
+    port: 4455
+    localPort: 4455
+  - resourceType: service
+    resourceName: kratos
+    port: 4433
+    localPort: 4433
+  - resourceType: service
+    resourceName: kratos
+    port: 4434
+    localPort: 4434

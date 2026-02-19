@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hydra-setup
+  labels:
+    app: hydra-setup
+spec:
+  template:
+    spec:
+      containers:
+      - name: hydra-setup
+        image: ghcr.io/canonical/hydra:25.4.0
+        command:
+          - hydra
+          - create
+          - client
+          - --endpoint
+          - http://hydra:4445
+          - --id
+          - $(SAML_PROVIDER_OIDC_CLIENT_ID)
+          - --secret
+          - $(SAML_PROVIDER_OIDC_CLIENT_SECRET)
+          - --grant-type
+          - authorization_code,refresh_token
+          - --response-type
+          - code,id_token
+          - --scope
+          - openid,email,profile
+          - --redirect-uri
+          - http://localhost:8082/callback
+          - --name
+          - "Identity SAML Provider"
+        env:
+        - name: SAML_PROVIDER_OIDC_CLIENT_ID
+          value: identity-saml-provider
+        - name: SAML_PROVIDER_OIDC_CLIENT_SECRET
+          value: secret
+        - name: SAML_PROVIDER_BRIDGE_BASE_URL
+          value: http://identity-saml-provider:8082 # Inside cluster URL
+      restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kratos-setup
+  labels:
+    app: kratos-setup
+spec:
+  template:
+    spec:
+      containers:
+      - name: kratos-setup
+        image: ghcr.io/canonical/kratos:25.4.0
+        command:
+          - kratos
+          - import
+          - identities
+          - /etc/config/kratos/identity.json
+          - --endpoint
+          - http://kratos:4434
+        volumeMounts:
+        - name: kratos-config
+          mountPath: /etc/config/kratos
+      volumes:
+      - name: kratos-config
+        configMap:
+          name: kratos-config
+      restartPolicy: OnFailure
