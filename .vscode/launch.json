@@ -17,7 +17,7 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/example-saml-service",
+            "program": "${workspaceFolder}/test/saml-service",
         }
     ],
     "compounds": [

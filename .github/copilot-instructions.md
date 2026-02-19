@@ -108,7 +108,6 @@ Both adapt SAML library interfaces to server's DB/auth model.
 ## Critical Integration Points
 
 ### Ory Hydra Integration
-- Expects client ID/secret configured in Hydra (`hydra/clients.da.json`)
 - Uses OpenID Provider discovery: `/.well-known/openid-configuration`
 - Scopes requested: `openid`, `email`, `profile`
 - ID token must contain user identifiers for SAML attribute mapping

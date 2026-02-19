@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-saml-provider
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: identity-saml-provider
+  template:
+    metadata:
+      labels:
+        app: identity-saml-provider
+    spec:
+      containers:
+        - name: identity-saml-provider
+          image: identity-saml-provider
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8082
+              name: http
+          env:
+            # Database Configuration
+            - name: SAML_PROVIDER_DB_HOST
+              value: postgres
+            - name: SAML_PROVIDER_DB_PORT
+              value: "5432"
+            - name: SAML_PROVIDER_DB_USER
+              value: postgres
+            - name: SAML_PROVIDER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: SAML_PROVIDER_DB_NAME
+              value: postgres
+            # Bridge Configuration
+            - name: SAML_PROVIDER_BRIDGE_BASE_URL
+              value: http://localhost:8082
+            # Hydra Configuration
+            - name: SAML_PROVIDER_HYDRA_PUBLIC_URL
+              value: http://hydra:4444
+            - name: SAML_PROVIDER_OIDC_CLIENT_ID
+              value: identity-saml-provider
+            - name: SAML_PROVIDER_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hydra-credentials
+                  key: client-secret
+            # SAML Certificate Paths
+            - name: SAML_PROVIDER_CERT_PATH
+              value: /etc/saml/certs/bridge.crt
+            - name: SAML_PROVIDER_KEY_PATH
+              value: /etc/saml/certs/bridge.key
+          volumeMounts:
+            - name: saml-certs
+              mountPath: /etc/saml/certs
+              readOnly: true
+      volumes:
+        - name: saml-certs
+          secret:
+            secretName: saml-certs
+            defaultMode: 0440

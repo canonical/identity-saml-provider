@@ -1,0 +1,253 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  ports:
+  - port: 5432
+  selector:
+    app: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16
+        env:
+        - name: POSTGRES_USER
+          value: "postgres"
+        # WARNING: Insecure static password for local development only.
+        # Do NOT use this configuration or password in production.
+        - name: POSTGRES_PASSWORD
+          value: "postgres"
+        # WARNING: 'trust' disables password authentication and is insecure.
+        # This is intended only for local development and must not be used in production.
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: trust
+        volumeMounts:
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: init-script
+        configMap:
+          name: postgres-init
+          items:
+          - key: init-database.sql
+            path: init-database.sql
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hydra
+  labels:
+    app: hydra
+spec:
+  ports:
+  - port: 4444
+    name: public
+    targetPort: 4444
+  - port: 4445
+    name: admin
+    targetPort: 4445
+  selector:
+    app: hydra
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hydra
+  labels:
+    app: hydra
+spec:
+  selector:
+    matchLabels:
+      app: hydra
+  template:
+    metadata:
+      labels:
+        app: hydra
+    spec:
+      initContainers:
+      - name: hydra-migrate
+        image: ghcr.io/canonical/hydra:25.4.0
+        command: ["hydra", "migrate", "-c", "/etc/config/hydra/hydra.yml", "sql", "-e", "--yes"]
+        env:
+        - name: DSN
+          value: postgres://hydra:hydra@postgres:5432/hydra?sslmode=disable
+        volumeMounts:
+        - name: hydra-config
+          mountPath: /etc/config/hydra
+      containers:
+      - name: hydra
+        image: ghcr.io/canonical/hydra:25.4.0
+        command: ["hydra", "serve", "-c", "/etc/config/hydra/hydra.yml", "all", "--dev"]
+        env:
+        - name: DSN
+          value: postgres://hydra:hydra@postgres:5432/hydra?sslmode=disable
+        ports:
+        - containerPort: 4444
+          name: public
+        - containerPort: 4445
+          name: admin
+        volumeMounts:
+        - name: hydra-config
+          mountPath: /etc/config/hydra
+      volumes:
+      - name: hydra-config
+        configMap:
+          name: hydra-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: login-ui
+  labels:
+    app: login-ui
+spec:
+  ports:
+  - port: 4455
+    targetPort: 4455
+  selector:
+    app: login-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: login-ui
+  labels:
+    app: login-ui
+spec:
+  selector:
+    matchLabels:
+      app: login-ui
+  template:
+    metadata:
+      labels:
+        app: login-ui
+    spec:
+      containers:
+      - name: login-ui
+        image: ghcr.io/canonical/identity-platform-login-ui:latest
+        ports:
+        - containerPort: 4455
+        env:
+        - name: KRATOS_PUBLIC_URL
+          value: http://kratos:4433
+        - name: KRATOS_ADMIN_URL
+          value: http://kratos:4434
+        - name: HYDRA_ADMIN_URL
+          value: http://hydra:4445
+        - name: BASE_URL
+          value: http://localhost:8080
+        - name: COOKIES_ENCRYPTION_KEY
+          # Insecure development-only key. Do NOT use this in production.
+          # In production, override COOKIES_ENCRYPTION_KEY with a strong, random
+          # secret sourced from a secure store (for example, a Kubernetes Secret).
+          value: WrfOcYmVBwyduEbKYTUhO4X7XVaOQ1wF
+        - name: PORT
+          value: "4455"
+        - name: LOG_LEVEL
+          value: DEBUG
+        - name: TRACING_ENABLED
+          value: "FALSE"
+        - name: OPENFGA_API_SCHEME
+          value: http
+        - name: OPENFGA_API_HOST
+          value: openfga:8080
+        - name: OPENFGA_STORE_ID
+          value: 01GP1254CHWJC1MNGVB0WDG1T0
+        - name: IDENTIFIER_FIRST_ENABLED
+          value: "false"
+        - name: AUTHORIZATION_ENABLED
+          value: "false"
+        - name: OIDC_WEBAUTHN_SEQUENCING_ENABLED
+          value: "false"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kratos
+  labels:
+    app: kratos
+spec:
+  ports:
+  - port: 4433
+    name: public
+    targetPort: 4433
+  - port: 4434
+    name: admin
+    targetPort: 4434
+  selector:
+    app: kratos
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kratos
+  labels:
+    app: kratos
+spec:
+  selector:
+    matchLabels:
+      app: kratos
+  template:
+    metadata:
+      labels:
+        app: kratos
+    spec:
+      initContainers:
+      - name: kratos-migrate
+        image: ghcr.io/canonical/kratos:25.4.0
+        command: ["kratos", "-c", "/etc/config/kratos/kratos.yml", "migrate", "sql", "-e", "--yes"]
+        env:
+        - name: DSN
+          value: postgres://kratos:kratos@postgres:5432/kratos?sslmode=disable
+        volumeMounts:
+        - name: kratos-config
+          mountPath: /etc/config/kratos
+      containers:
+      - name: kratos
+        image: ghcr.io/canonical/kratos:25.4.0
+        command: ["kratos", "serve", "-c", "/etc/config/kratos/kratos.yml", "--dev", "--watch-courier"]
+        env:
+        - name: DSN
+          value: postgres://kratos:kratos@postgres:5432/kratos?sslmode=disable
+        - name: LOG_LEVEL
+          value: trace
+        - name: SELFSERVICE_METHODS_OIDC_CONFIG_PROVIDERS_0_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: kratos
+              key: client-id
+        - name: SELFSERVICE_METHODS_OIDC_CONFIG_PROVIDERS_0_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: kratos
+              key: client-secret
+        ports:
+        - containerPort: 4433
+          name: public
+        - containerPort: 4434
+          name: admin
+        volumeMounts:
+        - name: kratos-config
+          mountPath: /etc/config/kratos
+      volumes:
+      - name: kratos-config
+        configMap:
+          name: kratos-config

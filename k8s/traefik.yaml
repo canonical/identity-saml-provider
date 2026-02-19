@@ -1,0 +1,214 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: traefik-dynamic-config
+data:
+  dynamic.yml: |
+    http:
+      middlewares:
+        replace-webauthn-path:
+          replacePath:
+            path: /.well-known/ory/webauthn.js
+        replace-login-ui-self-service-path:
+          replacePathRegex:
+            regex: ^/self-service/(.*)
+            replacement: /api/kratos/self-service/$1
+
+      routers:
+        kratos-well-known-webauthn:
+          entryPoints:
+            - web
+          rule: Path(`/.well-known/webauthn.js`)
+          middlewares:
+            - replace-webauthn-path
+          service: kratos-public
+
+        kratos-oidc-callback:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/self-service/methods/oidc/callback`)
+          service: kratos-public
+
+        kratos-schemas:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/schemas`)
+          service: kratos-public
+
+        kratos-admin-identities:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/admin/identities`)
+          service: kratos-admin
+
+        kratos-admin-recovery:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/admin/recovery`)
+          service: kratos-admin
+
+        kratos-admin-sessions:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/admin/sessions`)
+          service: kratos-admin
+
+        hydra-public-oauth2:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/oauth2`)
+          service: hydra-public
+
+        hydra-public-well-known-jwks:
+          entryPoints:
+            - web
+          rule: Path(`/.well-known/jwks.json`)
+          service: hydra-public
+
+        hydra-public-well-known-openid:
+          entryPoints:
+            - web
+          rule: Path(`/.well-known/openid-configuration`)
+          service: hydra-public
+
+        hydra-public-userinfo:
+          entryPoints:
+            - web
+          rule: Path(`/userinfo`)
+          service: hydra-public
+
+        hydra-admin-oauth2:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/admin/oauth2`)
+          service: hydra-admin
+
+        hydra-admin-clients:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/admin/clients`)
+          service: hydra-admin
+
+        hydra-admin-trust:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/admin/trust`)
+          service: hydra-admin
+
+        hydra-admin-keys:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/admin/keys`)
+          service: hydra-admin
+
+        login-ui-public-api-self-service:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/self-service`)
+          middlewares:
+            - replace-login-ui-self-service-path
+          service: login-ui-public-api
+
+        login-ui-public-api-device:
+          entryPoints:
+            - web
+          rule: Path(`/api/device`)
+          service: login-ui-public-api
+
+        login-ui-public-api-consent:
+          entryPoints:
+            - web
+          rule: Path(`/api/consent`)
+          service: login-ui-public-api
+
+        login-ui-public-api-config:
+          entryPoints:
+            - web
+          rule: Path(`/api/v0/app-config`)
+          service: login-ui-public-api
+
+        login-ui-public-api-ui:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/ui`)
+          service: login-ui-public-api
+
+        login-ui-public-api-root:
+          entryPoints:
+            - web
+          rule: PathPrefix(`/`)
+          service: login-ui-public-api
+
+      services:
+        login-ui-public-api:
+          loadBalancer:
+            servers:
+              - url: http://login-ui:4455
+
+        hydra-public:
+          loadBalancer:
+            servers:
+              - url: http://hydra:4444
+
+        hydra-admin:
+          loadBalancer:
+            servers:
+              - url: http://hydra:4445
+
+        kratos-public:
+          loadBalancer:
+            servers:
+              - url: http://kratos:4433
+
+        kratos-admin:
+          loadBalancer:
+            servers:
+              - url: http://kratos:4434
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  labels:
+    app: traefik
+spec:
+  selector:
+    app: traefik
+  ports:
+    - name: web
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traefik
+  labels:
+    app: traefik
+spec:
+  selector:
+    matchLabels:
+      app: traefik
+  template:
+    metadata:
+      labels:
+        app: traefik
+    spec:
+      containers:
+        - name: traefik
+          image: traefik:v2.10
+          args:
+            - --entrypoints.web.address=:80
+            - --providers.file.filename=/etc/traefik/dynamic.yml
+            - --providers.file.watch=true
+            - --api.insecure=true
+          ports:
+            - name: web
+              containerPort: 80
+          volumeMounts:
+            - name: traefik-dynamic-config
+              mountPath: /etc/traefik
+      volumes:
+        - name: traefik-dynamic-config
+          configMap:
+            name: traefik-dynamic-config

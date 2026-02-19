@@ -28,7 +28,7 @@ graph TD
 
 ## Quick Start
 
-### Running Locally
+### Running Locally with Docker Compose
 
 1. **Run the supporting services** (generates certs and starts the supporting services):
 
@@ -74,6 +74,55 @@ graph TD
    make down
    ```
 
+### Running with Skaffold
+
+#### Prerequisites
+
+-   **Kubernetes Cluster**: `microk8s` (recommended) or any K8s cluster.
+    -   Enable addons: `sudo microk8s enable dns hostpath-storage registry`
+-   **Skaffold**: [Install Skaffold](https://skaffold.dev/docs/install/) (if not using `snap` or included tools).
+-   **Kustomize**: Required for generating manifests (Skaffold usually handles this).
+-   **Make**: To generate certificates.
+
+#### Setup
+
+First, ensure your kubernetes configuration is available at the default location (`~/.kube/config`). If you are using `microk8s`, you can generate this file with:
+
+```bash
+mkdir -p ~/.kube && microk8s config > ~/.kube/config
+```
+
+Next, generate the required certificates for the environment:
+
+```bash
+make certs
+```
+
+This will create the necessary certificates in `.local/certs` for the SAML provider.
+
+Add the OIDC provider credentials (for Ory Kratos) to a `.env` file in `k8s/secrets/kratos.env`:
+
+```bash
+client-id=your-kratos-oidc-client-id
+client-secret=your-kratos-oidc-client-secret
+```
+
+Finally, redirect the host `hydra` to localhost in your `/etc/hosts` file:
+
+```text
+127.0.0.1 hydra
+```
+
+This is necessary for Ory Hydra to function correctly in the local environment, because the container needs to use the same address / hostname as your browser. There's probably a better way to accomplish this, but this is the simplest for now.
+
+#### Run
+
+To start the development environment with Skaffold using your microk8s OCI registry, run:
+
+```bash
+skaffold dev --default-repo=localhost:32000
+```
+
 ## Configuration
 
 ### Environment Variables and Kratos OIDC Configuration
@@ -88,18 +137,6 @@ A `.env` file is recommended for this purpose. Commonly used variables include:
 KRATOS_OIDC_PROVIDER_CLIENT_ID=my-client-id
 KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
 ```
-
-### Configure for complete Docker Compose setup
-
-Add the following entries to your `/etc/hosts` file for local testing:
-
-```text
-127.0.0.1 hydra
-```
-
-This is necessary for Ory Hydra to function correctly in the local environment, because the container needs to use the same address / hostname as your browser. There's probably a better way to accomplish this, but this is the simplest for now.
-
-You will also need to modify the Ory Kratos configuration file in `docker/kratos/kratos.yml` to set the issuer URL to `http://hydra:4444/` instead of `http://localhost:4444/`.
 
 ## License
 

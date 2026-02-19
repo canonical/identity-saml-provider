@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-saml-provider
+spec:
+  type: ClusterIP
+  selector:
+    app: identity-saml-provider
+  ports:
+    - protocol: TCP
+      port: 8082
+      targetPort: 8082
+      name: http

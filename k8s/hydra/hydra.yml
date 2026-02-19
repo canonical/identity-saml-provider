@@ -1,0 +1,45 @@
+serve:
+  cookies:
+    same_site_mode: Lax
+  admin:
+    cors:
+      enabled: true
+      allowed_origins:
+        - "*"
+  public:
+    cors:
+      enabled: true
+      allowed_origins:
+        - "*"
+
+log:
+  leak_sensitive_values: true
+  level: debug
+
+oauth2:
+  expose_internal_errors: true
+  device_authorization:
+    # configure how often a non-interactive device should poll the device token endpoint, default 5s
+    token_polling_interval: 5s
+
+strategies:
+  access_token: jwt
+  jwt:
+    scope_claim: list
+  scope: exact
+
+urls:
+  self:
+    issuer: http://hydra:4444
+  consent: http://localhost:8080/ui/consent
+  login: http://localhost:8080/ui/login
+  error: http://localhost:8080/ui/oidc_error
+  device:
+    verification: http://localhost:8080/ui/device_code
+    success: http://localhost:8080/ui/device_complete
+
+secrets:
+  system:
+    # NOTE: This weak default is intended only for local development.
+    # In production, configure a strong, randomly generated secret (for example via the SECRETS_SYSTEM env var or a Kubernetes Secret) instead of this value.
+    - youReallyNeedToChangeThis
