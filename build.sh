@@ -2,9 +2,9 @@
 
 # The script requires:
 # - rockcraft
-# - skopeo with sudo privilege
+# - skopeo
 # - yq
-# - docker
+# - an OCI container registry
 
 set -e
 
@@ -15,6 +15,6 @@ rockcraft pack -v
 echo "$IMAGE built"
 
 if [ "${PUSH_IMAGE}" = "true" ]; then
-  skopeo --insecure-policy copy oci-archive:identity-saml-provider_$(yq -r '.version' rockcraft.yaml)_amd64.rock docker://$IMAGE --dest-tls-verify=false
+  skopeo --insecure-policy copy "oci-archive:identity-saml-provider_$(yq -r '.version' rockcraft.yaml)_amd64.rock" "docker://$IMAGE" --dest-tls-verify=false
   echo "$IMAGE pushed"
 fi

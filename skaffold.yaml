@@ -13,9 +13,6 @@ manifests:
   kustomize:
     paths:
     - k8s
-    buildArgs:
-    - "--load-restrictor"
-    - "LoadRestrictionsNone"  # To load the init-database.sql which lives outside the k8s directory. We could move it inside k8s if we want to avoid this.
 deploy:
   kubectl: {}
 portForward:

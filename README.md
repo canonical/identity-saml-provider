@@ -30,10 +30,23 @@ graph TD
 
 ### Running Locally with Docker Compose
 
+#### Set up
+
+To use an OIDC provider like GitHub or Google with Ory Kratos, you will need to set the appropriate environment variables
+
+A `.env` file is recommended for this purpose. Commonly used variables include:
+
+```bash
+KRATOS_OIDC_PROVIDER_CLIENT_ID=my-client-id
+KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
+```
+
+#### Run the Environment
+
 1. **Run the supporting services** (generates certs and starts the supporting services):
 
    ```bash
-   make dev
+   make docker
    ```
 
 2. **Run the SAML provider**:
@@ -44,29 +57,22 @@ graph TD
    make run
    ```
 
-3. **Run the example SAML service**:
+3. **Register the example SAML service**:
 
-   In another terminal, run the example-saml-service:
+   In another terminal, register the example SAML service with the SAML provider, and then run it.
 
    ```bash
-   cd example-saml-service
+   cd test/saml-service
+   make register
    make run
    ```
 
-4. **Register the example SAML service**:
 
-   In another terminal, register the example SAML service with the SAML provider:
-
-   ```bash
-   cd example-saml-service
-   make register
-   ```
-
-5. **Access the services**:
+4. **Access the services**:
 
    In a browser, access the Example SAML Service: <https://localhost:8083/hello>
 
-6. **Shut down supporting services**:
+5. **Shut down supporting services**:
 
    To stop all running services, use:
 
@@ -95,12 +101,12 @@ mkdir -p ~/.kube && microk8s config > ~/.kube/config
 Next, generate the required certificates for the environment:
 
 ```bash
-make certs
+make k8s-certs
 ```
 
-This will create the necessary certificates in `.local/certs` for the SAML provider.
+This will create the necessary certificates in `k8s/certs` for the SAML provider.
 
-Add the OIDC provider credentials (for Ory Kratos) to a `.env` file in `k8s/secrets/kratos.env`:
+Create or edit `k8s/secrets/kratos.env` and add your OIDC provider credentials (for Ory Kratos) in the following `key=value` format (or, if these values are already set in your root `.env` file, run `make k8s-copy-secrets` to generate/update `k8s/secrets/kratos.env` automatically):
 
 ```bash
 client-id=your-kratos-oidc-client-id
@@ -120,23 +126,14 @@ This is necessary for Ory Hydra to function correctly in the local environment, 
 To start the development environment with Skaffold using your microk8s OCI registry, run:
 
 ```bash
-skaffold dev --default-repo=localhost:32000
+skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
 ```
 
 ## Configuration
 
 ### Environment Variables and Kratos OIDC Configuration
 
-See the [`config.go`](config.go) file for configuration options, which can all be set via environment variables.
-
-To use an OIDC provider like GitHub or Google with Ory Kratos, you will need to set the appropriate environment variables. There are several other variables you may need to set depending on your setup. Check the docker compose files for reference.
-
-A `.env` file is recommended for this purpose. Commonly used variables include:
-
-```bash
-KRATOS_OIDC_PROVIDER_CLIENT_ID=my-client-id
-KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
-```
+See the [`config.go`](internal/provider/config.go) file for configuration options specific to the SAML provider, which can all be set via environment variables.
 
 ## License
 
