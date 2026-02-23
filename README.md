@@ -84,11 +84,11 @@ KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
 
 #### Prerequisites
 
--   **Kubernetes Cluster**: `microk8s` (recommended) or any K8s cluster.
-    -   Enable addons: `sudo microk8s enable dns hostpath-storage registry`
--   **Skaffold**: [Install Skaffold](https://skaffold.dev/docs/install/) (if not using `snap` or included tools).
--   **Kustomize**: Required for generating manifests (Skaffold usually handles this).
--   **Make**: To generate certificates.
+- **Kubernetes Cluster**: `microk8s` (recommended) or any K8s cluster.
+  - Enable addons: `sudo microk8s enable dns hostpath-storage registry`
+- **Skaffold**: [Install Skaffold](https://skaffold.dev/docs/install/) (if not using `snap` or included tools).
+- **Kustomize**: Required for generating manifests (Skaffold usually handles this).
+- **Make**: To generate certificates.
 
 #### Setup
 
