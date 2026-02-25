@@ -1,0 +1,36 @@
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - main
+    - "release-**"
+
+permissions:
+    contents: write
+    pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
+        id: release
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          # optional. customize path to release-please-config.json
+          config-file: release-please-config.json
+          # optional. customize path to .release-please-manifest.json
+          manifest-file: .release-please-manifest.json
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        if: ${{ steps.release.outputs.pr != '' }}
+      - name: Workaround for https://github.com/googleapis/release-please/issues/922
+        if: ${{ steps.release.outputs.pr != '' }}
+        run: |
+          echo "Closing and reopening PR to trigger checks"
+          gh pr close ${{ fromJSON(steps.release.outputs.pr).number }} || true
+          gh pr reopen ${{ fromJSON(steps.release.outputs.pr).number }} || true
+          gh pr merge --auto --merge ${{ fromJSON(steps.release.outputs.pr).number }} || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
