@@ -135,6 +135,10 @@ skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
 
 See the [`config.go`](internal/provider/config.go) file for configuration options specific to the SAML provider, which can all be set via environment variables.
 
+### Connecting to an External Identity Provider
+
+See the [Connecting to an External Identity Provider](docs/external-idp.md) guide for instructions on how to connect your local deployment to an external IDP such as one of the Prodstack IAM instances.
+
 ## License
 
 See the [LICENSE](LICENSE) file for details.
