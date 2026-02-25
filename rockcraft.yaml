@@ -2,7 +2,7 @@ name: identity-saml-provider
 # keeping base as ubuntu for now due to debugging phase
 base: bare
 build-base: ubuntu@24.04
-version: 1.0.0
+version: 0.0.0 # x-release-please-version
 summary: Canonical Identity SAML Provider
 description: >
   This is the Canonical Identity SAML Provider used for bridging SAML authentication to OIDC flows

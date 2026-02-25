@@ -1,5 +1,11 @@
 .PHONY: help build build-cli certs k8s-certs k8s-copy-secrets k8s clean run docker down test
 
+# VERSION is derived from git. `--dirty` is included when uncommitted changes exist
+VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || echo "v0.0.0")
+
+# LDFLAGS injects the version into the binary at build time. Use this in CI/builds.
+LDFLAGS := -ldflags "-X github.com/canonical/identity-saml-provider/internal/version.Version=$(VERSION)"
+
 help:
 	@echo "SAML Provider Root Makefile"
 	@echo ""
@@ -19,11 +25,13 @@ help:
 	@echo "  test               - Run all tests"
 
 build:
-	go build -o bin/identity-saml-provider ./cmd/identity-saml-provider
-	go build -o bin/service-provider-admin ./cmd/service-provider-admin
+	@echo "Building with version: $(VERSION)"
+	go build $(LDFLAGS) -o bin/identity-saml-provider ./cmd/identity-saml-provider
+	go build $(LDFLAGS) -o bin/service-provider-admin ./cmd/service-provider-admin
 
 build-cli:
-	go build -o bin/service-provider-admin ./cmd/service-provider-admin
+	@echo "Building CLI with version: $(VERSION)"
+	go build $(LDFLAGS) -o bin/service-provider-admin ./cmd/service-provider-admin
 
 test:
 	go test -v ./...
@@ -66,7 +74,8 @@ k8s: k8s-certs k8s-copy-secrets
 	skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
 
 run: certs
-	go run ./cmd/identity-saml-provider
+	@echo "Running with version: $(VERSION)"
+	go run $(LDFLAGS) ./cmd/identity-saml-provider
 
 clean:
 	rm -rf bin/

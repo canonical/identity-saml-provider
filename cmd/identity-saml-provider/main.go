@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/canonical/identity-saml-provider/internal/provider"
+	"github.com/canonical/identity-saml-provider/internal/version"
 	"github.com/kelseyhightower/envconfig"
 	_ "github.com/lib/pq"
 	"go.uber.org/zap"
@@ -32,6 +33,9 @@ func main() {
 	}
 	defer zapLogger.Sync()
 	logger := zapLogger.Sugar()
+
+	// Print startup version information
+	logger.Infow("Starting identity-saml-provider", "version", version.Version)
 
 	// Load configuration from environment variables
 	var config provider.Config
