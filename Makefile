@@ -79,7 +79,7 @@ docker:
 	@echo "Development services are up and running"
 	@echo "Next steps:"
 	@echo "1. In one terminal, run the provider: \`make run\`"
-	@echo "2. In another terminal, run the example service: \`make service-run\`"
+	@echo "2. In another terminal, register and run the example service: \`cd test/saml-service && make register && make run\`"
 	@echo "3. Visit the client application at http://localhost:8083/hello"
 
 down:
