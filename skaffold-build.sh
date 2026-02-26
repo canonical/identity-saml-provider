@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# This script builds the OCI image for the identity-saml-provider plugin and optionally pushes it to a container registry.
+# It is meant to be used by Skaffold.
+
 # The script requires:
 # - rockcraft
 # - skopeo
