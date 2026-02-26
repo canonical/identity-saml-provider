@@ -4,7 +4,7 @@ build:
   artifacts:
   - image: identity-saml-provider
     custom:
-      buildCommand: ./build.sh
+      buildCommand: ./skaffold-build.sh
       dependencies:
         paths:
           - rockcraft.yaml
