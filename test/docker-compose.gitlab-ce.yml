@@ -1,0 +1,34 @@
+services:
+  gitlab-ce:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab-ce
+    hostname: localhost
+    restart: unless-stopped
+    shm_size: "256m"
+    ports:
+      - "8929:8929"
+      - "2224:22"
+    volumes:
+      - ${GITLAB_DATA_ROOT:-/home/darndt/tmp/gitlab}/config:/etc/gitlab
+      - ${GITLAB_DATA_ROOT:-/home/darndt/tmp/gitlab}/logs:/var/log/gitlab
+      - ${GITLAB_DATA_ROOT:-/home/darndt/tmp/gitlab}/data:/var/opt/gitlab
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:8929'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2224
+        gitlab_rails['omniauth_enabled'] = true
+        gitlab_rails['omniauth_allow_single_sign_on'] = ['saml']
+        gitlab_rails['omniauth_block_auto_created_users'] = false
+        gitlab_rails['omniauth_providers'] = [
+          {
+            name: 'saml',
+            label: 'SAML',
+            args: {
+              issuer: 'http://localhost:8929',
+              assertion_consumer_service_url: 'http://localhost:8929/users/auth/saml/callback',
+              idp_sso_target_url: 'http://localhost:8082/saml/sso',
+              idp_cert_fingerprint: '${IDP_CERT_FP:-REPLACE_WITH_IDP_CERT_FINGERPRINT}',
+              name_identifier_format: 'urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress'
+            }
+          }
+        ]

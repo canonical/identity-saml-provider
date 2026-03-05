@@ -1,0 +1,68 @@
+services:
+  saml-sp:
+    image: gunet/simple-saml-sp
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        if [[ ! -v SIMPLESAMLPHP_SP_HOSTNAME || ! -v SIMPLESAMLPHP_SP_PORT ]]; then
+          echo "SIMPLESAMLPHP_SP_HOSTNAME or SIMPLESAMLPHP_SP_PORT are not set. Exiting!"
+          exit 1
+        fi
+
+        export SIMPLESAMLPHP_SP_ASSERTION_CONSUMER_SERVICE="http://$${SIMPLESAMLPHP_SP_HOSTNAME}:$${SIMPLESAMLPHP_SP_PORT}/simplesaml/module.php/saml/sp/saml2-acs.php/default-sp"
+        export SIMPLESAMLPHP_SP_SINGLE_LOGOUT_SERVICE="http://$${SIMPLESAMLPHP_SP_HOSTNAME}:$${SIMPLESAMLPHP_SP_PORT}/simplesaml/module.php/saml/sp/saml2-logout.php/default-sp"
+        export SIMPLESAMLPHP_SP_ENTITY_ID="http://$${SIMPLESAMLPHP_SP_HOSTNAME}:$${SIMPLESAMLPHP_SP_PORT}"
+
+        sed -i "s/Listen 8080/Listen $${SIMPLESAMLPHP_SP_PORT}/" /etc/apache2/ports.conf
+        sed -i "s/<VirtualHost \*:8080>/<VirtualHost *:$${SIMPLESAMLPHP_SP_PORT}>/" /etc/apache2/sites-enabled/simplesamlphp.conf
+
+        if [[ ! -v IDP_ENTITYID || ! -v IDP_METADATA_PATH ]]; then
+          echo "IDP_ENTITYID or IDP_METADATA_PATH are not set. Cannot determine the SAML IdP metadata endpoint!"
+          exit 1
+        fi
+
+        METADATA_ENDPOINT="$${IDP_ENTITYID}$${IDP_METADATA_PATH}"
+        if [[ -v IDP_BASE_URL ]]; then
+          METADATA_ENDPOINT="$${IDP_BASE_URL}$${IDP_METADATA_PATH}"
+        fi
+
+        echo -n "Trying to download IdP metadata from $${METADATA_ENDPOINT}.. "
+        curl --connect-timeout 3 -sk "$${METADATA_ENDPOINT}" >/var/tmp/idp-metadata.xml 2>/dev/null
+
+        if [[ ! -s /var/tmp/idp-metadata.xml ]]; then
+          echo "metadata is empty"
+          exit 1
+        fi
+
+        if ! grep -q '<EntityDescriptor' /var/tmp/idp-metadata.xml; then
+          echo "metadata does not look like SAML metadata XML"
+          exit 1
+        fi
+
+        if ! grep -q '^<?xml version' /var/tmp/idp-metadata.xml; then
+          {
+            echo '<?xml version="1.0" encoding="UTF-8"?>'
+            cat /var/tmp/idp-metadata.xml
+          } >/var/tmp/idp-metadata.with-decl.xml
+          mv /var/tmp/idp-metadata.with-decl.xml /var/tmp/idp-metadata.xml
+        fi
+
+        echo "Finished"
+
+        echo "Importing metadata to metadata/saml20-idp-remote.php.."
+        cd /var/www/simplesamlphp/www/admin
+        echo "<?php" >/var/www/simplesamlphp/metadata/saml20-idp-remote.php
+        php metadata-converter-command.php -f /var/tmp/idp-metadata.xml 2>/dev/null >>/var/www/simplesamlphp/metadata/saml20-idp-remote.php
+        echo "Done"
+
+        exec apache2-foreground
+    # ports:
+    #   - ${SAML_SP_PORT:-3001}:3001
+    environment:
+      - IDP_ENTITYID=http://localhost:8082/saml/metadata
+      - IDP_BASE_URL=http://localhost:8082/saml
+      - IDP_METADATA_PATH=/metadata
+      - SIMPLESAMLPHP_SP_HOSTNAME=localhost
+      - SIMPLESAMLPHP_SP_PORT=${SIMPLESAMLPHP_SP_PORT:-3001}
+    network_mode: host
