@@ -9,8 +9,9 @@
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}",
-            "args": ["--verbose"]
+            "program": "${workspaceFolder}/cmd/identity-saml-provider",
+            "args": ["--verbose"],
+            "cwd": "${workspaceFolder}"
         },
         {
             "name": "Service (SAML Client)",
