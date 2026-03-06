@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.1](https://github.com/canonical/identity-saml-provider/compare/identity-saml-provider-v0.1.0...identity-saml-provider-v0.1.1) (2026-03-06)
+
+
+### Features
+
+* allow insecure hydra connections ([e06ec27](https://github.com/canonical/identity-saml-provider/commit/e06ec27990c46c33141a2b6c9040229a1f14e5c6))
+* allow insecure hydra connections ([#39](https://github.com/canonical/identity-saml-provider/issues/39)) ([3c4fa05](https://github.com/canonical/identity-saml-provider/commit/3c4fa05a9bedc8df29280103f85fc27d6423f5c3))
+* allow setting hydra ca cert ([c0b444c](https://github.com/canonical/identity-saml-provider/commit/c0b444cd9293a9c47f533c69b63bab3c342e6e6c))
+* allow setting hydra ca cert ([#41](https://github.com/canonical/identity-saml-provider/issues/41)) ([2a21b17](https://github.com/canonical/identity-saml-provider/commit/2a21b176f9b98dbebc3a6689b285332413dea846))
+
 ## 0.1.0 (2026-02-26)
 
 
