@@ -4,10 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -110,6 +112,7 @@ func setupTestServer(t *testing.T) *Server {
 		db:              NewDatabase(testDB, logger),
 		pendingRequests: make(map[string]pendingAuthnRequest),
 		router:          chi.NewRouter(),
+		hydraHTTPClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	return server
@@ -417,20 +420,6 @@ func TestHandleServiceProviderRegistration_DefaultBinding(t *testing.T) {
 	}
 }
 
-func TestHandleOIDCCallback_MissingCode(t *testing.T) {
-	server := setupTestServer(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/callback", nil)
-	rec := httptest.NewRecorder()
-
-	server.handleOIDCCallback(rec, req)
-
-	resp := rec.Result()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, resp.StatusCode)
-	}
-}
-
 func TestServiceProviderAdapter_GetServiceProvider(t *testing.T) {
 	logger := zaptest.NewLogger(t).Sugar()
 	mockDB := newMockDatabase()
@@ -717,5 +706,389 @@ func TestInitialize(t *testing.T) {
 
 	if server.samlIdp == nil {
 		t.Error("Expected SAML IdP to be initialized")
+	}
+}
+
+func TestWithHydraHTTPClient_WithClient(t *testing.T) {
+	server := setupTestServer(t)
+
+	customClient := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	server.hydraHTTPClient = customClient
+
+	ctx := context.Background()
+	result := server.withHydraHTTPClient(ctx)
+
+	// Should return a new context with the client embedded
+	retrievedClient := result.Value(oauth2.HTTPClient)
+	if retrievedClient == nil {
+		t.Fatal("Expected HTTP client to be in context")
+	}
+
+	if retrievedClient.(*http.Client) != customClient {
+		t.Error("Expected retrieved client to match the hydraHTTPClient")
+	}
+}
+
+func TestWithHydraHTTPClient_PreservesExistingValues(t *testing.T) {
+	server := setupTestServer(t)
+
+	customClient := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	server.hydraHTTPClient = customClient
+
+	// Create a context with an existing value
+	ctx := context.WithValue(context.Background(), "testKey", "testValue")
+	result := server.withHydraHTTPClient(ctx)
+
+	// Should preserve the existing value
+	if result.Value("testKey") != "testValue" {
+		t.Error("Expected existing context value to be preserved")
+	}
+
+	// Should also have the HTTP client
+	if result.Value(oauth2.HTTPClient) == nil {
+		t.Error("Expected HTTP client to be in context")
+	}
+}
+
+func TestHandleOIDCCallback_NoCode(t *testing.T) {
+	server := setupTestServer(t)
+
+	// Request without code parameter
+	req := httptest.NewRequest(http.MethodGet, "/callback?state=test", nil)
+	rec := httptest.NewRecorder()
+
+	server.handleOIDCCallback(rec, req)
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "No code in callback") {
+		t.Errorf("Expected error message about missing code, got: %s", string(body))
+	}
+}
+
+func TestHandleOIDCCallback_InvalidCode(t *testing.T) {
+	server := setupTestServer(t)
+	server.oauth2Config = &oauth2.Config{
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+		RedirectURL:  "http://localhost:8082/callback",
+		Scopes:       []string{"openid"},
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "http://localhost:4444/oauth2/auth",
+			TokenURL: "http://localhost:4444/oauth2/token",
+		},
+	}
+
+	// Request with invalid code
+	req := httptest.NewRequest(http.MethodGet, "/callback?code=invalid-code&state=test", nil)
+	rec := httptest.NewRecorder()
+
+	server.handleOIDCCallback(rec, req)
+
+	resp := rec.Result()
+	// Should get an error because the code is invalid (no real Hydra server)
+	if resp.StatusCode < 400 {
+		t.Errorf("Expected error status, got %d", resp.StatusCode)
+	}
+}
+
+func TestSessionProviderAdapter_GetSession_WithExpiredSession(t *testing.T) {
+	server := setupTestServer(t)
+
+	// Skip if database is not available
+	if server.db.db == nil {
+		t.Skip("Skipping test: database not available")
+	}
+
+	// Initialize database schema
+	if err := server.db.InitSchema(); err != nil {
+		t.Skipf("Cannot initialize schema: %v", err)
+	}
+
+	server.oauth2Config = &oauth2.Config{
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+		RedirectURL:  "http://localhost:8082/callback",
+		Scopes:       []string{"openid"},
+	}
+
+	// Create an expired session
+	sessionID := "expired-session-123"
+	expiredSession := &saml.Session{
+		ID:             sessionID,
+		CreateTime:     time.Now().Add(-20 * time.Minute),
+		ExpireTime:     time.Now().Add(-10 * time.Minute), // Already expired
+		Index:          sessionID,
+		NameID:         "test@example.com",
+		UserEmail:      "test@example.com",
+		UserCommonName: "Test User",
+		Groups:         []string{},
+	}
+
+	if err := server.db.SaveSession(expiredSession); err != nil {
+		t.Skipf("Cannot save test session: %v", err)
+	}
+
+	adapter := &sessionProviderAdapter{server: server}
+
+	// Create a request with expired session cookie
+	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=test", nil)
+	req.AddCookie(&http.Cookie{
+		Name:  "saml_session",
+		Value: sessionID,
+	})
+
+	rec := httptest.NewRecorder()
+
+	authnRequest := &saml.IdpAuthnRequest{
+		Request: saml.AuthnRequest{
+			ID: "test-auth-request",
+		},
+		RelayState: "test-relay",
+	}
+
+	result := adapter.GetSession(rec, req, authnRequest)
+
+	// Should return nil for expired session
+	if result != nil {
+		t.Error("Expected nil session for expired session")
+	}
+
+	// Should have stored pending request
+	if _, ok := server.pendingRequests["test-auth-request"]; !ok {
+		t.Error("Expected pending request to be stored")
+	}
+}
+
+func TestSessionProviderAdapter_GetSession_WithRelayState(t *testing.T) {
+	server := setupTestServer(t)
+	server.oauth2Config = &oauth2.Config{
+		ClientID:     "test-client",
+		ClientSecret: "test-secret",
+		RedirectURL:  "http://localhost:8082/callback",
+		Scopes:       []string{"openid"},
+	}
+
+	adapter := &sessionProviderAdapter{server: server}
+
+	// Create a request with RelayState in the AuthnRequest
+	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=encoded-request", nil)
+	rec := httptest.NewRecorder()
+
+	authnRequest := &saml.IdpAuthnRequest{
+		Request: saml.AuthnRequest{
+			ID: "test-request-with-relay",
+		},
+		RelayState: "my-relay-state",
+	}
+
+	result := adapter.GetSession(rec, req, authnRequest)
+
+	// Should return nil and redirect
+	if result != nil {
+		t.Error("Expected nil session")
+	}
+
+	// Should preserve RelayState in pending requests
+	if pending, ok := server.pendingRequests["test-request-with-relay"]; !ok {
+		t.Error("Expected pending request to be stored")
+	} else {
+		if pending.relayState != "my-relay-state" {
+			t.Errorf("Expected RelayState 'my-relay-state', got '%s'", pending.relayState)
+		}
+	}
+}
+
+func TestHandleServiceProviderRegistration_EmptyACSBinding(t *testing.T) {
+	server := setupTestServer(t)
+	if server.db.db == nil {
+		t.Skip("Skipping test: database not available")
+	}
+
+	if err := server.db.InitSchema(); err != nil {
+		t.Skipf("Cannot initialize schema: %v", err)
+	}
+
+	server.SetupRoutes()
+
+	// Request without acs_binding should use default HTTP-POST
+	reqBody := map[string]string{
+		"entity_id": "http://example.com/metadata",
+		"acs_url":   "http://example.com/acs",
+		// Intentionally omit acs_binding
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/admin/service-providers", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	server.handleServiceProviderRegistration(rec, req)
+
+	resp := rec.Result()
+	if resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Errorf("Expected status %d, got %d. Body: %s", http.StatusCreated, resp.StatusCode, string(bodyBytes))
+	}
+
+	// Verify the SP was saved with default binding
+	descriptor, err := server.db.GetServiceProvider("http://example.com/metadata")
+	if err != nil {
+		t.Skipf("Cannot verify saved provider: %v", err)
+	}
+
+	if len(descriptor.SPSSODescriptors) == 0 || len(descriptor.SPSSODescriptors[0].AssertionConsumerServices) == 0 {
+		t.Fatal("Expected AssertionConsumerServices to be populated")
+	}
+
+	actualBinding := descriptor.SPSSODescriptors[0].AssertionConsumerServices[0].Binding
+	if actualBinding != saml.HTTPPostBinding {
+		t.Errorf("Expected default binding %s, got %s", saml.HTTPPostBinding, actualBinding)
+	}
+}
+
+func TestHandleServiceProviderRegistration_PostBinding(t *testing.T) {
+	server := setupTestServer(t)
+	if server.db.db == nil {
+		t.Skip("Skipping test: database not available")
+	}
+
+	if err := server.db.InitSchema(); err != nil {
+		t.Skipf("Cannot initialize schema: %v", err)
+	}
+
+	server.SetupRoutes()
+
+	reqBody := map[string]string{
+		"entity_id":   "http://example.com/metadata",
+		"acs_url":     "http://example.com/acs",
+		"acs_binding": saml.HTTPPostBinding,
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/admin/service-providers", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	server.handleServiceProviderRegistration(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, rec.Code)
+	}
+}
+
+func TestHandleServiceProviderRegistration_RedirectBinding(t *testing.T) {
+	server := setupTestServer(t)
+	if server.db.db == nil {
+		t.Skip("Skipping test: database not available")
+	}
+
+	if err := server.db.InitSchema(); err != nil {
+		t.Skipf("Cannot initialize schema: %v", err)
+	}
+
+	server.SetupRoutes()
+
+	reqBody := map[string]string{
+		"entity_id":   "http://example.com/metadata",
+		"acs_url":     "http://example.com/acs",
+		"acs_binding": saml.HTTPRedirectBinding,
+	}
+
+	body, _ := json.Marshal(reqBody)
+	req := httptest.NewRequest(http.MethodPost, "/admin/service-providers", strings.NewReader(string(body)))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	server.handleServiceProviderRegistration(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, rec.Code)
+	}
+}
+
+func TestServiceProviderAdapter_GetServiceProvider_NotFound(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+
+	testDB, err := sql.Open("postgres", "postgres://saml_provider:saml_provider@localhost:5432/saml_provider_tests?sslmode=disable")
+	if err != nil || testDB.Ping() != nil {
+		t.Skip("Skipping test: database not available")
+	}
+	defer testDB.Close()
+
+	db := NewDatabase(testDB, logger)
+	if err := db.InitSchema(); err != nil {
+		t.Skipf("Cannot initialize schema: %v", err)
+	}
+
+	adapter := &serviceProviderAdapter{db: db}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	descriptor, err := adapter.GetServiceProvider(req, "http://nonexistent.com/metadata")
+
+	if err == nil {
+		t.Error("Expected error for non-existent service provider")
+	}
+
+	if descriptor != nil {
+		t.Error("Expected nil descriptor for non-existent service provider")
+	}
+
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Expected error to match os.ErrNotExist, got %v", err)
+	}
+}
+
+func TestParseURL_ValidURL(t *testing.T) {
+	server := setupTestServer(t)
+
+	testCases := []struct {
+		input  string
+		scheme string
+		host   string
+		path   string
+	}{
+		{
+			input:  "http://example.com/path",
+			scheme: "http",
+			host:   "example.com",
+			path:   "/path",
+		},
+		{
+			input:  "https://example.com:8080/path?query=value",
+			scheme: "https",
+			host:   "example.com:8080",
+			path:   "/path",
+		},
+		{
+			input:  "http://localhost:8082/saml/metadata",
+			scheme: "http",
+			host:   "localhost:8082",
+			path:   "/saml/metadata",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			parsed := server.parseURL(tc.input)
+
+			if parsed.Scheme != tc.scheme {
+				t.Errorf("Expected scheme %s, got %s", tc.scheme, parsed.Scheme)
+			}
+			if parsed.Host != tc.host {
+				t.Errorf("Expected host %s, got %s", tc.host, parsed.Host)
+			}
+			if parsed.Path != tc.path {
+				t.Errorf("Expected path %s, got %s", tc.path, parsed.Path)
+			}
+		})
 	}
 }
