@@ -2,14 +2,21 @@ package provider
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"database/sql"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -1091,4 +1098,125 @@ func TestParseURL_ValidURL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewHydraHTTPClient_WithCustomCACert(t *testing.T) {
+	server := setupTestServer(t)
+	server.config.HydraInsecureSkipTLSVerify = false
+
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "hydra-ca.pem")
+	if err := os.WriteFile(certPath, generateTestCertificatePEM(t), 0o600); err != nil {
+		t.Fatalf("Failed to write test certificate: %v", err)
+	}
+
+	server.config.HydraCACertPath = certPath
+
+	client, err := server.newHydraHTTPClient()
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Expected *http.Transport, got %T", client.Transport)
+	}
+
+	if transport.TLSClientConfig == nil {
+		t.Fatal("Expected TLSClientConfig to be set")
+	}
+
+	if transport.TLSClientConfig.RootCAs == nil {
+		t.Fatal("Expected RootCAs to be set when HydraCACertPath is configured")
+	}
+
+	if transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("Expected InsecureSkipVerify to be false")
+	}
+}
+
+func TestNewHydraHTTPClient_MissingCACertPath(t *testing.T) {
+	server := setupTestServer(t)
+	server.config.HydraCACertPath = filepath.Join(t.TempDir(), "does-not-exist.pem")
+
+	_, err := server.newHydraHTTPClient()
+	if err == nil {
+		t.Fatal("Expected error for missing Hydra CA certificate path")
+	}
+
+	if !strings.Contains(err.Error(), "failed to read Hydra CA certificate") {
+		t.Fatalf("Expected read error message, got %v", err)
+	}
+}
+
+func TestNewHydraHTTPClient_InvalidCACertPEM(t *testing.T) {
+	server := setupTestServer(t)
+
+	tmpDir := t.TempDir()
+	certPath := filepath.Join(tmpDir, "invalid-ca.pem")
+	if err := os.WriteFile(certPath, []byte("not-a-valid-pem"), 0o600); err != nil {
+		t.Fatalf("Failed to write invalid PEM file: %v", err)
+	}
+
+	server.config.HydraCACertPath = certPath
+
+	_, err := server.newHydraHTTPClient()
+	if err == nil {
+		t.Fatal("Expected error for invalid Hydra CA certificate PEM")
+	}
+
+	if !strings.Contains(err.Error(), "failed to parse Hydra CA certificate PEM") {
+		t.Fatalf("Expected parse error message, got %v", err)
+	}
+}
+
+func TestNewHydraHTTPClient_InsecureSkipVerify(t *testing.T) {
+	server := setupTestServer(t)
+	server.config.HydraInsecureSkipTLSVerify = true
+
+	client, err := server.newHydraHTTPClient()
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Expected *http.Transport, got %T", client.Transport)
+	}
+
+	if transport.TLSClientConfig == nil {
+		t.Fatal("Expected TLSClientConfig to be set")
+	}
+
+	if !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("Expected InsecureSkipVerify to be true")
+	}
+}
+
+func generateTestCertificatePEM(t *testing.T) []byte {
+	t.Helper()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate private key: %v", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "test-hydra-ca",
+		},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+
+	certificateDER, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatalf("Failed to create certificate: %v", err)
+	}
+
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificateDER})
 }

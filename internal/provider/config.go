@@ -9,6 +9,7 @@ type Config struct {
 	// Ory Hydra Configuration
 	HydraPublicURL             string `envconfig:"SAML_PROVIDER_HYDRA_PUBLIC_URL" default:"http://localhost:4444"`
 	HydraInsecureSkipTLSVerify bool   `envconfig:"SAML_PROVIDER_HYDRA_INSECURE_SKIP_TLS_VERIFY" default:"false"`
+	HydraCACertPath            string `envconfig:"SAML_PROVIDER_HYDRA_CA_CERT_PATH" default:""`
 	ClientID                   string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_ID" default:"service-bridge-client"`
 	ClientSecret               string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_SECRET" default:"secret"`
 
