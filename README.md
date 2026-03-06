@@ -135,7 +135,9 @@ skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
 
 See the [`config.go`](internal/provider/config.go) file for configuration options specific to the SAML provider, which can all be set via environment variables.
 
-For local or non-production environments with self-signed certificates, you can set `SAML_PROVIDER_HYDRA_INSECURE_SKIP_TLS_VERIFY=true` to disable TLS certificate verification for outbound Hydra OIDC requests.
+For local or non-production environments with custom or self-signed certificate chains, set `SAML_PROVIDER_HYDRA_CA_CERT_PATH` to a PEM file containing the trusted CA certificate used by Hydra.
+
+As a last resort for local testing only, you can set `SAML_PROVIDER_HYDRA_INSECURE_SKIP_TLS_VERIFY=true` to disable TLS certificate verification for outbound Hydra OIDC requests.
 
 ### Connecting to an External Identity Provider
 

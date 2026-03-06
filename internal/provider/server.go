@@ -55,16 +55,11 @@ func NewServer(cfg Config, logger *zap.SugaredLogger, sqlDB *sql.DB) (*Server, e
 func (s *Server) Initialize(ctx context.Context, zapLogger *zap.Logger) error {
 	// Initialize OIDC Provider (Hydra)
 	s.logger.Infow("Connecting to Ory Hydra", "url", s.config.HydraPublicURL)
-	if s.config.HydraInsecureSkipTLSVerify {
-		s.logger.Warn("Hydra TLS certificate verification is disabled")
+	hydraHTTPClient, err := s.newHydraHTTPClient()
+	if err != nil {
+		return err
 	}
-
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: s.config.HydraInsecureSkipTLSVerify}
-	s.hydraHTTPClient = &http.Client{
-		Transport: transport,
-		Timeout:   30 * time.Second,
-	}
+	s.hydraHTTPClient = hydraHTTPClient
 
 	// InsecureIssuerURLContext is used here for local testing where the URL
 	// used by the provider does not match the public facing URL.
@@ -116,6 +111,42 @@ func (s *Server) Initialize(ctx context.Context, zapLogger *zap.Logger) error {
 	}
 
 	return nil
+}
+
+func (s *Server) newHydraHTTPClient() (*http.Client, error) {
+	if s.config.HydraInsecureSkipTLSVerify {
+		s.logger.Warn("Hydra TLS certificate verification is disabled. Do not use this setting in production!")
+	}
+
+	var rootCAs *x509.CertPool
+	if s.config.HydraCACertPath != "" {
+		caCert, err := os.ReadFile(s.config.HydraCACertPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read Hydra CA certificate %q: %w", s.config.HydraCACertPath, err)
+		}
+
+		rootCAs, err = x509.SystemCertPool()
+		if err != nil || rootCAs == nil {
+			rootCAs = x509.NewCertPool()
+		}
+
+		if ok := rootCAs.AppendCertsFromPEM(caCert); !ok {
+			return nil, fmt.Errorf("failed to parse Hydra CA certificate PEM from %q", s.config.HydraCACertPath)
+		}
+
+		s.logger.Infow("Loaded custom Hydra CA certificate", "path", s.config.HydraCACertPath)
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{
+		InsecureSkipVerify: s.config.HydraInsecureSkipTLSVerify,
+		RootCAs:            rootCAs,
+	}
+
+	return &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}, nil
 }
 
 // SetupRoutes configures the HTTP routes for the server
