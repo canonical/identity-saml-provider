@@ -25,6 +25,7 @@ import (
 type Server struct {
 	config          Config
 	logger          *zap.SugaredLogger
+	hydraHTTPClient *http.Client
 	oauth2Config    *oauth2.Config
 	oidcVerifier    *oidc.IDTokenVerifier
 	samlIdp         *saml.IdentityProvider
@@ -54,8 +55,20 @@ func NewServer(cfg Config, logger *zap.SugaredLogger, sqlDB *sql.DB) (*Server, e
 func (s *Server) Initialize(ctx context.Context, zapLogger *zap.Logger) error {
 	// Initialize OIDC Provider (Hydra)
 	s.logger.Infow("Connecting to Ory Hydra", "url", s.config.HydraPublicURL)
+	if s.config.HydraInsecureSkipTLSVerify {
+		s.logger.Warn("Hydra TLS certificate verification is disabled")
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: s.config.HydraInsecureSkipTLSVerify}
+	s.hydraHTTPClient = &http.Client{
+		Transport: transport,
+		Timeout:   30 * time.Second,
+	}
+
 	// InsecureIssuerURLContext is used here for local testing where the URL
 	// used by the provider does not match the public facing URL.
+	ctx = s.withHydraHTTPClient(ctx)
 	ctx = oidc.InsecureIssuerURLContext(ctx, s.config.HydraPublicURL)
 	provider, err := oidc.NewProvider(ctx, s.config.HydraPublicURL)
 	if err != nil {
@@ -180,10 +193,9 @@ func (sp *sessionProviderAdapter) GetSession(w http.ResponseWriter, r *http.Requ
 
 // -------------------------------------------------------------------------
 // OIDC Callback Handler
-// -------------------------------------------------------------------------
 func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("Handling OIDC callback from Hydra")
-	ctx := context.Background()
+	ctx := s.withHydraHTTPClient(r.Context())
 
 	// 1. Exchange the Authorization Code for tokens
 	code := r.URL.Query().Get("code")
@@ -295,6 +307,14 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// 6. Redirect back to the SAML SSO handler to continue the flow
 	s.logger.Info("Session created, redirecting back to SAML SSO handler")
 	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+func (s *Server) withHydraHTTPClient(ctx context.Context) context.Context {
+	if s.hydraHTTPClient == nil {
+		return ctx
+	}
+
+	return context.WithValue(ctx, oauth2.HTTPClient, s.hydraHTTPClient)
 }
 
 // -------------------------------------------------------------------------
