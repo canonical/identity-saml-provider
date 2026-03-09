@@ -1,7 +1,7 @@
 name: identity-saml-provider
 base: bare
 build-base: ubuntu@24.04
-version: 0.1.1
+version: 0.1.0
 summary: Canonical Identity SAML Provider
 description: >
   This is the Canonical Identity SAML Provider used for bridging SAML
