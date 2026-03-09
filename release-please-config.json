@@ -9,6 +9,7 @@
             "prerelease": false,
             "pull-request-title-pattern": "ci: release ${version}",
             "package-name": "identity-saml-provider",
+            "include-component-in-tag": false,
             "extra-files": [
                 "rockcraft.yaml",
                 "internal/version/const.go"
