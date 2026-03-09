@@ -14,12 +14,12 @@ on:
 
 jobs:
   build:
-    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@2a4ae518f9c792dcdf14d05f8d86e3d72e160d96 # v1.9.0
+    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@6b27807be4ec7c25045d52ef09ac780d684f65a2 # v1.10.0
   unit-test:
     uses: ./.github/workflows/unittest.yaml
   gh-publish:
     if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
     needs: [ build, unit-test ]
-    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@2a4ae518f9c792dcdf14d05f8d86e3d72e160d96 # v1.9.0
+    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@6b27807be4ec7c25045d52ef09ac780d684f65a2 # v1.10.0
     with:
       rock: ${{ needs.build.outputs.rock }}
