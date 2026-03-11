@@ -6,6 +6,13 @@ type Config struct {
 	BridgeBasePort string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_PORT" default:"8082"`
 	BridgeBaseURL  string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_URL" default:"http://localhost:8082"`
 
+	// Observability Configuration
+	TracingEnabled   bool    `envconfig:"SAML_PROVIDER_TRACING_ENABLED" default:"false"`
+	OtelHTTPEndpoint string  `envconfig:"SAML_PROVIDER_OTEL_HTTP_ENDPOINT" default:""`
+	OtelGRPCEndpoint string  `envconfig:"SAML_PROVIDER_OTEL_GRPC_ENDPOINT" default:""`
+	OtelSampler      string  `envconfig:"SAML_PROVIDER_OTEL_SAMPLER" default:"parentbased_traceidratio"`
+	OtelSamplerRatio float64 `envconfig:"SAML_PROVIDER_OTEL_SAMPLER_RATIO" default:"0.1"`
+
 	// Ory Hydra Configuration
 	HydraPublicURL             string `envconfig:"SAML_PROVIDER_HYDRA_PUBLIC_URL" default:"http://localhost:4444"`
 	HydraInsecureSkipTLSVerify bool   `envconfig:"SAML_PROVIDER_HYDRA_INSECURE_SKIP_TLS_VERIFY" default:"false"`

@@ -6,7 +6,9 @@ import (
 	"flag"
 	"fmt"
 
+	"github.com/canonical/identity-saml-provider/internal/monitoring/prometheus"
 	"github.com/canonical/identity-saml-provider/internal/provider"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/internal/version"
 	"github.com/kelseyhightower/envconfig"
 	_ "github.com/lib/pq"
@@ -64,7 +66,22 @@ func main() {
 	// -------------------------------------------------------------------------
 	// 2. Create and Initialize Server
 	// -------------------------------------------------------------------------
-	server, err := provider.NewServer(config, logger, db)
+	monitor := prometheus.NewMonitor("identity-saml-provider", logger)
+	tracer := tracing.NewTracer(tracing.NewConfig(
+		config.TracingEnabled,
+		config.OtelGRPCEndpoint,
+		config.OtelHTTPEndpoint,
+		config.OtelSampler,
+		config.OtelSamplerRatio,
+		logger,
+	))
+	defer func() {
+		if err := tracer.Shutdown(); err != nil {
+			logger.Warnw("Failed to shutdown tracer", "error", err)
+		}
+	}()
+
+	server, err := provider.NewServer(config, logger, db, monitor, tracer)
 	if err != nil {
 		logger.Fatalw("Failed to create server", "error", err)
 	}

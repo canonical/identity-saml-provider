@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -21,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canonical/identity-saml-provider/internal/monitoring"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/crewjam/saml"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap/zaptest"
@@ -96,9 +99,25 @@ func (m *mockDatabase) CleanupExpiredSessions() error {
 	return nil
 }
 
+func newHydraStubServer(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+	t.Helper()
+
+	if handler == nil {
+		handler = func(w http.ResponseWriter, r *http.Request) {
+			http.NotFound(w, r)
+		}
+	}
+
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+
+	return server
+}
+
 // setupTestServer creates a test server with mock dependencies
 func setupTestServer(t *testing.T) *Server {
 	logger := zaptest.NewLogger(t).Sugar()
+	hydraStub := newHydraStubServer(t, nil)
 
 	// Create a test database connection matching the setup in database_test.go
 	testDB, err := sql.Open("postgres", "postgres://saml_provider:saml_provider@localhost:5432/saml_provider_tests?sslmode=disable")
@@ -111,7 +130,7 @@ func setupTestServer(t *testing.T) *Server {
 		config: Config{
 			BridgeBaseURL:  "http://localhost:8082",
 			BridgeBasePort: "8082",
-			HydraPublicURL: "http://localhost:4444",
+			HydraPublicURL: hydraStub.URL,
 			ClientID:       "test-client",
 			ClientSecret:   "test-secret",
 		},
@@ -119,7 +138,9 @@ func setupTestServer(t *testing.T) *Server {
 		db:              NewDatabase(testDB, logger),
 		pendingRequests: make(map[string]pendingAuthnRequest),
 		router:          chi.NewRouter(),
-		hydraHTTPClient: &http.Client{Timeout: 5 * time.Second},
+		hydraHTTPClient: hydraStub.Client(),
+		monitor:         monitoring.NewNoopMonitor("identity-saml-provider", logger),
+		tracer:          tracing.NewNoopTracer(),
 	}
 
 	return server
@@ -133,7 +154,13 @@ func TestNewServer(t *testing.T) {
 		BridgeBaseURL: "http://localhost:8082",
 	}
 
-	server, err := NewServer(cfg, logger, db)
+	server, err := NewServer(
+		cfg,
+		logger,
+		db,
+		monitoring.NewNoopMonitor("identity-saml-provider", logger),
+		tracing.NewNoopTracer(),
+	)
 	if err != nil {
 		t.Fatalf("NewServer failed: %v", err)
 	}
@@ -783,14 +810,24 @@ func TestHandleOIDCCallback_NoCode(t *testing.T) {
 
 func TestHandleOIDCCallback_InvalidCode(t *testing.T) {
 	server := setupTestServer(t)
+	hydraStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth2/token" {
+			http.Error(w, "stubbed token exchange failure", http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer hydraStub.Close()
+
+	server.hydraHTTPClient = hydraStub.Client()
 	server.oauth2Config = &oauth2.Config{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
 		RedirectURL:  "http://localhost:8082/callback",
 		Scopes:       []string{"openid"},
 		Endpoint: oauth2.Endpoint{
-			AuthURL:  "http://localhost:4444/oauth2/auth",
-			TokenURL: "http://localhost:4444/oauth2/token",
+			AuthURL:  hydraStub.URL + "/oauth2/auth",
+			TokenURL: hydraStub.URL + "/oauth2/token",
 		},
 	}
 
@@ -801,7 +838,7 @@ func TestHandleOIDCCallback_InvalidCode(t *testing.T) {
 	server.handleOIDCCallback(rec, req)
 
 	resp := rec.Result()
-	// Should get an error because the code is invalid (no real Hydra server)
+	// Should get an error because the token exchange fails against the stub server.
 	if resp.StatusCode < 400 {
 		t.Errorf("Expected error status, got %d", resp.StatusCode)
 	}
@@ -1219,4 +1256,430 @@ func generateTestCertificatePEM(t *testing.T) []byte {
 	}
 
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificateDER})
+}
+
+// -----------------------------------------------
+// Observability Tests (Metrics & Tracing)
+// -----------------------------------------------
+
+func TestMetricsEndpointExists(t *testing.T) {
+	server := setupTestServer(t)
+	server.samlIdp = &saml.IdentityProvider{
+		MetadataURL: url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/metadata"},
+		SSOURL:      url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/sso"},
+	}
+
+	server.SetupRoutes()
+
+	// Verify /metrics route is registered
+	routes := []string{}
+	err := chi.Walk(server.router, func(method string, route string, handler http.Handler, middlewares ...func(http.Handler) http.Handler) error {
+		routes = append(routes, method+" "+route)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("failed to walk routes: %v", err)
+	}
+
+	found := false
+	for _, route := range routes {
+		if strings.Contains(route, "GET /metrics") {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("Expected GET /metrics route, got routes: %v", routes)
+	}
+}
+
+func TestMetricsEndpointReturnsPrometheusData(t *testing.T) {
+	server := setupTestServer(t)
+	server.samlIdp = &saml.IdentityProvider{
+		MetadataURL: url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/metadata"},
+		SSOURL:      url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/sso"},
+	}
+
+	server.SetupRoutes()
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+
+	server.router.ServeHTTP(rec, req)
+
+	resp := rec.Result()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("Failed to read response body: %v", err)
+	}
+	bodyStr := string(body)
+
+	// Prometheus metrics endpoint should return content-type text/plain
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" || !strings.Contains(contentType, "text/plain") {
+		t.Errorf("Expected text/plain content-type, got %s", contentType)
+	}
+
+	// Body should be non-empty and contain Prometheus text format markers
+	if len(bodyStr) == 0 {
+		t.Fatalf("Expected non-empty metrics response body")
+	}
+
+	if !strings.Contains(bodyStr, "# HELP") && !strings.Contains(bodyStr, "# TYPE") {
+		snippet := bodyStr
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		t.Fatalf("Metrics response does not contain Prometheus HELP/TYPE markers. Snippet: %s", snippet)
+	}
+}
+
+func TestResponseTimeMiddlewareRecordsMetrics(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+
+	// Create a mock monitor that tracks calls
+	mockMonitor := &testMockMonitor{
+		metrics: make(map[string]map[string]float64),
+	}
+
+	server := &Server{
+		config: Config{
+			BridgeBaseURL:  "http://localhost:8082",
+			BridgeBasePort: "8082",
+		},
+		logger:          logger,
+		monitor:         mockMonitor,
+		tracer:          tracing.NewNoopTracer(),
+		pendingRequests: make(map[string]pendingAuthnRequest),
+		router:          chi.NewRouter(),
+	}
+
+	server.samlIdp = &saml.IdentityProvider{
+		MetadataURL: url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/metadata"},
+		SSOURL:      url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/sso"},
+	}
+
+	server.SetupRoutes()
+
+	// Make a request to /metrics (simple endpoint that doesn't require DB)
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+
+	server.router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	if len(mockMonitor.metrics) == 0 {
+		t.Fatal("Expected response-time metric to be recorded")
+	}
+
+	if len(mockMonitor.responseTimeCalls) == 0 {
+		t.Fatal("Expected SetResponseTimeMetric to be called at least once")
+	}
+
+	call := mockMonitor.responseTimeCalls[0]
+	if call.Tags["route"] != "GET/metrics" {
+		t.Fatalf("Expected route tag GET/metrics, got %q", call.Tags["route"])
+	}
+
+	if call.Tags["status"] != "200" {
+		t.Fatalf("Expected status tag 200, got %q", call.Tags["status"])
+	}
+
+	if call.Value < 0 {
+		t.Fatalf("Expected duration to be >= 0, got %f", call.Value)
+	}
+}
+
+func TestResponseTimeMiddlewareIncludesRouteAndStatus(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+
+	mockMonitor := &testMockMonitor{
+		metrics: make(map[string]map[string]float64),
+	}
+
+	server := &Server{
+		config: Config{
+			BridgeBaseURL:  "http://localhost:8082",
+			BridgeBasePort: "8082",
+		},
+		logger:          logger,
+		monitor:         mockMonitor,
+		tracer:          tracing.NewNoopTracer(),
+		pendingRequests: make(map[string]pendingAuthnRequest),
+		router:          chi.NewRouter(),
+	}
+
+	server.samlIdp = &saml.IdentityProvider{
+		MetadataURL: url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/metadata"},
+		SSOURL:      url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/sso"},
+	}
+
+	server.SetupRoutes()
+
+	// Make a request to /metrics which should succeed
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	rec := httptest.NewRecorder()
+
+	server.router.ServeHTTP(rec, req)
+
+	// Status should be 200
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	if len(mockMonitor.responseTimeCalls) == 0 {
+		t.Fatal("Expected SetResponseTimeMetric to be called at least once")
+	}
+
+	found := false
+	for _, call := range mockMonitor.responseTimeCalls {
+		if call.Tags["route"] == "GET/metrics" && call.Tags["status"] == "200" {
+			if call.Value < 0 {
+				t.Fatalf("Expected duration to be >= 0, got %f", call.Value)
+			}
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		t.Fatalf("Expected a response-time metric call with route=GET/metrics and status=200, got calls: %+v", mockMonitor.responseTimeCalls)
+	}
+}
+
+func TestDependencyAvailabilityOnHydraInitialize(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+	hydraStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/.well-known/openid-configuration" {
+			http.Error(w, "stubbed hydra discovery failure", http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer hydraStub.Close()
+
+	mockMonitor := &testMockMonitor{
+		metrics: make(map[string]map[string]float64),
+	}
+
+	server := &Server{
+		config: Config{
+			BridgeBaseURL:  "http://localhost:8082",
+			ClientID:       "test-client",
+			ClientSecret:   "test-secret",
+			HydraPublicURL: hydraStub.URL,
+		},
+		logger:          logger,
+		monitor:         mockMonitor,
+		tracer:          tracing.NewNoopTracer(),
+		pendingRequests: make(map[string]pendingAuthnRequest),
+		router:          chi.NewRouter(),
+		hydraHTTPClient: hydraStub.Client(),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Call Initialize which should attempt to connect to Hydra
+	err := server.Initialize(ctx, zaptest.NewLogger(t))
+
+	// Should get an error since Hydra is unavailable
+	if err == nil {
+		t.Fatal("Expected error during Initialize due to Hydra unavailability")
+	}
+
+	if len(mockMonitor.dependencyCalls) == 0 {
+		t.Fatal("Expected SetDependencyAvailability to be called")
+	}
+
+	foundHydraUnavailable := false
+	for _, call := range mockMonitor.dependencyCalls {
+		if call.Tags["component"] == "hydra" && call.Value == 0 {
+			foundHydraUnavailable = true
+			break
+		}
+	}
+
+	if !foundHydraUnavailable {
+		t.Fatalf("Expected a dependency availability call with component=hydra and value=0, got: %+v", mockMonitor.dependencyCalls)
+	}
+}
+
+func TestDependencyAvailabilityOnHydraTokenExchange(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+	hydraStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/oauth2/token" {
+			http.Error(w, "stubbed token exchange failure", http.StatusInternalServerError)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer hydraStub.Close()
+
+	mockMonitor := &testMockMonitor{
+		metrics: make(map[string]map[string]float64),
+	}
+
+	server := &Server{
+		config: Config{
+			BridgeBaseURL: "http://localhost:8082",
+			ClientID:      "test-client",
+			ClientSecret:  "test-secret",
+		},
+		logger:          logger,
+		monitor:         mockMonitor,
+		tracer:          tracing.NewNoopTracer(),
+		pendingRequests: make(map[string]pendingAuthnRequest),
+		router:          chi.NewRouter(),
+		oauth2Config: &oauth2.Config{
+			ClientID:     "test-client",
+			ClientSecret: "test-secret",
+			RedirectURL:  "http://localhost:8082/callback",
+			Scopes:       []string{"openid"},
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  hydraStub.URL + "/oauth2/auth",
+				TokenURL: hydraStub.URL + "/oauth2/token",
+			},
+		},
+		hydraHTTPClient: hydraStub.Client(),
+	}
+
+	server.SetupRoutes()
+
+	// Make request to OIDC callback with invalid code
+	req := httptest.NewRequest(http.MethodGet, "/callback?code=invalid&state=test", nil)
+	rec := httptest.NewRecorder()
+
+	server.handleOIDCCallback(rec, req)
+
+	// Should fail due to invalid Hydra connection, which should trigger dependency metric
+	if rec.Code < 400 {
+		t.Logf("Unexpected success status: %d", rec.Code)
+	}
+
+	if len(mockMonitor.dependencyCalls) == 0 {
+		t.Fatal("Expected SetDependencyAvailability to be called")
+	}
+
+	foundHydraUnavailable := false
+	for _, call := range mockMonitor.dependencyCalls {
+		if call.Tags["component"] == "hydra" && call.Value == 0 {
+			foundHydraUnavailable = true
+			break
+		}
+	}
+
+	if !foundHydraUnavailable {
+		t.Fatalf("Expected a dependency availability call with component=hydra and value=0, got: %+v", mockMonitor.dependencyCalls)
+	}
+}
+
+func TestMetricsEndpointWithCustomServiceName(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+
+	// Create server with custom monitor that has a service name
+	mockMonitor := &testMockMonitor{
+		metrics:     make(map[string]map[string]float64),
+		serviceName: "test-saml-provider",
+	}
+
+	server := &Server{
+		config: Config{
+			BridgeBaseURL:  "http://localhost:8082",
+			BridgeBasePort: "8082",
+		},
+		logger:          logger,
+		monitor:         mockMonitor,
+		tracer:          tracing.NewNoopTracer(),
+		pendingRequests: make(map[string]pendingAuthnRequest),
+		router:          chi.NewRouter(),
+	}
+
+	server.samlIdp = &saml.IdentityProvider{
+		MetadataURL: url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/metadata"},
+		SSOURL:      url.URL{Scheme: "http", Host: "localhost:8082", Path: "/saml/sso"},
+	}
+
+	server.SetupRoutes()
+
+	if mockMonitor.GetService() != "test-saml-provider" {
+		t.Errorf("Expected service name 'test-saml-provider', got %s", mockMonitor.GetService())
+	}
+}
+
+// -----------------------------------------------
+// Test Helper Structs for Mocking Monitoring
+// -----------------------------------------------
+
+type testMockMonitor struct {
+	metrics           map[string]map[string]float64
+	serviceName       string
+	responseTimeCalls []responseTimeMetricCall
+	dependencyCalls   []dependencyAvailabilityCall
+}
+
+type responseTimeMetricCall struct {
+	Tags  map[string]string
+	Value float64
+}
+
+type dependencyAvailabilityCall struct {
+	Tags  map[string]string
+	Value float64
+}
+
+func (m *testMockMonitor) GetService() string {
+	if m.serviceName != "" {
+		return m.serviceName
+	}
+	return "test-service"
+}
+
+func (m *testMockMonitor) SetResponseTimeMetric(tags map[string]string, value float64) error {
+	if m.metrics == nil {
+		m.metrics = make(map[string]map[string]float64)
+	}
+
+	tagsCopy := map[string]string{}
+	for k, v := range tags {
+		tagsCopy[k] = v
+	}
+	m.responseTimeCalls = append(m.responseTimeCalls, responseTimeMetricCall{Tags: tagsCopy, Value: value})
+
+	key := fmt.Sprintf("%s_%s", tags["route"], tags["status"])
+	if m.metrics[key] == nil {
+		m.metrics[key] = make(map[string]float64)
+	}
+
+	m.metrics[key]["duration"] = value
+	return nil
+}
+
+func (m *testMockMonitor) SetDependencyAvailability(tags map[string]string, value float64) error {
+	if m.metrics == nil {
+		m.metrics = make(map[string]map[string]float64)
+	}
+
+	tagsCopy := map[string]string{}
+	for k, v := range tags {
+		tagsCopy[k] = v
+	}
+	m.dependencyCalls = append(m.dependencyCalls, dependencyAvailabilityCall{Tags: tagsCopy, Value: value})
+
+	key := fmt.Sprintf("dep_%s", tags["component"])
+	if m.metrics[key] == nil {
+		m.metrics[key] = make(map[string]float64)
+	}
+
+	m.metrics[key]["availability"] = value
+	return nil
 }
