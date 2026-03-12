@@ -139,6 +139,39 @@ For local or non-production environments with custom or self-signed certificate 
 
 As a last resort for local testing only, you can set `SAML_PROVIDER_HYDRA_INSECURE_SKIP_TLS_VERIFY=true` to disable TLS certificate verification for outbound Hydra OIDC requests.
 
+### Tracing Sampler Configuration
+
+Tracing sampling is configurable and defaults to a production-safe parent-based ratio sampler instead of sampling every request.
+
+To enable tracing, set:
+
+- `SAML_PROVIDER_TRACING_ENABLED=true`
+
+To export traces to an OTLP collector, set one of these endpoint variables:
+
+- `SAML_PROVIDER_OTEL_GRPC_ENDPOINT` for OTLP/gRPC (example: `localhost:4317`)
+- `SAML_PROVIDER_OTEL_HTTP_ENDPOINT` for OTLP/HTTP (example: `localhost:4318`)
+
+Endpoint selection behavior:
+
+- If `SAML_PROVIDER_OTEL_GRPC_ENDPOINT` is set, OTLP/gRPC is used.
+- Otherwise, if `SAML_PROVIDER_OTEL_HTTP_ENDPOINT` is set, OTLP/HTTP is used.
+- If neither endpoint is set, traces are written to stdout.
+
+- `SAML_PROVIDER_OTEL_SAMPLER` (default: `parentbased_traceidratio`)
+- `SAML_PROVIDER_OTEL_SAMPLER_RATIO` (default: `0.1`)
+
+Supported sampler values for `SAML_PROVIDER_OTEL_SAMPLER`:
+
+| Value | Description |
+|-------|-------------|
+| `parentbased_traceidratio` / `parentbased` | **(default)** Child spans follow the parent's sampling decision. New root traces are sampled at `SAML_PROVIDER_OTEL_SAMPLER_RATIO`. |
+| `traceidratio` | Samples every trace (root and child) independently at `SAML_PROVIDER_OTEL_SAMPLER_RATIO`, ignoring the parent decision. |
+| `always_on` | Samples every request. Not recommended for production due to high overhead. |
+| `always_off` | Never samples. Useful for disabling tracing output without disabling the tracer. |
+
+With the default configuration, new root traces are sampled at a ratio of `SAML_PROVIDER_OTEL_SAMPLER_RATIO`, and child spans follow the parent sampling decision.
+
 ### Connecting to an External Identity Provider
 
 See the [Connecting to an External Identity Provider](docs/external-idp.md) guide for instructions on how to connect your local deployment to an external IDP such as one of the Prodstack IAM instances.

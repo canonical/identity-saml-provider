@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,9 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/canonical/identity-saml-provider/internal/monitoring"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/crewjam/saml"
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
@@ -32,6 +36,8 @@ type Server struct {
 	db              *Database
 	pendingRequests map[string]pendingAuthnRequest
 	router          chi.Router
+	monitor         monitoring.MonitorInterface
+	tracer          tracing.TracingInterface
 }
 
 type pendingAuthnRequest struct {
@@ -40,13 +46,22 @@ type pendingAuthnRequest struct {
 }
 
 // NewServer creates a new SAML-OIDC bridge server
-func NewServer(cfg Config, logger *zap.SugaredLogger, sqlDB *sql.DB) (*Server, error) {
+func NewServer(cfg Config, logger *zap.SugaredLogger, sqlDB *sql.DB, monitor monitoring.MonitorInterface, tracer tracing.TracingInterface) (*Server, error) {
+	if monitor == nil {
+		monitor = monitoring.NewNoopMonitor("identity-saml-provider", logger)
+	}
+	if tracer == nil {
+		tracer = tracing.NewNoopTracer()
+	}
+
 	s := &Server{
 		config:          cfg,
 		logger:          logger,
 		db:              NewDatabase(sqlDB, logger),
 		pendingRequests: make(map[string]pendingAuthnRequest),
 		router:          chi.NewRouter(),
+		monitor:         monitor,
+		tracer:          tracer,
 	}
 	return s, nil
 }
@@ -67,8 +82,10 @@ func (s *Server) Initialize(ctx context.Context, zapLogger *zap.Logger) error {
 	ctx = oidc.InsecureIssuerURLContext(ctx, s.config.HydraPublicURL)
 	provider, err := oidc.NewProvider(ctx, s.config.HydraPublicURL)
 	if err != nil {
+		_ = s.monitor.SetDependencyAvailability(map[string]string{"component": "hydra"}, 0)
 		return fmt.Errorf("failed to query Hydra provider: %w", err)
 	}
+	_ = s.monitor.SetDependencyAvailability(map[string]string{"component": "hydra"}, 1)
 
 	s.oidcVerifier = provider.Verifier(&oidc.Config{ClientID: s.config.ClientID})
 
@@ -151,6 +168,8 @@ func (s *Server) newHydraHTTPClient() (*http.Client, error) {
 
 // SetupRoutes configures the HTTP routes for the server
 func (s *Server) SetupRoutes() {
+	s.router.Use(monitoring.NewMiddleware(s.monitor, s.logger).ResponseTime())
+
 	// A. Metadata Endpoint (Service providers need this to configure the connection)
 	s.router.HandleFunc("/saml/metadata", s.samlIdp.ServeMetadata)
 
@@ -162,12 +181,16 @@ func (s *Server) SetupRoutes() {
 
 	// D. Service Provider Registration Endpoint
 	s.router.Post("/admin/service-providers", s.handleServiceProviderRegistration)
+
+	// E. Prometheus Metrics Endpoint
+	s.router.Handle("/metrics", promhttp.Handler())
 }
 
 // Start starts the HTTP server
 func (s *Server) Start() error {
 	s.logger.Infow("SAML-OIDC Bridge listening", "url", s.config.BridgeBaseURL)
-	return http.ListenAndServe(":"+s.config.BridgeBasePort, s.router)
+	handler := tracing.NewMiddleware(s.monitor, s.logger).OpenTelemetry(s.router)
+	return http.ListenAndServe(":"+s.config.BridgeBasePort, handler)
 }
 
 // -------------------------------------------------------------------------
@@ -225,8 +248,11 @@ func (sp *sessionProviderAdapter) GetSession(w http.ResponseWriter, r *http.Requ
 // -------------------------------------------------------------------------
 // OIDC Callback Handler
 func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
+	ctx, span := s.tracer.Start(r.Context(), "provider.handle_oidc_callback")
+	defer span.End()
+
 	s.logger.Info("Handling OIDC callback from Hydra")
-	ctx := s.withHydraHTTPClient(r.Context())
+	ctx = s.withHydraHTTPClient(ctx)
 
 	// 1. Exchange the Authorization Code for tokens
 	code := r.URL.Query().Get("code")
@@ -237,9 +263,30 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	token, err := s.oauth2Config.Exchange(ctx, code)
 	if err != nil {
-		http.Error(w, "Failed to exchange token: "+err.Error(), http.StatusInternalServerError)
+		var retrieveErr *oauth2.RetrieveError
+		switch {
+		case errors.As(err, &retrieveErr):
+			status := retrieveErr.Response.StatusCode
+			switch {
+			case status >= 500:
+				s.logger.Errorw("Server error from Hydra during token exchange", "status", status, "error", err, "code", retrieveErr.ErrorCode, "description", retrieveErr.ErrorDescription)
+				_ = s.monitor.SetDependencyAvailability(map[string]string{"component": "hydra"}, 0)
+			case status >= 400:
+				s.logger.Warnw("Client error from Hydra during token exchange", "status", status, "error", err, "code", retrieveErr.ErrorCode, "description", retrieveErr.ErrorDescription)
+				_ = s.monitor.SetDependencyAvailability(map[string]string{"component": "hydra"}, 1)
+			default:
+				s.logger.Errorw("Unexpected error from Hydra during token exchange", "status", status, "error", err)
+			}
+			http.Error(w, "Unexpected error. Please try again later.", http.StatusInternalServerError)
+			return
+		default:
+			s.logger.Errorw("Unexpected error during token exchange with Hydra", "error", err)
+			_ = s.monitor.SetDependencyAvailability(map[string]string{"component": "hydra"}, 0)
+		}
+		http.Error(w, "Unexpected error. Please try again later.", http.StatusInternalServerError)
 		return
 	}
+	_ = s.monitor.SetDependencyAvailability(map[string]string{"component": "hydra"}, 1)
 
 	// 2. Extract and Verify the ID Token
 	rawIDToken, ok := token.Extra("id_token").(string)
@@ -369,6 +416,9 @@ func (sp *serviceProviderAdapter) GetServiceProvider(r *http.Request, servicePro
 // Service Provider Registration Handler
 // -------------------------------------------------------------------------
 func (s *Server) handleServiceProviderRegistration(w http.ResponseWriter, r *http.Request) {
+	ctx, span := s.tracer.Start(r.Context(), "provider.handle_service_provider_registration")
+	defer span.End()
+	r = r.WithContext(ctx)
 
 	// Parse the JSON request body
 	var req struct {
