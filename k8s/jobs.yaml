@@ -27,7 +27,7 @@ spec:
           - --scope
           - openid,email,profile
           - --redirect-uri
-          - http://localhost:8082/callback
+          - http://localhost:8082/saml/callback
           - --name
           - "Identity SAML Provider"
         env:
