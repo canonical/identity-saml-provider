@@ -168,6 +168,7 @@ func (s *Server) newHydraHTTPClient() (*http.Client, error) {
 
 // SetupRoutes configures the HTTP routes for the server
 func (s *Server) SetupRoutes() {
+	s.router.Use(tracing.NewMiddleware(s.monitor, s.logger).RouteSpanNameMiddleware())
 	s.router.Use(monitoring.NewMiddleware(s.monitor, s.logger).ResponseTime())
 
 	// A. Metadata Endpoint (Service providers need this to configure the connection)

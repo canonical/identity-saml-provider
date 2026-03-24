@@ -19,14 +19,14 @@ type Middleware struct {
 }
 
 func (mdw *Middleware) OpenTelemetry(handler http.Handler) http.Handler {
-	if router, ok := handler.(chi.Router); ok {
-		router.Use(mdw.routeSpanNameMiddleware)
-	}
-
 	return otelhttp.NewHandler(
 		handler,
 		"server",
 	)
+}
+
+func (mdw *Middleware) RouteSpanNameMiddleware() func(http.Handler) http.Handler {
+	return mdw.routeSpanNameMiddleware
 }
 
 func (mdw *Middleware) routeSpanNameMiddleware(next http.Handler) http.Handler {

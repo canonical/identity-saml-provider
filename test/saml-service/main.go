@@ -75,23 +75,23 @@ func main() {
 
 	keyPair, err := tls.LoadX509KeyPair(*certPath, *keyPath)
 	if err != nil {
-		panic(err) // TODO handle error
+		panic(fmt.Sprintf("failed loading key pair: %v", err))
 	}
 	keyPair.Leaf, err = x509.ParseCertificate(keyPair.Certificate[0])
 	if err != nil {
-		panic(err) // TODO handle error
+		panic(fmt.Sprintf("failed parsing certificate: %v", err))
 	}
 
 	idpMetadataURL, err := url.Parse(*idpMetadataURLStr)
 	if err != nil {
-		panic(err) // TODO handle error
+		panic(fmt.Sprintf("failed parsing IdP metadata URL: %v", err)) 
 	}
 	idpMetadata := fetchIDPMetadataWithRetry(idpMetadataURL)
 	log.Printf("Fetched IdP metadata from %s\n", *idpMetadataURLStr)
 
 	rootURL, err := url.Parse(serviceURL)
 	if err != nil {
-		panic(err) // TODO handle error
+		panic(fmt.Sprintf("failed parsing service URL: %v", err))
 	}
 
 	samlSP, _ := samlsp.New(samlsp.Options{
