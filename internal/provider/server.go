@@ -92,7 +92,7 @@ func (s *Server) Initialize(ctx context.Context, zapLogger *zap.Logger) error {
 	s.oauth2Config = &oauth2.Config{
 		ClientID:     s.config.ClientID,
 		ClientSecret: s.config.ClientSecret,
-		RedirectURL:  s.config.BridgeBaseURL + "/saml/callback",
+		RedirectURL:  s.config.RedirectURL,
 		Endpoint:     provider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 	}

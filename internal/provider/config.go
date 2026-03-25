@@ -19,6 +19,7 @@ type Config struct {
 	HydraCACertPath            string `envconfig:"SAML_PROVIDER_HYDRA_CA_CERT_PATH" default:""`
 	ClientID                   string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_ID" default:"service-bridge-client"`
 	ClientSecret               string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_SECRET" default:"secret"`
+	RedirectURL                string `envconfig:"SAML_PROVIDER_OIDC_REDIRECT_URL" default:"http://localhost:8082/saml/callback"`
 
 	// Service Configuration
 	ServiceACS      string `envconfig:"SAML_PROVIDER_SERVICE_ACS" default:"http://localhost:8083/saml/acs"`
