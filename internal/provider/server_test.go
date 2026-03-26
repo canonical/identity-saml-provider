@@ -333,10 +333,7 @@ func TestHandleServiceProviderRegistration_InvalidEntityID(t *testing.T) {
 		name     string
 		entityID string
 	}{
-		{"not a URL", "not-a-url"},
-		{"missing scheme", "example.com/metadata"},
-		{"invalid scheme", "ftp://example.com/metadata"},
-		{"no host", "http:///metadata"},
+		{"empty string", ""},
 	}
 
 	for _, tc := range testCases {
@@ -357,6 +354,51 @@ func TestHandleServiceProviderRegistration_InvalidEntityID(t *testing.T) {
 			resp := rec.Result()
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Errorf("Expected status %d for invalid entity_id '%s', got %d", http.StatusBadRequest, tc.entityID, resp.StatusCode)
+			}
+		})
+	}
+}
+
+func TestHandleServiceProviderRegistration_NonURLEntityID(t *testing.T) {
+	server := setupTestServer(t)
+	if server.db.db == nil {
+		t.Skip("Skipping test: database not available")
+	}
+
+	if err := server.db.InitSchema(); err != nil {
+		t.Skipf("Cannot initialize schema: %v", err)
+	}
+
+	server.SetupRoutes()
+
+	testCases := []struct {
+		name     string
+		entityID string
+	}{
+		{"plain domain", "greenhouse.io"},
+		{"domain with path", "example.com/metadata"},
+		{"urn", "urn:example:saml:sp"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			reqBody := map[string]string{
+				"entity_id":   tc.entityID,
+				"acs_url":     "http://example.com/saml/acs",
+				"acs_binding": saml.HTTPPostBinding,
+			}
+
+			body, _ := json.Marshal(reqBody)
+			req := httptest.NewRequest(http.MethodPost, "/admin/service-providers", strings.NewReader(string(body)))
+			req.Header.Set("Content-Type", "application/json")
+
+			rec := httptest.NewRecorder()
+			server.handleServiceProviderRegistration(rec, req)
+
+			resp := rec.Result()
+			if resp.StatusCode != http.StatusCreated {
+				body, _ := io.ReadAll(resp.Body)
+				t.Errorf("Expected status %d for entity_id '%s', got %d. Body: %s", http.StatusCreated, tc.entityID, resp.StatusCode, string(body))
 			}
 		})
 	}
