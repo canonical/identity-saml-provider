@@ -34,6 +34,7 @@ type Server struct {
 	oidcVerifier    *oidc.IDTokenVerifier
 	samlIdp         *saml.IdentityProvider
 	db              *Database
+	mappingConfig   *MappingConfig
 	pendingRequests map[string]pendingAuthnRequest
 	router          chi.Router
 	monitor         monitoring.MonitorInterface
@@ -43,6 +44,7 @@ type Server struct {
 type pendingAuthnRequest struct {
 	samlRequest string
 	relayState  string
+	spEntityID  string // Service Provider entity ID from the SAML request
 }
 
 // NewServer creates a new SAML-OIDC bridge server
@@ -54,10 +56,17 @@ func NewServer(cfg Config, logger *zap.SugaredLogger, sqlDB *sql.DB, monitor mon
 		tracer = tracing.NewNoopTracer()
 	}
 
+	// Initialize mapping config
+	mappingConfig := NewMappingConfig(logger)
+	if err := mappingConfig.LoadFromFile(cfg.MappingConfigPath); err != nil {
+		return nil, fmt.Errorf("failed to load mapping config: %w", err)
+	}
+
 	s := &Server{
 		config:          cfg,
 		logger:          logger,
 		db:              NewDatabase(sqlDB, logger),
+		mappingConfig:   mappingConfig,
 		pendingRequests: make(map[string]pendingAuthnRequest),
 		router:          chi.NewRouter(),
 		monitor:         monitor,
@@ -194,6 +203,109 @@ func (s *Server) Start() error {
 	return http.ListenAndServe(":"+s.config.BridgeBasePort, handler)
 }
 
+// buildSAMLSessionFromOIDCClaims creates a SAML session from OIDC token claims using per-SP mappings
+func (s *Server) buildSAMLSessionFromOIDCClaims(idToken *oidc.IDToken, spEntityID string) (*saml.Session, error) {
+	// Extract all claims from the token
+	var allClaims map[string]interface{}
+	if err := idToken.Claims(&allClaims); err != nil {
+		return nil, fmt.Errorf("failed to extract claims: %w", err)
+	}
+
+	claimsMap := ClaimsMap(allClaims)
+
+	// Get the mapping for this SP (or use default if not found)
+	mapping := s.mappingConfig.GetMapping(spEntityID)
+	s.logger.Debugw("Using mapping for SP", "spEntityID", spEntityID, "nameidFormat", mapping.NameIDFormat)
+
+	// Create SAML session
+	sessionID := fmt.Sprintf("_%d", time.Now().UnixNano())
+	session := &saml.Session{
+		ID:         sessionID,
+		CreateTime: time.Now(),
+		ExpireTime: time.Now().Add(10 * time.Minute),
+		Index:      sessionID,
+	}
+
+	// Set NameID format and value
+	session.NameIDFormat = mapping.NameIDFormat
+	nameIDValue := claimsMap.GetString(mapping.NameIDSource, false)
+	if nameIDValue == "" {
+		return nil, fmt.Errorf("NameID source claim %q not found in token for SP %s", mapping.NameIDSource, spEntityID)
+	}
+	session.NameID = nameIDValue
+
+	// Apply transforms if configured
+	if mapping.Options != nil && mapping.Options.LowercaseEmail {
+		if email, ok := allClaims["email"].(string); ok {
+			allClaims["email"] = strings.ToLower(email)
+		}
+	}
+
+	// Map OIDC claims to SAML attributes using the per-SP attribute map
+	customAttrs := []saml.Attribute{}
+	for claimName, samlAttrName := range mapping.AttributeMap {
+		claimValue := claimsMap.GetString(claimName, false)
+
+		// Special handling for groups (array type)
+		if claimName == "groups" {
+			groupValues := claimsMap.GetStringSlice(claimName)
+			for _, groupValue := range groupValues {
+				attr := saml.Attribute{
+					Name:       samlAttrName,
+					NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
+					Values: []saml.AttributeValue{
+						{
+							Type:  "xs:string",
+							Value: groupValue,
+						},
+					},
+				}
+				customAttrs = append(customAttrs, attr)
+			}
+		} else if claimValue != "" {
+			// Standard string claim
+			attr := saml.Attribute{
+				Name:       samlAttrName,
+				NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
+				Values: []saml.AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: claimValue,
+					},
+				},
+			}
+			customAttrs = append(customAttrs, attr)
+
+			// Also populate well-known SAML session fields for backward compatibility
+			switch claimName {
+			case "email":
+				session.UserEmail = claimValue
+			case "name":
+				session.UserCommonName = claimValue
+			case "given_name":
+				session.UserGivenName = claimValue
+			case "family_name":
+				session.UserSurname = claimValue
+			}
+		}
+	}
+
+	session.CustomAttributes = customAttrs
+
+	// Extract groups as a standard field if present
+	session.Groups = claimsMap.GetStringSlice("groups")
+
+	s.logger.Debugw("Built SAML session from OIDC claims",
+		"sessionID", sessionID,
+		"spEntityID", spEntityID,
+		"nameid", session.NameID,
+		"numCustomAttrs", len(customAttrs),
+		"groups", len(session.Groups),
+	)
+
+	return session, nil
+}
+
 // -------------------------------------------------------------------------
 // Session Provider Adapter
 // -------------------------------------------------------------------------
@@ -226,9 +338,14 @@ func (sp *sessionProviderAdapter) GetSession(w http.ResponseWriter, r *http.Requ
 			}
 		}
 		if samlRequest != "" {
+			spEntityID := ""
+			if req.ServiceProviderMetadata != nil {
+				spEntityID = req.ServiceProviderMetadata.EntityID
+			}
 			sp.server.pendingRequests[req.Request.ID] = pendingAuthnRequest{
 				samlRequest: samlRequest,
 				relayState:  req.RelayState,
+				spEntityID:  spEntityID,
 			}
 		}
 
@@ -319,36 +436,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Debugw("User authenticated, creating SAML session", "email", claims.Email)
 
-	// 4. Create a SAML Session
-	sessionID := fmt.Sprintf("_%d", time.Now().UnixNano())
-	samlSession := &saml.Session{
-		ID:             sessionID,
-		CreateTime:     time.Now(),
-		ExpireTime:     time.Now().Add(10 * time.Minute),
-		Index:          sessionID,
-		NameID:         claims.Email, // Service matches users by NameID (Email)
-		UserEmail:      claims.Email,
-		UserCommonName: claims.Email, // Use email as display name
-		Groups:         claims.Groups,
-	}
-	// Store the session in database
-	if err := s.db.SaveSession(samlSession); err != nil {
-		s.logger.Errorw("Failed to save session to database", "error", err)
-		http.Error(w, "Failed to create session", http.StatusInternalServerError)
-		return
-	}
-
-	// Set a session cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:     "saml_session",
-		Value:    sessionID,
-		Path:     "/",
-		MaxAge:   600, // 10 minutes
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
-
-	// 5. Parse the state to get SAML request ID and RelayState
+	// 4. Parse the state to get SAML request ID and RelayState
 	state := r.URL.Query().Get("state")
 	requestID := ""
 	relayState := ""
@@ -359,6 +447,39 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 			relayState = parts[1]
 		}
 	}
+
+	// 5. Determine the SP entity ID for mapping lookup
+	spEntityID := ""
+	if requestID != "" {
+		if pending, ok := s.pendingRequests[requestID]; ok {
+			spEntityID = pending.spEntityID
+		}
+	}
+
+	// Build SAML session using per-SP mapping
+	samlSession, err := s.buildSAMLSessionFromOIDCClaims(idToken, spEntityID)
+	if err != nil {
+		s.logger.Errorw("Failed to build SAML session from OIDC claims", "error", err, "spEntityID", spEntityID)
+		http.Error(w, "Failed to process user claims: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Store the session in database
+	if err := s.db.SaveSession(samlSession); err != nil {
+		s.logger.Errorw("Failed to save session to database", "error", err)
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
+
+	// Set a session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "saml_session",
+		Value:    samlSession.ID,
+		Path:     "/",
+		MaxAge:   600, // 10 minutes
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	if requestID != "" {
 		s.logger.Infow("OIDC callback for SAML request", "requestID", requestID)

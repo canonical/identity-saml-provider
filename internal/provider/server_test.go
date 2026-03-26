@@ -1683,3 +1683,159 @@ func (m *testMockMonitor) SetDependencyAvailability(tags map[string]string, valu
 	m.metrics[key]["availability"] = value
 	return nil
 }
+
+// -----------------------------------------------
+// Tests for SP Mapping Functionality
+// -----------------------------------------------
+
+func TestPendingAuthnRequest_StoreSPEntityID(t *testing.T) {
+	server := setupTestServer(t)
+
+	requestID := "test-request-123"
+	spEntityID := "http://www.netsuite.com/sp"
+	pending := pendingAuthnRequest{
+		samlRequest: "encoded-saml-request",
+		relayState:  "test-relay",
+		spEntityID:  spEntityID,
+	}
+
+	// Store pending request with SP entity ID
+	server.pendingRequests[requestID] = pending
+
+	// Retrieve it and verify SP entity ID is preserved
+	retrieved, ok := server.pendingRequests[requestID]
+	if !ok {
+		t.Fatal("Expected to find pending request")
+	}
+
+	if retrieved.spEntityID != spEntityID {
+		t.Errorf("Expected spEntityID '%s', got '%s'", spEntityID, retrieved.spEntityID)
+	}
+}
+
+func TestServer_GetMapping_NetSuite(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+	server := &Server{
+		logger:        logger,
+		mappingConfig: NewMappingConfig(logger),
+	}
+
+	// Add NetSuite mapping
+	server.mappingConfig.ServiceProviders["http://www.netsuite.com/sp"] = &SPMapping{
+		NameIDFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+		NameIDSource: "email",
+		AttributeMap: map[string]string{
+			"email": "urn:oid:0.9.2342.19200300.100.1.3",
+		},
+		Options: &SPMappingOptions{
+			LowercaseEmail: true,
+		},
+	}
+
+	// Get mapping for NetSuite
+	mapping := server.mappingConfig.GetMapping("http://www.netsuite.com/sp")
+	if mapping == nil {
+		t.Fatal("Expected NetSuite mapping")
+	}
+
+	if mapping.NameIDFormat != "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress" {
+		t.Errorf("Expected emailAddress format, got %s", mapping.NameIDFormat)
+	}
+
+	if mapping.NameIDSource != "email" {
+		t.Errorf("Expected email as NameID source, got %s", mapping.NameIDSource)
+	}
+
+	if !mapping.Options.LowercaseEmail {
+		t.Error("Expected lowercase_email to be true")
+	}
+}
+
+func TestServer_GetMapping_Default(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+	server := &Server{
+		logger:        logger,
+		mappingConfig: NewMappingConfig(logger),
+	}
+
+	// Get mapping for unknown SP should return default
+	mapping := server.mappingConfig.GetMapping("http://unknown.example.com/sp")
+	if mapping == nil {
+		t.Fatal("Expected default mapping")
+	}
+
+	// Should have default values
+	if !strings.Contains(mapping.NameIDFormat, "transient") {
+		t.Errorf("Expected transient format in default, got %s", mapping.NameIDFormat)
+	}
+
+	if mapping.NameIDSource != "sub" {
+		t.Errorf("Expected 'sub' as default NameID source, got %s", mapping.NameIDSource)
+	}
+}
+
+func TestSessionProviderAdapter_FileEntityIDInPending(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+	hydraStub := newHydraStubServer(t, nil)
+
+	server := &Server{
+		config: Config{
+			BridgeBaseURL:  "http://localhost:8082",
+			BridgeBasePort: "8082",
+			HydraPublicURL: hydraStub.URL,
+		},
+		logger:          logger,
+		mappingConfig:   NewMappingConfig(logger),
+		db:              NewDatabase(nil, logger),
+		pendingRequests: make(map[string]pendingAuthnRequest),
+		router:          chi.NewRouter(),
+		monitor:         monitoring.NewNoopMonitor("identity-saml-provider", logger),
+		tracer:          tracing.NewNoopTracer(),
+	}
+
+	adapter := &sessionProviderAdapter{server: server}
+
+	// Create request without session cookie
+	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=test-request", nil)
+	rec := httptest.NewRecorder()
+
+	// Create mock IdpAuthnRequest with SP metadata
+	spMetadata := &saml.EntityDescriptor{
+		EntityID: "http://www.netsuite.com/sp",
+	}
+
+	authnRequest := &saml.IdpAuthnRequest{
+		Request: saml.AuthnRequest{
+			ID: "test-auth-request",
+		},
+		RelayState:              "test-relay-state",
+		ServiceProviderMetadata: spMetadata,
+	}
+
+	// Set up OAuth2 config to avoid nil pointer
+	server.oauth2Config = &oauth2.Config{
+		ClientID:    "test-client",
+		RedirectURL: "http://localhost:8082/callback",
+		Scopes:      []string{"openid"},
+	}
+
+	// Call GetSession
+	result := adapter.GetSession(rec, req, authnRequest)
+
+	// Should return nil (no session)
+	if result != nil {
+		t.Error("Expected nil session when no valid cookie")
+	}
+
+	// Verify pending request was stored with SP entity ID
+	if pending, ok := server.pendingRequests["test-auth-request"]; !ok {
+		t.Error("Expected pending request to be stored")
+	} else {
+		if pending.spEntityID != "http://www.netsuite.com/sp" {
+			t.Errorf("Expected spEntityID 'http://www.netsuite.com/sp', got '%s'", pending.spEntityID)
+		}
+		if pending.relayState != "test-relay-state" {
+			t.Errorf("Expected RelayState 'test-relay-state', got '%s'", pending.relayState)
+		}
+	}
+}
