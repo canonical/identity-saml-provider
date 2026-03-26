@@ -7,7 +7,7 @@ require (
 	github.com/crewjam/saml v0.5.1
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/lib/pq v1.11.2
+	github.com/lib/pq v1.12.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.67.0
