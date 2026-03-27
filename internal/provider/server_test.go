@@ -582,7 +582,7 @@ func TestSessionProviderAdapter_GetSession_NoValidSession(t *testing.T) {
 	server.oauth2Config = &oauth2.Config{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
-		RedirectURL:  "http://localhost:8082/callback",
+		RedirectURL:  "http://localhost:8082/saml/callback",
 		Scopes:       []string{"openid"},
 	}
 
@@ -792,7 +792,7 @@ func TestHandleOIDCCallback_NoCode(t *testing.T) {
 	server := setupTestServer(t)
 
 	// Request without code parameter
-	req := httptest.NewRequest(http.MethodGet, "/callback?state=test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/saml/callback?state=test", nil)
 	rec := httptest.NewRecorder()
 
 	server.handleOIDCCallback(rec, req)
@@ -823,7 +823,7 @@ func TestHandleOIDCCallback_InvalidCode(t *testing.T) {
 	server.oauth2Config = &oauth2.Config{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
-		RedirectURL:  "http://localhost:8082/callback",
+		RedirectURL:  "http://localhost:8082/saml/callback",
 		Scopes:       []string{"openid"},
 		Endpoint: oauth2.Endpoint{
 			AuthURL:  hydraStub.URL + "/oauth2/auth",
@@ -832,7 +832,7 @@ func TestHandleOIDCCallback_InvalidCode(t *testing.T) {
 	}
 
 	// Request with invalid code
-	req := httptest.NewRequest(http.MethodGet, "/callback?code=invalid-code&state=test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/saml/callback?code=invalid-code&state=test", nil)
 	rec := httptest.NewRecorder()
 
 	server.handleOIDCCallback(rec, req)
@@ -860,7 +860,7 @@ func TestSessionProviderAdapter_GetSession_WithExpiredSession(t *testing.T) {
 	server.oauth2Config = &oauth2.Config{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
-		RedirectURL:  "http://localhost:8082/callback",
+		RedirectURL:  "http://localhost:8082/saml/callback",
 		Scopes:       []string{"openid"},
 	}
 
@@ -917,7 +917,7 @@ func TestSessionProviderAdapter_GetSession_WithRelayState(t *testing.T) {
 	server.oauth2Config = &oauth2.Config{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
-		RedirectURL:  "http://localhost:8082/callback",
+		RedirectURL:  "http://localhost:8082/saml/callback",
 		Scopes:       []string{"openid"},
 	}
 
@@ -1543,7 +1543,7 @@ func TestDependencyAvailabilityOnHydraTokenExchange(t *testing.T) {
 		oauth2Config: &oauth2.Config{
 			ClientID:     "test-client",
 			ClientSecret: "test-secret",
-			RedirectURL:  "http://localhost:8082/callback",
+			RedirectURL:  "http://localhost:8082/saml/callback",
 			Scopes:       []string{"openid"},
 			Endpoint: oauth2.Endpoint{
 				AuthURL:  hydraStub.URL + "/oauth2/auth",
@@ -1556,7 +1556,7 @@ func TestDependencyAvailabilityOnHydraTokenExchange(t *testing.T) {
 	server.SetupRoutes()
 
 	// Make request to OIDC callback with invalid code
-	req := httptest.NewRequest(http.MethodGet, "/callback?code=invalid&state=test", nil)
+	req := httptest.NewRequest(http.MethodGet, "/saml/callback?code=invalid&state=test", nil)
 	rec := httptest.NewRecorder()
 
 	server.handleOIDCCallback(rec, req)

@@ -92,7 +92,7 @@ func (s *Server) Initialize(ctx context.Context, zapLogger *zap.Logger) error {
 	s.oauth2Config = &oauth2.Config{
 		ClientID:     s.config.ClientID,
 		ClientSecret: s.config.ClientSecret,
-		RedirectURL:  s.config.BridgeBaseURL + "/callback",
+		RedirectURL:  s.config.RedirectURL,
 		Endpoint:     provider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
 	}
@@ -178,7 +178,7 @@ func (s *Server) SetupRoutes() {
 	s.router.HandleFunc("/saml/sso", s.samlIdp.ServeSSO)
 
 	// C. OIDC Callback (Hydra redirects users back here)
-	s.router.HandleFunc("/callback", s.handleOIDCCallback)
+	s.router.HandleFunc("/saml/callback", s.handleOIDCCallback)
 
 	// D. Service Provider Registration Endpoint
 	s.router.Post("/admin/service-providers", s.handleServiceProviderRegistration)
