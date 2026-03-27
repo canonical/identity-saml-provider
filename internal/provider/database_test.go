@@ -207,7 +207,7 @@ func TestSaveAndGetServiceProvider(t *testing.T) {
 	acsURL := "http://example.com/saml/acs"
 	acsBinding := saml.HTTPPostBinding
 
-	err := database.SaveServiceProvider(entityID, acsURL, acsBinding)
+	err := database.SaveServiceProvider(entityID, acsURL, acsBinding, nil)
 	if err != nil {
 		t.Fatalf("SaveServiceProvider failed: %v", err)
 	}
@@ -271,11 +271,11 @@ func TestSaveServiceProvider_Update(t *testing.T) {
 	acsURL2 := "http://example.com/saml/acs2"
 	acsBinding := saml.HTTPPostBinding
 
-	if err := database.SaveServiceProvider(entityID, acsURL1, acsBinding); err != nil {
+	if err := database.SaveServiceProvider(entityID, acsURL1, acsBinding, nil); err != nil {
 		t.Fatalf("SaveServiceProvider failed: %v", err)
 	}
 
-	if err := database.SaveServiceProvider(entityID, acsURL2, acsBinding); err != nil {
+	if err := database.SaveServiceProvider(entityID, acsURL2, acsBinding, nil); err != nil {
 		t.Fatalf("SaveServiceProvider update failed: %v", err)
 	}
 

@@ -61,7 +61,7 @@ func (m *mockDatabase) GetSession(sessionID string) *saml.Session {
 	return session
 }
 
-func (m *mockDatabase) SaveServiceProvider(entityID, acsURL, acsBinding string) error {
+func (m *mockDatabase) SaveServiceProvider(entityID, acsURL, acsBinding string, attributeMapping *AttributeMapping) error {
 	m.serviceProviders[entityID] = &saml.EntityDescriptor{
 		EntityID: entityID,
 		SPSSODescriptors: []saml.SPSSODescriptor{
@@ -520,7 +520,7 @@ func TestServiceProviderAdapter_GetServiceProvider(t *testing.T) {
 	acsURL := "http://example.com/acs"
 
 	// Save a service provider
-	err = db.SaveServiceProvider(entityID, acsURL, saml.HTTPPostBinding)
+	err = db.SaveServiceProvider(entityID, acsURL, saml.HTTPPostBinding, nil)
 	if err != nil {
 		t.Skipf("Skipping test: cannot initialize test data: %v", err)
 	}
