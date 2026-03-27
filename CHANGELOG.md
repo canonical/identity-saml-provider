@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.1.2](https://github.com/canonical/identity-saml-provider/compare/v0.1.1...v0.1.2) (2026-03-27)
+
+
+### Features
+
+* add metrics and tracing ([52ffa41](https://github.com/canonical/identity-saml-provider/commit/52ffa41149a6c720324fd0b4eb0c9250414aff6c))
+* add metrics and tracing ([315b6b1](https://github.com/canonical/identity-saml-provider/commit/315b6b1740ba4c8ac4f4015854ffbf8496d216de))
+
+
+### Bug Fixes
+
+* adding middleware setup to routes ([c3cfebc](https://github.com/canonical/identity-saml-provider/commit/c3cfebca3e42c4e1eec19a35215e62abdd8e0aaf))
+* adding param for callback ([bc95fa8](https://github.com/canonical/identity-saml-provider/commit/bc95fa80298d9b042ba7216aa1918cc1d7062025))
+* adding saml prefix to callback ([2c81670](https://github.com/canonical/identity-saml-provider/commit/2c816700eba3bda3ad3ad08aed8563b51409e99f))
+* changing redirect url from hydra ([bc95fa8](https://github.com/canonical/identity-saml-provider/commit/bc95fa80298d9b042ba7216aa1918cc1d7062025))
+* setting static value to callback route ([bc95fa8](https://github.com/canonical/identity-saml-provider/commit/bc95fa80298d9b042ba7216aa1918cc1d7062025))
+* update tests ([bc95fa8](https://github.com/canonical/identity-saml-provider/commit/bc95fa80298d9b042ba7216aa1918cc1d7062025))
+* updated tests ([bc95fa8](https://github.com/canonical/identity-saml-provider/commit/bc95fa80298d9b042ba7216aa1918cc1d7062025))
+
 ## [0.1.1](https://github.com/canonical/identity-saml-provider/compare/identity-saml-provider-v0.1.0...identity-saml-provider-v0.1.1) (2026-03-06)
 
 
