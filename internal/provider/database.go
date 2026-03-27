@@ -2,6 +2,7 @@ package provider
 
 import (
 	"database/sql"
+	"encoding/json"
 
 	"github.com/crewjam/saml"
 	"github.com/lib/pq"
@@ -31,8 +32,8 @@ func (d *Database) GetDB() *sql.DB {
 func (d *Database) SaveSession(session *saml.Session) error {
 	d.logger.Infow("Saving session to database", "sessionID", session.ID, "email", session.UserEmail, "expireTime", session.ExpireTime)
 	query := `
-		INSERT INTO sessions (id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO sessions (id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups, user_name)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO UPDATE SET
 			create_time = EXCLUDED.create_time,
 			expire_time = EXCLUDED.expire_time,
@@ -40,7 +41,8 @@ func (d *Database) SaveSession(session *saml.Session) error {
 			name_id = EXCLUDED.name_id,
 			user_email = EXCLUDED.user_email,
 			user_common_name = EXCLUDED.user_common_name,
-			groups = EXCLUDED.groups
+			groups = EXCLUDED.groups,
+			user_name = EXCLUDED.user_name
 	`
 	_, err := d.db.Exec(query,
 		session.ID,
@@ -51,6 +53,7 @@ func (d *Database) SaveSession(session *saml.Session) error {
 		session.UserEmail,
 		session.UserCommonName,
 		pq.Array(session.Groups),
+		session.UserName,
 	)
 	if err != nil {
 		d.logger.Errorw("Error saving session to database", "sessionID", session.ID, "error", err)
@@ -65,7 +68,7 @@ func (d *Database) GetSession(sessionID string) *saml.Session {
 	d.logger.Infow("Attempting to retrieve session from database", "sessionID", sessionID)
 
 	query := `
-		SELECT id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups
+		SELECT id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups, user_name
 		FROM sessions
 		WHERE id = $1 AND expire_time > NOW()
 	`
@@ -80,6 +83,7 @@ func (d *Database) GetSession(sessionID string) *saml.Session {
 		&session.UserEmail,
 		&session.UserCommonName,
 		pq.Array(&groups),
+		&session.UserName,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -102,16 +106,27 @@ func (d *Database) CleanupExpiredSessions() error {
 }
 
 // SaveServiceProvider saves a service provider to the database
-func (d *Database) SaveServiceProvider(entityID, acsURL, acsBinding string) error {
+func (d *Database) SaveServiceProvider(entityID, acsURL, acsBinding string, attributeMapping *AttributeMapping) error {
 	d.logger.Infow("Saving service provider to database", "entityID", entityID, "acsURL", acsURL)
+
+	var mappingArg interface{}
+	if attributeMapping != nil {
+		mappingJSON, err := json.Marshal(attributeMapping)
+		if err != nil {
+			return err
+		}
+		mappingArg = mappingJSON
+	}
+
 	query := `
-		INSERT INTO service_providers (entity_id, acs_url, acs_binding)
-		VALUES ($1, $2, $3)
+		INSERT INTO service_providers (entity_id, acs_url, acs_binding, attribute_mapping)
+		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (entity_id) DO UPDATE SET
 			acs_url = EXCLUDED.acs_url,
-			acs_binding = EXCLUDED.acs_binding
+			acs_binding = EXCLUDED.acs_binding,
+			attribute_mapping = EXCLUDED.attribute_mapping
 	`
-	_, err := d.db.Exec(query, entityID, acsURL, acsBinding)
+	_, err := d.db.Exec(query, entityID, acsURL, acsBinding, mappingArg)
 	if err != nil {
 		d.logger.Errorw("Error saving service provider to database", "entityID", entityID, "error", err)
 	} else {
@@ -155,4 +170,31 @@ func (d *Database) GetServiceProvider(entityID string) (*saml.EntityDescriptor, 
 			},
 		},
 	}, nil
+}
+
+// GetAttributeMapping retrieves the attribute mapping for a service provider by entity ID.
+// Returns nil if no mapping is configured for the SP.
+func (d *Database) GetAttributeMapping(entityID string) (*AttributeMapping, error) {
+	query := `
+		SELECT attribute_mapping
+		FROM service_providers
+		WHERE entity_id = $1
+	`
+	var mappingJSON sql.NullString
+	err := d.db.QueryRow(query, entityID).Scan(&mappingJSON)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !mappingJSON.Valid || mappingJSON.String == "" {
+		return nil, nil
+	}
+	var mapping AttributeMapping
+	if err := json.Unmarshal([]byte(mappingJSON.String), &mapping); err != nil {
+		d.logger.Errorw("Error parsing attribute mapping JSON", "entityID", entityID, "error", err)
+		return nil, err
+	}
+	return &mapping, nil
 }

@@ -10,16 +10,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/canonical/identity-saml-provider/internal/provider"
 	"github.com/canonical/identity-saml-provider/internal/version"
 	"github.com/spf13/cobra"
 )
 
 var (
-	serverURL    string
-	entityID     string
-	acsURL       string
-	acsBinding   string
-	outputFormat string
+	serverURL            string
+	entityID             string
+	acsURL               string
+	acsBinding           string
+	outputFormat         string
+	attributeMappingFile string
+	nameidFormat         string
 )
 
 func main() {
@@ -42,6 +45,8 @@ func main() {
 	addCmd.Flags().StringVarP(&acsURL, "acs-url", "a", "", "Assertion Consumer Service (ACS) URL (required, must be a valid URL)")
 	addCmd.Flags().StringVarP(&acsBinding, "acs-binding", "b", "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST", "ACS binding type (optional, defaults to HTTP-POST)")
 	addCmd.Flags().StringVar(&outputFormat, "output", "human", "Output format: 'human' for human-readable or 'json' for JSON")
+	addCmd.Flags().StringVar(&attributeMappingFile, "attribute-mapping-file", "", "Path to a JSON file containing the attribute mapping configuration")
+	addCmd.Flags().StringVar(&nameidFormat, "nameid-format", "", "NameID format for this SP (e.g., 'persistent', 'transient', 'emailAddress')")
 
 	// Mark required flags
 	addCmd.MarkFlagRequired("entity-id")
@@ -79,10 +84,29 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	endpoint := serverURL + "/admin/service-providers"
 
 	// Prepare request body
-	requestBody := map[string]string{
+	requestBody := map[string]interface{}{
 		"entity_id":   entityID,
 		"acs_url":     acsURL,
 		"acs_binding": acsBinding,
+	}
+
+	// Load attribute mapping from file if provided
+	if attributeMappingFile != "" {
+		data, err := os.ReadFile(attributeMappingFile)
+		if err != nil {
+			return fmt.Errorf("failed to read attribute mapping file %q: %w", attributeMappingFile, err)
+		}
+		var mapping provider.AttributeMapping
+		if err := json.Unmarshal(data, &mapping); err != nil {
+			return fmt.Errorf("failed to parse attribute mapping JSON from %q: %w", attributeMappingFile, err)
+		}
+		requestBody["attribute_mapping"] = mapping
+	} else if nameidFormat != "" {
+		// If only nameid-format is provided without a full mapping file,
+		// create a minimal attribute mapping
+		requestBody["attribute_mapping"] = map[string]interface{}{
+			"nameid_format": nameidFormat,
+		}
 	}
 
 	jsonData, err := json.Marshal(requestBody)
