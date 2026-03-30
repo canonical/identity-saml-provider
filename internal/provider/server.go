@@ -466,17 +466,6 @@ func (s *Server) handleServiceProviderRegistration(w http.ResponseWriter, r *htt
 		return
 	}
 
-	// Validate that EntityID is a valid URL
-	entityURL, err := url.Parse(req.EntityID)
-	if err != nil || entityURL.Scheme == "" || entityURL.Host == "" {
-		http.Error(w, "Invalid entity_id: must be a valid URL with scheme and host", http.StatusBadRequest)
-		return
-	}
-	if entityURL.Scheme != "http" && entityURL.Scheme != "https" {
-		http.Error(w, "Invalid entity_id: scheme must be http or https", http.StatusBadRequest)
-		return
-	}
-
 	validBindings := map[string]bool{
 		saml.HTTPPostBinding:     true,
 		saml.HTTPRedirectBinding: true,
