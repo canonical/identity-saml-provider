@@ -42,7 +42,7 @@ func TestApplyAttributeMapping_NilMapping(t *testing.T) {
 		Groups:         []string{"group1", "group2"},
 	}
 
-	result := applyAttributeMapping(session, nil)
+	result := applyAttributeMapping(session, nil, nil)
 
 	// Should return the same session unchanged
 	if result != session {
@@ -92,7 +92,7 @@ func TestApplyAttributeMapping_NameIDFormat(t *testing.T) {
 				NameIDFormat: tc.format,
 			}
 
-			result := applyAttributeMapping(session, mapping)
+			result := applyAttributeMapping(session, mapping, nil)
 
 			if result.NameIDFormat != tc.expectedFormat {
 				t.Errorf("Expected NameIDFormat %q, got %q", tc.expectedFormat, result.NameIDFormat)
@@ -130,7 +130,7 @@ func TestApplyAttributeMapping_SAMLAttributes(t *testing.T) {
 		},
 	}
 
-	result := applyAttributeMapping(session, mapping)
+	result := applyAttributeMapping(session, mapping, nil)
 
 	// Built-in fields should be cleared
 	if result.UserEmail != "" {
@@ -211,7 +211,7 @@ func TestApplyAttributeMapping_LowercaseEmail(t *testing.T) {
 		},
 	}
 
-	result := applyAttributeMapping(session, mapping)
+	result := applyAttributeMapping(session, mapping, nil)
 
 	// NameID should be lowercased
 	if result.NameID != "user@example.com" {
@@ -248,7 +248,7 @@ func TestApplyAttributeMapping_DoesNotModifyOriginalSession(t *testing.T) {
 		},
 	}
 
-	_ = applyAttributeMapping(session, mapping)
+	_ = applyAttributeMapping(session, mapping, nil)
 
 	// Original session should not be modified
 	if session.UserEmail != "user@example.com" {
@@ -276,7 +276,7 @@ func TestApplyAttributeMapping_OnlyNameIDFormat(t *testing.T) {
 		NameIDFormat: "persistent",
 	}
 
-	result := applyAttributeMapping(session, mapping)
+	result := applyAttributeMapping(session, mapping, nil)
 
 	// NameID format and value should be set
 	if result.NameIDFormat != "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" {
@@ -312,7 +312,7 @@ func TestApplyAttributeMapping_DefaultOIDCMapping(t *testing.T) {
 		},
 	}
 
-	result := applyAttributeMapping(session, mapping)
+	result := applyAttributeMapping(session, mapping, nil)
 
 	// Check that default OIDC mapping (sub→subject, email→email) was used
 	attrMap := make(map[string]string)
@@ -342,7 +342,7 @@ func TestApplyAttributeMapping_EmptySAMLAttributes(t *testing.T) {
 	// Empty mapping (all zero values) should still return a valid session
 	mapping := &AttributeMapping{}
 
-	result := applyAttributeMapping(session, mapping)
+	result := applyAttributeMapping(session, mapping, nil)
 
 	// Session should be essentially unchanged (no SAMLAttributes, no NameIDFormat)
 	if result.UserEmail != "user@example.com" {
@@ -359,7 +359,7 @@ func TestBuildInternalModel(t *testing.T) {
 	}
 
 	// Test with default OIDC mapping
-	model := buildInternalModel(session, nil)
+	model := buildInternalModel(session, nil, nil)
 
 	if model["subject"] != "user-sub-id" {
 		t.Errorf("Expected subject=%q, got %q", "user-sub-id", model["subject"])
@@ -388,7 +388,7 @@ func TestBuildInternalModel_CustomOIDCMapping(t *testing.T) {
 		"name":  "display_name",
 	}
 
-	model := buildInternalModel(session, customClaims)
+	model := buildInternalModel(session, customClaims, nil)
 
 	if model["identifier"] != "user@example.com" {
 		t.Errorf("Expected identifier=%q, got %q", "user@example.com", model["identifier"])
@@ -444,5 +444,127 @@ func TestGetNameIDValue_MissingFields(t *testing.T) {
 	result = getNameIDValue(model, "")
 	if result != "user-sub-id" {
 		t.Errorf("Expected %q for default format, got %q", "user-sub-id", result)
+	}
+}
+
+func TestBuildInternalModel_WithRawClaims(t *testing.T) {
+	session := &saml.Session{
+		UserName:       "user-sub-id",
+		UserEmail:      "user@example.com",
+		UserCommonName: "User Name",
+	}
+
+	// Raw claims from the OIDC token with additional claims
+	rawClaims := map[string]interface{}{
+		"sub":                "user-sub-id",
+		"email":              "user@example.com",
+		"name":               "User Name",
+		"preferred_username": "jdoe",
+		"given_name":         "Jane",
+		"family_name":        "Doe",
+	}
+
+	// Custom OIDC mapping that includes claims not in session fields
+	customClaims := map[string]string{
+		"sub":                "subject",
+		"email":              "email",
+		"preferred_username": "username",
+		"given_name":         "first_name",
+		"family_name":        "last_name",
+	}
+
+	model := buildInternalModel(session, customClaims, rawClaims)
+
+	if model["subject"] != "user-sub-id" {
+		t.Errorf("Expected subject=%q, got %q", "user-sub-id", model["subject"])
+	}
+	if model["email"] != "user@example.com" {
+		t.Errorf("Expected email=%q, got %q", "user@example.com", model["email"])
+	}
+	if model["username"] != "jdoe" {
+		t.Errorf("Expected username=%q, got %q", "jdoe", model["username"])
+	}
+	if model["first_name"] != "Jane" {
+		t.Errorf("Expected first_name=%q, got %q", "Jane", model["first_name"])
+	}
+	if model["last_name"] != "Doe" {
+		t.Errorf("Expected last_name=%q, got %q", "Doe", model["last_name"])
+	}
+}
+
+func TestBuildInternalModel_RawClaimsWithGroups(t *testing.T) {
+	session := &saml.Session{
+		UserName:       "user-sub-id",
+		UserEmail:      "user@example.com",
+		UserCommonName: "User Name",
+		Groups:         []string{"session-group"},
+	}
+
+	// Raw claims with a multi-valued groups claim
+	rawClaims := map[string]interface{}{
+		"sub":    "user-sub-id",
+		"email":  "user@example.com",
+		"groups": []interface{}{"admin", "users", "devops"},
+	}
+
+	model := buildInternalModel(session, nil, rawClaims)
+
+	if model["groups"] == "" {
+		t.Error("Expected groups to be populated from raw claims")
+	}
+	// Groups should be from raw claims (null-separated)
+	expected := "admin\x00users\x00devops"
+	if model["groups"] != expected {
+		t.Errorf("Expected groups=%q, got %q", expected, model["groups"])
+	}
+}
+
+func TestApplyAttributeMapping_WithRawClaims(t *testing.T) {
+	session := &saml.Session{
+		ID:             "test-session",
+		NameID:         "user@example.com",
+		UserEmail:      "user@example.com",
+		UserCommonName: "User Name",
+		UserName:       "user-sub-id",
+	}
+
+	rawClaims := map[string]interface{}{
+		"sub":                "user-sub-id",
+		"email":              "user@example.com",
+		"name":               "User Name",
+		"preferred_username": "jdoe",
+	}
+
+	mapping := &AttributeMapping{
+		SAMLAttributes: map[string]string{
+			"subject":  "uid",
+			"email":    "mail",
+			"username": "preferredUsername",
+		},
+		OIDCClaims: map[string]string{
+			"sub":                "subject",
+			"email":              "email",
+			"preferred_username": "username",
+		},
+	}
+
+	result := applyAttributeMapping(session, mapping, rawClaims)
+
+	// Check custom attributes include the preferred_username from raw claims
+	attrMap := make(map[string]string)
+	for _, attr := range result.CustomAttributes {
+		if len(attr.Values) > 0 {
+			attrMap[attr.Name] = attr.Values[0].Value
+		}
+	}
+
+	if attrMap["uid"] != "user-sub-id" {
+		t.Errorf("Expected uid=%q, got %q", "user-sub-id", attrMap["uid"])
+	}
+	if attrMap["mail"] != "user@example.com" {
+		t.Errorf("Expected mail=%q, got %q", "user@example.com", attrMap["mail"])
+	}
+	if attrMap["preferredUsername"] != "jdoe" {
+		t.Errorf("Expected preferredUsername=%q, got %q", "jdoe", attrMap["preferredUsername"])
 	}
 }

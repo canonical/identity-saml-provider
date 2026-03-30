@@ -103,12 +103,12 @@ func TestIntegration_SaveAndGetSession(t *testing.T) {
 		Groups:         []string{"group1", "group2"},
 	}
 
-	err := database.SaveSession(session)
+	err := database.SaveSession(session, nil)
 	if err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}
 
-	retrieved := database.GetSession("test-session-id")
+	retrieved, _ := database.GetSession("test-session-id")
 	if retrieved == nil {
 		t.Fatal("GetSession returned nil")
 	}
@@ -138,7 +138,7 @@ func TestIntegration_GetSession_NotFound(t *testing.T) {
 		t.Fatalf("Failed to initialize schema: %v", err)
 	}
 
-	retrieved := database.GetSession("non-existent-id")
+	retrieved, _ := database.GetSession("non-existent-id")
 	if retrieved != nil {
 		t.Error("Expected nil for non-existent session, got a session")
 	}
@@ -163,11 +163,11 @@ func TestIntegration_GetSession_Expired(t *testing.T) {
 		Groups:         []string{},
 	}
 
-	if err := database.SaveSession(session); err != nil {
+	if err := database.SaveSession(session, nil); err != nil {
 		t.Fatalf("SaveSession failed: %v", err)
 	}
 
-	retrieved := database.GetSession("expired-session-id")
+	retrieved, _ := database.GetSession("expired-session-id")
 	if retrieved != nil {
 		t.Error("Expected nil for expired session, got a session")
 	}
@@ -203,10 +203,10 @@ func TestIntegration_CleanupExpiredSessions(t *testing.T) {
 		Groups:         []string{},
 	}
 
-	if err := database.SaveSession(expiredSession); err != nil {
+	if err := database.SaveSession(expiredSession, nil); err != nil {
 		t.Fatalf("Failed to save expired session: %v", err)
 	}
-	if err := database.SaveSession(validSession); err != nil {
+	if err := database.SaveSession(validSession, nil); err != nil {
 		t.Fatalf("Failed to save valid session: %v", err)
 	}
 
@@ -214,11 +214,11 @@ func TestIntegration_CleanupExpiredSessions(t *testing.T) {
 		t.Fatalf("CleanupExpiredSessions failed: %v", err)
 	}
 
-	if session := database.GetSession("expired-cleanup-id"); session != nil {
+	if session, _ := database.GetSession("expired-cleanup-id"); session != nil {
 		t.Error("Expired session should have been cleaned up")
 	}
 
-	if session := database.GetSession("valid-cleanup-id"); session == nil {
+	if session, _ := database.GetSession("valid-cleanup-id"); session == nil {
 		t.Error("Valid session should still exist")
 	}
 }

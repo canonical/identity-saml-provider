@@ -208,9 +208,10 @@ func (sp *sessionProviderAdapter) GetSession(w http.ResponseWriter, r *http.Requ
 
 	// Retrieve the session if cookie exists
 	var session *saml.Session
+	var rawClaims map[string]interface{}
 	if err == nil && sessionCookie.Value != "" {
 		sp.server.logger.Infow("Found session cookie", "sessionID", sessionCookie.Value)
-		session = sp.server.db.GetSession(sessionCookie.Value)
+		session, rawClaims = sp.server.db.GetSession(sessionCookie.Value)
 	} else {
 		sp.server.logger.Infow("No session cookie found", "error", err)
 	}
@@ -250,7 +251,7 @@ func (sp *sessionProviderAdapter) GetSession(w http.ResponseWriter, r *http.Requ
 			sp.server.logger.Errorw("Error retrieving attribute mapping", "entityID", req.Request.Issuer.Value, "error", err)
 		} else if mapping != nil {
 			sp.server.logger.Infow("Applying per-SP attribute mapping", "entityID", req.Request.Issuer.Value)
-			session = applyAttributeMapping(session, mapping)
+			session = applyAttributeMapping(session, mapping, rawClaims)
 		}
 	}
 
@@ -324,6 +325,14 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Extract all claims from the ID token for attribute mapping.
+	// This allows per-SP mappings to use any claim from the token,
+	// not just the standard email/sub/name/groups fields.
+	var rawClaims map[string]interface{}
+	if err := idToken.Claims(&rawClaims); err != nil {
+		s.logger.Warnw("Failed to extract raw claims from ID token", "error", err)
+	}
+
 	if claims.Email == "" {
 		http.Error(w, "User has no email in ID Token. Cannot authenticate with Service.", http.StatusForbidden)
 		return
@@ -351,7 +360,7 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		Groups:         claims.Groups,
 	}
 	// Store the session in database
-	if err := s.db.SaveSession(samlSession); err != nil {
+	if err := s.db.SaveSession(samlSession, rawClaims); err != nil {
 		s.logger.Errorw("Failed to save session to database", "error", err)
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return

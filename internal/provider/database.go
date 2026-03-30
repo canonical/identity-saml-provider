@@ -28,12 +28,22 @@ func (d *Database) GetDB() *sql.DB {
 	return d.db
 }
 
-// SaveSession saves a SAML session to the database
-func (d *Database) SaveSession(session *saml.Session) error {
+// SaveSession saves a SAML session to the database along with raw OIDC claims.
+func (d *Database) SaveSession(session *saml.Session, rawClaims map[string]interface{}) error {
 	d.logger.Infow("Saving session to database", "sessionID", session.ID, "email", session.UserEmail, "expireTime", session.ExpireTime)
+
+	var claimsArg interface{}
+	if rawClaims != nil {
+		claimsJSON, err := json.Marshal(rawClaims)
+		if err != nil {
+			return err
+		}
+		claimsArg = claimsJSON
+	}
+
 	query := `
-		INSERT INTO sessions (id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups, user_name)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO sessions (id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups, user_name, raw_oidc_claims)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		ON CONFLICT (id) DO UPDATE SET
 			create_time = EXCLUDED.create_time,
 			expire_time = EXCLUDED.expire_time,
@@ -42,7 +52,8 @@ func (d *Database) SaveSession(session *saml.Session) error {
 			user_email = EXCLUDED.user_email,
 			user_common_name = EXCLUDED.user_common_name,
 			groups = EXCLUDED.groups,
-			user_name = EXCLUDED.user_name
+			user_name = EXCLUDED.user_name,
+			raw_oidc_claims = EXCLUDED.raw_oidc_claims
 	`
 	_, err := d.db.Exec(query,
 		session.ID,
@@ -54,6 +65,7 @@ func (d *Database) SaveSession(session *saml.Session) error {
 		session.UserCommonName,
 		pq.Array(session.Groups),
 		session.UserName,
+		claimsArg,
 	)
 	if err != nil {
 		d.logger.Errorw("Error saving session to database", "sessionID", session.ID, "error", err)
@@ -63,17 +75,18 @@ func (d *Database) SaveSession(session *saml.Session) error {
 	return err
 }
 
-// GetSession retrieves a SAML session from the database by ID
-func (d *Database) GetSession(sessionID string) *saml.Session {
+// GetSession retrieves a SAML session and its raw OIDC claims from the database by ID.
+func (d *Database) GetSession(sessionID string) (*saml.Session, map[string]interface{}) {
 	d.logger.Infow("Attempting to retrieve session from database", "sessionID", sessionID)
 
 	query := `
-		SELECT id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups, user_name
+		SELECT id, create_time, expire_time, index_val, name_id, user_email, user_common_name, groups, user_name, raw_oidc_claims
 		FROM sessions
 		WHERE id = $1 AND expire_time > NOW()
 	`
 	var session saml.Session
 	var groups []string
+	var claimsJSON sql.NullString
 	err := d.db.QueryRow(query, sessionID).Scan(
 		&session.ID,
 		&session.CreateTime,
@@ -84,6 +97,7 @@ func (d *Database) GetSession(sessionID string) *saml.Session {
 		&session.UserCommonName,
 		pq.Array(&groups),
 		&session.UserName,
+		&claimsJSON,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -91,11 +105,19 @@ func (d *Database) GetSession(sessionID string) *saml.Session {
 		} else {
 			d.logger.Errorw("Error retrieving session from database", "sessionID", sessionID, "error", err)
 		}
-		return nil
+		return nil, nil
 	}
 	session.Groups = groups
+
+	var rawClaims map[string]interface{}
+	if claimsJSON.Valid && claimsJSON.String != "" {
+		if err := json.Unmarshal([]byte(claimsJSON.String), &rawClaims); err != nil {
+			d.logger.Errorw("Error parsing raw OIDC claims JSON", "sessionID", sessionID, "error", err)
+		}
+	}
+
 	d.logger.Infow("Session retrieved successfully from database", "sessionID", session.ID, "email", session.UserEmail)
-	return &session
+	return &session, rawClaims
 }
 
 // CleanupExpiredSessions removes expired sessions from the database
