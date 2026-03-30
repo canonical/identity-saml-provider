@@ -44,21 +44,21 @@ func newMockDatabase() *mockDatabase {
 	}
 }
 
-func (m *mockDatabase) SaveSession(session *saml.Session) error {
+func (m *mockDatabase) SaveSession(session *saml.Session, rawClaims map[string]interface{}) error {
 	m.sessions[session.ID] = session
 	return nil
 }
 
-func (m *mockDatabase) GetSession(sessionID string) *saml.Session {
+func (m *mockDatabase) GetSession(sessionID string) (*saml.Session, map[string]interface{}) {
 	session, ok := m.sessions[sessionID]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	// Check if expired
 	if session.ExpireTime.Before(time.Now()) {
-		return nil
+		return nil, nil
 	}
-	return session
+	return session, nil
 }
 
 func (m *mockDatabase) SaveServiceProvider(entityID, acsURL, acsBinding string, attributeMapping *AttributeMapping) error {
@@ -571,7 +571,7 @@ func TestSessionProviderAdapter_GetSession_WithValidCookie(t *testing.T) {
 		Groups:         []string{},
 	}
 
-	if err := server.db.SaveSession(session); err != nil {
+	if err := server.db.SaveSession(session, nil); err != nil {
 		t.Skipf("Cannot save test session: %v", err)
 	}
 
@@ -920,7 +920,7 @@ func TestSessionProviderAdapter_GetSession_WithExpiredSession(t *testing.T) {
 		Groups:         []string{},
 	}
 
-	if err := server.db.SaveSession(expiredSession); err != nil {
+	if err := server.db.SaveSession(expiredSession, nil); err != nil {
 		t.Skipf("Cannot save test session: %v", err)
 	}
 

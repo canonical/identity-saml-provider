@@ -54,7 +54,9 @@ func nameIDFormatToURN(format string) string {
 // applyAttributeMapping applies a per-SP attribute mapping to a session.
 // It returns a modified copy of the session with the mapped attributes.
 // If mapping is nil, the session is returned unmodified.
-func applyAttributeMapping(session *saml.Session, mapping *AttributeMapping) *saml.Session {
+// rawClaims contains all claims extracted from the OIDC ID token, allowing
+// the mapping to use claims beyond the standard session fields.
+func applyAttributeMapping(session *saml.Session, mapping *AttributeMapping, rawClaims map[string]interface{}) *saml.Session {
 	if mapping == nil {
 		return session
 	}
@@ -71,10 +73,11 @@ func applyAttributeMapping(session *saml.Session, mapping *AttributeMapping) *sa
 		copy(mapped.CustomAttributes, session.CustomAttributes)
 	}
 
-	// Build the internal user model from session fields.
+	// Build the internal user model from session fields and raw OIDC claims.
 	// The OIDC claims mapping determines which OIDC claim populates which internal field.
-	// Default internal model uses standard OIDC-to-internal mapping.
-	internalModel := buildInternalModel(session, mapping.OIDCClaims)
+	// When raw claims are available, they allow mapping arbitrary OIDC claims
+	// beyond the standard session fields (email, sub, name, groups).
+	internalModel := buildInternalModel(session, mapping.OIDCClaims, rawClaims)
 
 	// Apply transforms
 	if mapping.Options.LowercaseEmail {
@@ -149,8 +152,10 @@ func applyAttributeMapping(session *saml.Session, mapping *AttributeMapping) *sa
 }
 
 // buildInternalModel constructs a map of internal field names to values
-// from the session, using the OIDC claims mapping if provided.
-func buildInternalModel(session *saml.Session, oidcClaims map[string]string) map[string]string {
+// from the session and raw OIDC claims, using the OIDC claims mapping if provided.
+// When rawClaims is available, claim values are taken directly from the OIDC token,
+// allowing mapping of arbitrary claims beyond the standard session fields.
+func buildInternalModel(session *saml.Session, oidcClaims map[string]string, rawClaims map[string]interface{}) map[string]string {
 	// Default OIDC-to-internal mapping
 	oidcToInternal := map[string]string{
 		"sub":    "subject",
@@ -164,12 +169,9 @@ func buildInternalModel(session *saml.Session, oidcClaims map[string]string) map
 		oidcToInternal = oidcClaims
 	}
 
-	// Map OIDC claims (stored in session fields) to internal field names
-	// Session fields correspond to OIDC claims:
-	//   sub    → session.UserName
-	//   email  → session.UserEmail
-	//   name   → session.UserCommonName
-	//   groups → session.Groups (joined with null separator for internal storage)
+	// Build OIDC values from raw claims if available, falling back to session fields.
+	// Raw claims allow access to arbitrary OIDC token claims (e.g., preferred_username,
+	// given_name, family_name) that are not stored in standard session fields.
 	oidcValues := map[string]string{
 		"sub":   session.UserName,
 		"email": session.UserEmail,
@@ -179,6 +181,30 @@ func buildInternalModel(session *saml.Session, oidcClaims map[string]string) map
 	// Groups are multi-valued, encode as null-separated string
 	if len(session.Groups) > 0 {
 		oidcValues["groups"] = strings.Join(session.Groups, "\x00")
+	}
+
+	// If raw claims are available, overlay with values from the OIDC token.
+	// This lets us access any claim from the token, not just the 4 hardcoded ones.
+	if len(rawClaims) > 0 {
+		for oidcClaim := range oidcToInternal {
+			if rawVal, ok := rawClaims[oidcClaim]; ok {
+				switch v := rawVal.(type) {
+				case string:
+					oidcValues[oidcClaim] = v
+				case []interface{}:
+					// Multi-valued claim (e.g., groups)
+					var parts []string
+					for _, item := range v {
+						if s, ok := item.(string); ok {
+							parts = append(parts, s)
+						}
+					}
+					if len(parts) > 0 {
+						oidcValues[oidcClaim] = strings.Join(parts, "\x00")
+					}
+				}
+			}
+		}
 	}
 
 	// Build internal model
