@@ -34,18 +34,21 @@ import (
 // mockDatabase is a mock implementation of Database for testing
 type mockDatabase struct {
 	sessions         map[string]*saml.Session
+	sessionClaims    map[string]map[string]interface{}
 	serviceProviders map[string]*saml.EntityDescriptor
 }
 
 func newMockDatabase() *mockDatabase {
 	return &mockDatabase{
 		sessions:         make(map[string]*saml.Session),
+		sessionClaims:    make(map[string]map[string]interface{}),
 		serviceProviders: make(map[string]*saml.EntityDescriptor),
 	}
 }
 
 func (m *mockDatabase) SaveSession(session *saml.Session, rawClaims map[string]interface{}) error {
 	m.sessions[session.ID] = session
+	m.sessionClaims[session.ID] = rawClaims
 	return nil
 }
 
@@ -58,7 +61,7 @@ func (m *mockDatabase) GetSession(sessionID string) (*saml.Session, map[string]i
 	if session.ExpireTime.Before(time.Now()) {
 		return nil, nil
 	}
-	return session, nil
+	return session, m.sessionClaims[sessionID]
 }
 
 func (m *mockDatabase) SaveServiceProvider(entityID, acsURL, acsBinding string, attributeMapping *AttributeMapping) error {

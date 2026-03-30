@@ -106,6 +106,129 @@ func TestSaveAndGetSession(t *testing.T) {
 	}
 }
 
+func TestSaveAndGetSessionWithRawClaims(t *testing.T) {
+	database, _, cleanup := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	session := &saml.Session{
+		ID:             "test-session-claims",
+		CreateTime:     time.Now(),
+		ExpireTime:     time.Now().Add(10 * time.Minute),
+		Index:          "test-index",
+		NameID:         "test@example.com",
+		UserEmail:      "test@example.com",
+		UserCommonName: "Test User",
+		Groups:         []string{"group1"},
+	}
+
+	rawClaims := map[string]interface{}{
+		"sub":                "user-sub-id",
+		"email":              "test@example.com",
+		"name":               "Test User",
+		"preferred_username": "testuser",
+		"given_name":         "Test",
+		"family_name":        "User",
+		"groups":             []interface{}{"group1"},
+	}
+
+	err := database.SaveSession(session, rawClaims)
+	if err != nil {
+		t.Fatalf("SaveSession with claims failed: %v", err)
+	}
+
+	retrieved, retrievedClaims := database.GetSession("test-session-claims")
+	if retrieved == nil {
+		t.Fatal("GetSession returned nil session")
+	}
+	if retrievedClaims == nil {
+		t.Fatal("GetSession returned nil claims")
+	}
+
+	// Verify standard session fields
+	if retrieved.ID != session.ID {
+		t.Errorf("Expected ID %s, got %s", session.ID, retrieved.ID)
+	}
+	if retrieved.UserEmail != session.UserEmail {
+		t.Errorf("Expected UserEmail %s, got %s", session.UserEmail, retrieved.UserEmail)
+	}
+
+	// Verify raw claims were persisted and retrieved
+	expectedClaims := map[string]string{
+		"sub":                "user-sub-id",
+		"email":              "test@example.com",
+		"name":               "Test User",
+		"preferred_username": "testuser",
+		"given_name":         "Test",
+		"family_name":        "User",
+	}
+	for key, expected := range expectedClaims {
+		actual, ok := retrievedClaims[key]
+		if !ok {
+			t.Errorf("Expected claim %q not found in retrieved claims", key)
+			continue
+		}
+		if actual != expected {
+			t.Errorf("Claim %q: expected %q, got %v", key, expected, actual)
+		}
+	}
+
+	// Verify groups array claim
+	groups, ok := retrievedClaims["groups"]
+	if !ok {
+		t.Error("Expected 'groups' claim not found in retrieved claims")
+	} else {
+		groupSlice, ok := groups.([]interface{})
+		if !ok {
+			t.Errorf("Expected groups to be []interface{}, got %T", groups)
+		} else if len(groupSlice) != 1 || groupSlice[0] != "group1" {
+			t.Errorf("Expected groups [group1], got %v", groupSlice)
+		}
+	}
+}
+
+func TestSaveAndGetSessionWithNilClaims(t *testing.T) {
+	database, _, cleanup := setupTestDB(t)
+	if database == nil {
+		return
+	}
+	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	session := &saml.Session{
+		ID:             "test-session-nil-claims",
+		CreateTime:     time.Now(),
+		ExpireTime:     time.Now().Add(10 * time.Minute),
+		Index:          "test-index",
+		NameID:         "test@example.com",
+		UserEmail:      "test@example.com",
+		UserCommonName: "Test User",
+		Groups:         []string{},
+	}
+
+	err := database.SaveSession(session, nil)
+	if err != nil {
+		t.Fatalf("SaveSession with nil claims failed: %v", err)
+	}
+
+	retrieved, retrievedClaims := database.GetSession("test-session-nil-claims")
+	if retrieved == nil {
+		t.Fatal("GetSession returned nil session")
+	}
+	if retrievedClaims != nil {
+		t.Errorf("Expected nil claims for session saved without claims, got %v", retrievedClaims)
+	}
+}
+
 func TestGetSession_NotFound(t *testing.T) {
 	database, _, cleanup := setupTestDB(t)
 	if database == nil {
