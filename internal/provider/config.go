@@ -36,5 +36,5 @@ type Config struct {
 	SAMLKeyPath  string `envconfig:"SAML_PROVIDER_KEY_PATH" default:".local/certs/bridge.key"`
 
 	// SP Mapping Configuration
-	MappingConfigPath string `envconfig:"SAML_PROVIDER_MAPPING_CONFIG_PATH" default:""`
+	MappingConfigPath string `envconfig:"SAML_PROVIDER_MAPPING_CONFIG_PATH" default:"sp-mapping.yaml"`
 }
