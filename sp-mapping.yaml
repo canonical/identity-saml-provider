@@ -40,7 +40,7 @@ service_providers:
       lowercase_email: true
 
   # Greenhouse.io mapping
-  https://app6.greenhouse.io/2f7cd863b41fcc999207e097c2bd67b16aa50c1a/users/saml/consume:
+  https://greenhouse.io:
     nameid_format: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
     nameid_source: "email"
     attribute_map:
