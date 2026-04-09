@@ -1662,6 +1662,111 @@ func TestMetricsEndpointWithCustomServiceName(t *testing.T) {
 	}
 }
 
+func TestServerStart_InvalidPort(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+
+	s := &Server{
+		config:  Config{BridgeBaseURL: "http://localhost:8082", BridgeBasePort: "not-a-port"},
+		logger:  logger,
+		router:  chi.NewRouter(),
+		monitor: monitoring.NewNoopMonitor("identity-saml-provider", logger),
+		tracer:  tracing.NewNoopTracer(),
+	}
+
+	if err := s.Start(); err == nil {
+		t.Fatal("expected Start to fail for invalid port")
+	}
+}
+
+func TestWithHydraHTTPClient_NoClient(t *testing.T) {
+	s := setupTestServer(t)
+	s.hydraHTTPClient = nil
+
+	baseCtx := context.Background()
+	resultCtx := s.withHydraHTTPClient(baseCtx)
+
+	if resultCtx != baseCtx {
+		t.Fatal("expected context to be unchanged when hydraHTTPClient is nil")
+	}
+}
+
+func TestHandleServiceProviderRegistration_UnsupportedContentType(t *testing.T) {
+	s := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/service-providers", strings.NewReader("entity_id=sp"))
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+
+	s.handleServiceProviderRegistration(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestHandleServiceProviderRegistration_InvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/service-providers", strings.NewReader("{"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	s.handleServiceProviderRegistration(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestHandleOIDCCallback_MissingIDToken(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+	hydraStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth2/token" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"abc","token_type":"Bearer","expires_in":3600}`)
+	}))
+	defer hydraStub.Close()
+
+	s := &Server{
+		config: Config{
+			BridgeBaseURL: "http://localhost:8082",
+			ClientID:      "test-client",
+			ClientSecret:  "test-secret",
+		},
+		logger:          logger,
+		db:              NewDatabase(nil, logger),
+		pendingRequests: map[string]pendingAuthnRequest{},
+		router:          chi.NewRouter(),
+		monitor:         monitoring.NewNoopMonitor("identity-saml-provider", logger),
+		tracer:          tracing.NewNoopTracer(),
+		oauth2Config: &oauth2.Config{
+			ClientID:     "test-client",
+			ClientSecret: "test-secret",
+			RedirectURL:  "http://localhost:8082/saml/callback",
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  hydraStub.URL + "/oauth2/auth",
+				TokenURL: hydraStub.URL + "/oauth2/token",
+			},
+		},
+		hydraHTTPClient: hydraStub.Client(),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/callback?code=test-code&state=abc", nil)
+	rec := httptest.NewRecorder()
+
+	s.handleOIDCCallback(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "No id_token field") {
+		t.Fatalf("expected missing id_token error, got %q", rec.Body.String())
+	}
+}
+
 // -----------------------------------------------
 // Test Helper Structs for Mocking Monitoring
 // -----------------------------------------------
