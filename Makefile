@@ -1,10 +1,16 @@
-.PHONY: help build build-cli certs k8s-certs k8s-copy-secrets k8s clean run docker down test
+.PHONY: help build build-cli certs k8s-certs k8s-copy-secrets k8s clean run docker down test migrate-up migrate-down migrate-status migrate-check
 
 # VERSION is derived from git. `--dirty` is included when uncommitted changes exist
 VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || echo "v0.0.0")
 
 # LDFLAGS injects the version into the binary at build time. Use this in CI/builds.
 LDFLAGS := -ldflags "-X github.com/canonical/identity-saml-provider/internal/version.Version=$(VERSION)"
+
+# DB_PORT for local development (override with: make run DB_PORT=5432)
+DB_PORT ?= 15432
+
+# DSN for database migrations (override with: make migrate-up DSN="...")
+DSN ?= "host=localhost port=$(DB_PORT) user=saml_provider password=saml_provider dbname=saml_provider sslmode=disable"
 
 help:
 	@echo "SAML Provider Root Makefile"
@@ -21,8 +27,14 @@ help:
 	@echo "  dev                - Generate certs and start Docker environment"
 	@echo "  down               - Tear down the development environment"
 	@echo "  help               - Show this help message"
-	@echo "  run                - Run the provider locally"
+	@echo "  run                - Run the provider locally (migrate + serve)"
 	@echo "  test               - Run all tests"
+	@echo ""
+	@echo "Migrations:"
+	@echo "  migrate-up         - Apply all pending migrations"
+	@echo "  migrate-down       - Roll back the last migration"
+	@echo "  migrate-status     - Show migration status"
+	@echo "  migrate-check      - Check if there are pending migrations"
 
 build:
 	@echo "Building with version: $(VERSION)"
@@ -74,8 +86,10 @@ k8s: k8s-certs k8s-copy-secrets
 	skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
 
 run: certs
+	@echo "Running migrations..."
+	go run $(LDFLAGS) ./cmd/identity-saml-provider migrate up --dsn $(DSN)
 	@echo "Running with version: $(VERSION)"
-	go run $(LDFLAGS) ./cmd/identity-saml-provider
+	SAML_PROVIDER_DB_PORT=$(DB_PORT) go run $(LDFLAGS) ./cmd/identity-saml-provider serve
 
 clean:
 	rm -rf bin/
@@ -95,3 +109,15 @@ down:
 	@echo "Tearing down development environment..."
 	docker compose -f docker-compose.dev.yml down
 	@echo "Development environment torn down"
+
+migrate-up:
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate up --dsn $(DSN)
+
+migrate-down:
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate down --dsn $(DSN)
+
+migrate-status:
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate status --dsn $(DSN)
+
+migrate-check:
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate check --dsn $(DSN)

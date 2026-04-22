@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
 	"github.com/canonical/identity-saml-provider/internal/version"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -129,11 +129,11 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if outputFormat == "json" {
 		// Build JSON response
 		jsonOutput := map[string]interface{}{
-			"success":    true,
-			"entity_id":  entityID,
-			"acs_url":    acsURL,
+			"success":     true,
+			"entity_id":   entityID,
+			"acs_url":     acsURL,
 			"acs_binding": acsBinding,
-			"response":   response,
+			"response":    response,
 		}
 		jsonBytes, err := json.MarshalIndent(jsonOutput, "", "  ")
 		if err != nil {
