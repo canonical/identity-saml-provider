@@ -84,7 +84,7 @@ func main() {
 
 	idpMetadataURL, err := url.Parse(*idpMetadataURLStr)
 	if err != nil {
-		panic(fmt.Sprintf("failed parsing IdP metadata URL: %v", err)) 
+		panic(fmt.Sprintf("failed parsing IdP metadata URL: %v", err))
 	}
 	idpMetadata := fetchIDPMetadataWithRetry(idpMetadataURL)
 	log.Printf("Fetched IdP metadata from %s\n", *idpMetadataURLStr)
