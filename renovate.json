@@ -48,6 +48,17 @@
         "at any time"
       ],
       "additionalBranchPrefix": "auto-"
+    },
+    {
+      "groupName": "pre-commit hooks",
+      "matchManagers": ["pre-commit"],
+      "matchUpdateTypes": [
+        "major",
+        "minor",
+        "patch"
+      ],
+      "automerge": true,
+      "additionalBranchPrefix": "auto-"
     }
   ]
 }
