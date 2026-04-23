@@ -1,0 +1,24 @@
+name: auto-approver
+run-name: CI for approving PRs
+
+on:
+  push:
+    branches:
+      - "renovate/**"
+
+jobs:
+  autoapprove:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Approve PR
+        run: |
+          gh pr review --approve || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+      - name: Enable automerge if required
+        if: startsWith(github.ref_name, 'renovate/auto-')
+        run: |
+          gh pr merge --auto --merge || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
