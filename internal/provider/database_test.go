@@ -1,16 +1,18 @@
 package provider
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 	"time"
 
+	"github.com/canonical/identity-saml-provider/migrations"
 	"github.com/crewjam/saml"
 	_ "github.com/lib/pq"
 	"go.uber.org/zap/zaptest"
 )
 
-// setupTestDB creates a test database
+// setupTestDB creates a test database connection and runs migrations
 func setupTestDB(t *testing.T) (*Database, *sql.DB, func()) {
 	logger := zaptest.NewLogger(t).Sugar()
 
@@ -25,11 +27,17 @@ func setupTestDB(t *testing.T) (*Database, *sql.DB, func()) {
 		return nil, nil, func() {}
 	}
 
+	// Run goose migrations
+	if err := migrations.RunMigrationsUp(context.Background(), db); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+
 	database := NewDatabase(db, logger)
 
 	cleanup := func() {
 		db.Exec("DROP TABLE IF EXISTS sessions")
 		db.Exec("DROP TABLE IF EXISTS service_providers")
+		db.Exec("DROP TABLE IF EXISTS goose_db_version")
 		db.Close()
 	}
 
@@ -53,40 +61,12 @@ func TestNewDatabase(t *testing.T) {
 	}
 }
 
-func TestInitSchema(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
-	defer cleanup()
-
-	err := database.InitSchema()
-	if err != nil {
-		t.Fatalf("InitSchema failed: %v", err)
-	}
-
-	var tableName string
-	err = database.db.QueryRow("SELECT tablename FROM pg_tables WHERE tablename = 'sessions'").Scan(&tableName)
-	if err != nil {
-		t.Errorf("Sessions table not created: %v", err)
-	}
-
-	err = database.db.QueryRow("SELECT tablename FROM pg_tables WHERE tablename = 'service_providers'").Scan(&tableName)
-	if err != nil {
-		t.Errorf("Service providers table not created: %v", err)
-	}
-}
-
 func TestSaveAndGetSession(t *testing.T) {
 	database, _, cleanup := setupTestDB(t)
 	if database == nil {
 		return
 	}
 	defer cleanup()
-
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
 
 	session := &saml.Session{
 		ID:             "test-session-id",
@@ -133,10 +113,6 @@ func TestGetSession_NotFound(t *testing.T) {
 	}
 	defer cleanup()
 
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
-
 	retrieved := database.GetSession("non-existent-id")
 	if retrieved != nil {
 		t.Error("Expected nil for non-existent session, got a session")
@@ -149,10 +125,6 @@ func TestGetSession_Expired(t *testing.T) {
 		return
 	}
 	defer cleanup()
-
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
 
 	session := &saml.Session{
 		ID:             "expired-session-id",
@@ -181,10 +153,6 @@ func TestCleanupExpiredSessions(t *testing.T) {
 		return
 	}
 	defer cleanup()
-
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
 
 	expiredSession := &saml.Session{
 		ID:             "expired-cleanup-id",
@@ -235,10 +203,6 @@ func TestSaveAndGetServiceProvider(t *testing.T) {
 	}
 	defer cleanup()
 
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
-
 	entityID := "http://example.com/saml/metadata"
 	acsURL := "http://example.com/saml/acs"
 	acsBinding := saml.HTTPPostBinding
@@ -286,10 +250,6 @@ func TestGetServiceProvider_NotFound(t *testing.T) {
 	}
 	defer cleanup()
 
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
-
 	descriptor, err := database.GetServiceProvider("http://non-existent.com/metadata")
 	if err == nil {
 		t.Error("Expected error for non-existent service provider")
@@ -305,10 +265,6 @@ func TestSaveServiceProvider_Update(t *testing.T) {
 		return
 	}
 	defer cleanup()
-
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
 
 	entityID := "http://example.com/saml/metadata"
 	acsURL1 := "http://example.com/saml/acs1"

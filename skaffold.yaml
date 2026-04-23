@@ -14,37 +14,52 @@ manifests:
     paths:
     - k8s
 deploy:
-  kubectl: {}
+  kubectl:
+    hooks:
+      before:
+        - host:
+            command: ["sh", "-c", "kubectl delete job saml-provider-migrate --ignore-not-found=true"]
+      after:
+        - host:
+            command: ["sh", "-c", "kubectl wait --for=condition=complete --timeout=60s job/saml-provider-migrate"]
 portForward:
   - resourceType: service
     resourceName: traefik
+    namespace: default
     port: 80
     localPort: 8080
   - resourceType: service
     resourceName: identity-saml-provider
+    namespace: default
     port: 8082
     localPort: 8082
   - resourceType: service
     resourceName: hydra
+    namespace: default
     port: 4444
     localPort: 4444
   - resourceType: service
     resourceName: hydra
+    namespace: default
     port: 4445
     localPort: 4445
   - resourceType: service
     resourceName: postgres
+    namespace: default
     port: 5432
     localPort: 5432
   - resourceType: service
     resourceName: login-ui
+    namespace: default
     port: 4455
     localPort: 4455
   - resourceType: service
     resourceName: kratos
+    namespace: default
     port: 4433
     localPort: 4433
   - resourceType: service
     resourceName: kratos
+    namespace: default
     port: 4434
     localPort: 4434

@@ -8,12 +8,14 @@ description: >
   authentication to OIDC flows
 license: Apache-2.0
 platforms:
-  amd64: null
+  amd64:
+
 services:
   identity-saml-provider:
     override: replace
-    command: /usr/bin/identity-saml-provider
+    command: /usr/bin/identity-saml-provider serve
     startup: enabled
+
 parts:
   go-build:
     plugin: go
@@ -41,6 +43,7 @@ parts:
     prime:
       - usr/bin/identity-saml-provider
       - etc/ssl/certs/ca-certificates.crt
+
   deb-security-manifest:
     plugin: make
     source: https://github.com/canonical/rocks-security-manifest

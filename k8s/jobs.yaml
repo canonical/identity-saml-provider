@@ -1,6 +1,32 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
+  name: saml-provider-migrate
+  labels:
+    app: saml-provider-migrate
+spec:
+  template:
+    spec:
+      containers:
+      - name: saml-provider-migrate
+        image: identity-saml-provider
+        command:
+          - identity-saml-provider
+          - migrate
+          - up
+          - --dsn
+          - "host=postgres port=5432 user=postgres password=$(POSTGRES_PASSWORD) dbname=postgres sslmode=disable"
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-credentials
+              key: password
+      restartPolicy: OnFailure
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
   name: hydra-setup
   labels:
     app: hydra-setup

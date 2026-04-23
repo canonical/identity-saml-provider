@@ -24,6 +24,7 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/canonical/identity-saml-provider/internal/tracing"
+	"github.com/canonical/identity-saml-provider/migrations"
 	"github.com/crewjam/saml"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap/zaptest"
@@ -226,7 +227,7 @@ func TestHandleServiceProviderRegistration_Success(t *testing.T) {
 	}
 
 	// Initialize database schema
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -275,7 +276,7 @@ func TestHandleServiceProviderRegistration_FormData(t *testing.T) {
 	}
 
 	// Initialize database schema
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -365,7 +366,7 @@ func TestHandleServiceProviderRegistration_NonURLEntityID(t *testing.T) {
 		t.Skip("Skipping test: database not available")
 	}
 
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -470,7 +471,7 @@ func TestHandleServiceProviderRegistration_DefaultBinding(t *testing.T) {
 	}
 
 	// Initialize database schema
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -509,7 +510,7 @@ func TestServiceProviderAdapter_GetServiceProvider(t *testing.T) {
 
 	// Initialize schema
 	db := NewDatabase(testDB, logger)
-	if err := db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), testDB); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -551,7 +552,7 @@ func TestSessionProviderAdapter_GetSession_WithValidCookie(t *testing.T) {
 	}
 
 	// Initialize database schema
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -729,7 +730,7 @@ func TestRouterIntegration(t *testing.T) {
 	}
 
 	// Initialize database schema
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -895,7 +896,7 @@ func TestSessionProviderAdapter_GetSession_WithExpiredSession(t *testing.T) {
 	}
 
 	// Initialize database schema
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -999,7 +1000,7 @@ func TestHandleServiceProviderRegistration_EmptyACSBinding(t *testing.T) {
 		t.Skip("Skipping test: database not available")
 	}
 
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -1047,7 +1048,7 @@ func TestHandleServiceProviderRegistration_PostBinding(t *testing.T) {
 		t.Skip("Skipping test: database not available")
 	}
 
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -1077,7 +1078,7 @@ func TestHandleServiceProviderRegistration_RedirectBinding(t *testing.T) {
 		t.Skip("Skipping test: database not available")
 	}
 
-	if err := server.db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), server.db.GetDB()); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
@@ -1111,7 +1112,7 @@ func TestServiceProviderAdapter_GetServiceProvider_NotFound(t *testing.T) {
 	defer testDB.Close()
 
 	db := NewDatabase(testDB, logger)
-	if err := db.InitSchema(); err != nil {
+	if err := migrations.RunMigrationsUp(context.Background(), testDB); err != nil {
 		t.Skipf("Cannot initialize schema: %v", err)
 	}
 
