@@ -1,21 +1,19 @@
 name: identity-saml-provider
 base: bare
 build-base: ubuntu@24.04
-version: 0.1.2
+version: 0.1.3
 summary: Canonical Identity SAML Provider
 description: >
   This is the Canonical Identity SAML Provider used for bridging SAML
   authentication to OIDC flows
 license: Apache-2.0
 platforms:
-  amd64:
-
+  amd64: null
 services:
   identity-saml-provider:
     override: replace
     command: /usr/bin/identity-saml-provider serve
     startup: enabled
-
 parts:
   go-build:
     plugin: go
@@ -43,7 +41,6 @@ parts:
     prime:
       - usr/bin/identity-saml-provider
       - etc/ssl/certs/ca-certificates.crt
-
   deb-security-manifest:
     plugin: make
     source: https://github.com/canonical/rocks-security-manifest
