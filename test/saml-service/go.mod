@@ -2,7 +2,10 @@ module github.com/canonical/identity-saml-provider/example-service
 
 go 1.25.6
 
-require github.com/crewjam/saml v0.5.1
+require (
+	github.com/avast/retry-go/v4 v4.7.0
+	github.com/crewjam/saml v0.5.1
+)
 
 require (
 	github.com/beevik/etree v1.6.0 // indirect
