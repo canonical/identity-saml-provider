@@ -9,7 +9,7 @@ log:
 dsn: memory
 serve:
   public:
-    base_url: http://localhost/
+    base_url: http://localhost:4433/
     cors:
       enabled: True
   admin:
