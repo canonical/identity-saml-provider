@@ -113,10 +113,6 @@ func TestSaveAndGetSessionWithRawClaims(t *testing.T) {
 	}
 	defer cleanup()
 
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
-
 	session := &saml.Session{
 		ID:             "test-session-claims",
 		CreateTime:     time.Now(),
@@ -199,10 +195,6 @@ func TestSaveAndGetSessionWithNilClaims(t *testing.T) {
 		return
 	}
 	defer cleanup()
-
-	if err := database.InitSchema(); err != nil {
-		t.Fatalf("Failed to initialize schema: %v", err)
-	}
 
 	session := &saml.Session{
 		ID:             "test-session-nil-claims",
