@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.3](https://github.com/canonical/identity-saml-provider/compare/v0.1.2...v0.1.3) (2026-04-30)
+
+
+### Bug Fixes
+
+* add cli for application version ([55bd4e3](https://github.com/canonical/identity-saml-provider/commit/55bd4e334200b0d3ce588191c2561851ee84cf74))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.1 ([1599627](https://github.com/canonical/identity-saml-provider/commit/159962712aec83bb9f578f5d02f37544f01fc7f4))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.1 ([#85](https://github.com/canonical/identity-saml-provider/issues/85)) ([a6025f4](https://github.com/canonical/identity-saml-provider/commit/a6025f41666a960ed7ca9071990da3f5c480847d))
+* **deps:** update module go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp to v1.43.0 [security] ([4d452f1](https://github.com/canonical/identity-saml-provider/commit/4d452f1de486a11332a2e04281fac54962a10ac3))
+* **deps:** update module go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp to v1.43.0 [security] ([#70](https://github.com/canonical/identity-saml-provider/issues/70)) ([0ebe994](https://github.com/canonical/identity-saml-provider/commit/0ebe99464b20c9ce06e7206849d9a49fca6727f3))
+* **deps:** update module go.opentelemetry.io/otel/sdk to v1.43.0 [security] ([9382cf3](https://github.com/canonical/identity-saml-provider/commit/9382cf34bccc4646fe8cae9249796062b03fd709))
+* **deps:** update module go.opentelemetry.io/otel/sdk to v1.43.0 [security] ([#71](https://github.com/canonical/identity-saml-provider/issues/71)) ([4b2d080](https://github.com/canonical/identity-saml-provider/commit/4b2d080e7ee72a7e7bd6a5b9cdf25bc0e2a67282))
+* improve the migration commands ([fdfe5b1](https://github.com/canonical/identity-saml-provider/commit/fdfe5b1a24f50c3d49e384a8961ccf720bbef318))
+* remove URL-only restriction on EntityID to support any non-empty string ([157c370](https://github.com/canonical/identity-saml-provider/commit/157c370584bb816d01701e2c16c065383d200aad))
+
 ## [0.1.2](https://github.com/canonical/identity-saml-provider/compare/v0.1.1...v0.1.2) (2026-03-27)
 
 
