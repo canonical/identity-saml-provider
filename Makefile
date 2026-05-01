@@ -1,4 +1,4 @@
-.PHONY: help build build-cli certs k8s-certs k8s-copy-secrets k8s clean run docker down test migrate-up migrate-down migrate-status migrate-check
+.PHONY: help build build-cli certs k8s-certs k8s-copy-secrets k8s clean run docker down test test-integration migrate-up migrate-down migrate-status migrate-check
 
 # VERSION is derived from git. `--dirty` is included when uncommitted changes exist
 VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || echo "v0.0.0")
@@ -29,6 +29,7 @@ help:
 	@echo "  help               - Show this help message"
 	@echo "  run                - Run the provider locally (migrate + serve)"
 	@echo "  test               - Run all tests"
+	@echo "  test-integration   - Run integration tests (requires Docker)"
 	@echo ""
 	@echo "Migrations:"
 	@echo "  migrate-up         - Apply all pending migrations"
@@ -47,6 +48,9 @@ build-cli:
 
 test:
 	go test -v ./...
+
+test-integration:
+	go test -v -tags=integration -count=1 ./...
 
 certs:
 	@mkdir -p .local/certs

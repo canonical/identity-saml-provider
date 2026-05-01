@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/avast/retry-go/v4"
 	"github.com/crewjam/saml"
 	"github.com/crewjam/saml/samlsp"
 )
@@ -23,6 +24,8 @@ const (
 )
 
 func hello(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+
 	s := samlsp.SessionFromContext(r.Context())
 	if s == nil {
 		return
@@ -32,9 +35,32 @@ func hello(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	attrs := sa.GetAttributes()
-	displayName := attrs.Get("cn")
+
+	// Try mapped attribute names first, then fall back to defaults
+	displayName := attrs.Get("displayName")
+	if displayName == "" {
+		displayName = attrs.Get("cn")
+	}
+	if displayName == "" {
+		displayName = attrs.Get("name")
+	}
+	if displayName == "" {
+		displayName = attrs.Get("mail")
+	}
+	if displayName == "" {
+		displayName = attrs.Get("email")
+	}
+	if displayName == "" {
+		displayName = "unknown"
+	}
 
 	fmt.Fprintf(w, "Hello, %s!\n", displayName)
+
+	// Display NameID from the JWT session Subject field
+	if jwtSession, ok := s.(samlsp.JWTSessionClaims); ok && jwtSession.Subject != "" {
+		fmt.Fprintf(w, "\nNameID: %s\n", jwtSession.Subject)
+	}
+
 	fmt.Fprintf(w, "\nAll attributes:\n")
 	for name, values := range attrs {
 		fmt.Fprintf(w, "%s: %v\n", name, values)
@@ -42,29 +68,35 @@ func hello(w http.ResponseWriter, r *http.Request) {
 }
 
 func fetchIDPMetadataWithRetry(idpURL *url.URL) *saml.EntityDescriptor {
-	maxWait := 30 * time.Second
-	initialDelay := time.Second
-	delay := initialDelay
-	elapsed := time.Duration(0)
+	totalCtx, totalCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer totalCancel()
 
-	for {
-		idpMetadata, err := samlsp.FetchMetadata(context.Background(), http.DefaultClient, *idpURL)
-		if err == nil {
-			return idpMetadata
-		}
+	var idpMetadata *saml.EntityDescriptor
 
-		if elapsed+delay > maxWait {
-			panic(fmt.Sprintf("Failed to fetch IdP metadata after %v: %v", maxWait, err))
-		}
+	err := retry.Do(
+		func() error {
+			// Apply the 5-second timeout per attempt as recommended
+			reqCtx, reqCancel := context.WithTimeout(totalCtx, 5*time.Second)
+			defer reqCancel()
 
-		log.Printf("Failed to fetch IdP metadata: %v. Retrying in %v...", err, delay)
-		time.Sleep(delay)
-		elapsed += delay
-		delay = delay * 2
-		if delay > maxWait-elapsed {
-			delay = maxWait - elapsed
-		}
+			var fetchErr error
+			idpMetadata, fetchErr = samlsp.FetchMetadata(reqCtx, http.DefaultClient, *idpURL)
+			return fetchErr
+		},
+		retry.Context(totalCtx),
+		retry.Attempts(0),
+		retry.Delay(time.Second),            // Initial delay
+		retry.DelayType(retry.BackOffDelay), // Exponential backoff
+		retry.OnRetry(func(n uint, err error) {
+			log.Printf("Attempt %d: Failed to fetch IdP metadata: %v. Retrying...", n+1, err)
+		}),
+	)
+
+	if err != nil {
+		log.Fatalf("Failed to fetch IdP metadata after retries: %v", err)
 	}
+
+	return idpMetadata
 }
 
 func main() {
@@ -84,26 +116,31 @@ func main() {
 
 	idpMetadataURL, err := url.Parse(*idpMetadataURLStr)
 	if err != nil {
-		panic(fmt.Sprintf("failed parsing IdP metadata URL: %v", err))
+		log.Fatalf("failed parsing IdP metadata URL: %v", err)
 	}
 	idpMetadata := fetchIDPMetadataWithRetry(idpMetadataURL)
 	log.Printf("Fetched IdP metadata from %s\n", *idpMetadataURLStr)
 
 	rootURL, err := url.Parse(serviceURL)
 	if err != nil {
-		panic(fmt.Sprintf("failed parsing service URL: %v", err))
+		log.Fatalf("failed parsing service URL: %v", err)
 	}
 
-	samlSP, _ := samlsp.New(samlsp.Options{
+	samlSP, err := samlsp.New(samlsp.Options{
 		URL:         *rootURL,
 		Key:         keyPair.PrivateKey.(*rsa.PrivateKey),
 		Certificate: keyPair.Leaf,
 		IDPMetadata: idpMetadata,
 	})
+	if err != nil {
+		log.Fatalf("failed to initialize SAML SP: %v", err)
+	}
+
 	app := http.HandlerFunc(hello)
 	http.Handle("/hello", samlSP.RequireAccount(app))
 	http.Handle("/saml/", samlSP)
 
 	log.Printf("Starting Example SAML Service at %s/hello\n", serviceURL)
-	http.ListenAndServe(listenPort, nil)
+
+	log.Fatal(http.ListenAndServe(listenPort, nil))
 }

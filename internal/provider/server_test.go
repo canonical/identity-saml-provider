@@ -34,34 +34,37 @@ import (
 // mockDatabase is a mock implementation of Database for testing
 type mockDatabase struct {
 	sessions         map[string]*saml.Session
+	sessionClaims    map[string]map[string]interface{}
 	serviceProviders map[string]*saml.EntityDescriptor
 }
 
 func newMockDatabase() *mockDatabase {
 	return &mockDatabase{
 		sessions:         make(map[string]*saml.Session),
+		sessionClaims:    make(map[string]map[string]interface{}),
 		serviceProviders: make(map[string]*saml.EntityDescriptor),
 	}
 }
 
-func (m *mockDatabase) SaveSession(session *saml.Session) error {
+func (m *mockDatabase) SaveSession(session *saml.Session, rawClaims map[string]interface{}) error {
 	m.sessions[session.ID] = session
+	m.sessionClaims[session.ID] = rawClaims
 	return nil
 }
 
-func (m *mockDatabase) GetSession(sessionID string) *saml.Session {
+func (m *mockDatabase) GetSession(sessionID string) (*saml.Session, map[string]interface{}) {
 	session, ok := m.sessions[sessionID]
 	if !ok {
-		return nil
+		return nil, nil
 	}
 	// Check if expired
 	if session.ExpireTime.Before(time.Now()) {
-		return nil
+		return nil, nil
 	}
-	return session
+	return session, m.sessionClaims[sessionID]
 }
 
-func (m *mockDatabase) SaveServiceProvider(entityID, acsURL, acsBinding string) error {
+func (m *mockDatabase) SaveServiceProvider(entityID, acsURL, acsBinding string, attributeMapping *AttributeMapping) error {
 	m.serviceProviders[entityID] = &saml.EntityDescriptor{
 		EntityID: entityID,
 		SPSSODescriptors: []saml.SPSSODescriptor{
@@ -520,7 +523,7 @@ func TestServiceProviderAdapter_GetServiceProvider(t *testing.T) {
 	acsURL := "http://example.com/acs"
 
 	// Save a service provider
-	err = db.SaveServiceProvider(entityID, acsURL, saml.HTTPPostBinding)
+	err = db.SaveServiceProvider(entityID, acsURL, saml.HTTPPostBinding, nil)
 	if err != nil {
 		t.Skipf("Skipping test: cannot initialize test data: %v", err)
 	}
@@ -571,7 +574,7 @@ func TestSessionProviderAdapter_GetSession_WithValidCookie(t *testing.T) {
 		Groups:         []string{},
 	}
 
-	if err := server.db.SaveSession(session); err != nil {
+	if err := server.db.SaveSession(session, nil); err != nil {
 		t.Skipf("Cannot save test session: %v", err)
 	}
 
@@ -920,7 +923,7 @@ func TestSessionProviderAdapter_GetSession_WithExpiredSession(t *testing.T) {
 		Groups:         []string{},
 	}
 
-	if err := server.db.SaveSession(expiredSession); err != nil {
+	if err := server.db.SaveSession(expiredSession, nil); err != nil {
 		t.Skipf("Cannot save test session: %v", err)
 	}
 
@@ -1656,6 +1659,111 @@ func TestMetricsEndpointWithCustomServiceName(t *testing.T) {
 
 	if mockMonitor.GetService() != "test-saml-provider" {
 		t.Errorf("Expected service name 'test-saml-provider', got %s", mockMonitor.GetService())
+	}
+}
+
+func TestServerStart_InvalidPort(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+
+	s := &Server{
+		config:  Config{BridgeBaseURL: "http://localhost:8082", BridgeBasePort: "not-a-port"},
+		logger:  logger,
+		router:  chi.NewRouter(),
+		monitor: monitoring.NewNoopMonitor("identity-saml-provider", logger),
+		tracer:  tracing.NewNoopTracer(),
+	}
+
+	if err := s.Start(); err == nil {
+		t.Fatal("expected Start to fail for invalid port")
+	}
+}
+
+func TestWithHydraHTTPClient_NoClient(t *testing.T) {
+	s := setupTestServer(t)
+	s.hydraHTTPClient = nil
+
+	baseCtx := context.Background()
+	resultCtx := s.withHydraHTTPClient(baseCtx)
+
+	if resultCtx != baseCtx {
+		t.Fatal("expected context to be unchanged when hydraHTTPClient is nil")
+	}
+}
+
+func TestHandleServiceProviderRegistration_UnsupportedContentType(t *testing.T) {
+	s := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/service-providers", strings.NewReader("entity_id=sp"))
+	req.Header.Set("Content-Type", "text/plain")
+	rec := httptest.NewRecorder()
+
+	s.handleServiceProviderRegistration(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestHandleServiceProviderRegistration_InvalidJSON(t *testing.T) {
+	s := setupTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/service-providers", strings.NewReader("{"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	s.handleServiceProviderRegistration(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestHandleOIDCCallback_MissingIDToken(t *testing.T) {
+	logger := zaptest.NewLogger(t).Sugar()
+	hydraStub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth2/token" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"abc","token_type":"Bearer","expires_in":3600}`)
+	}))
+	defer hydraStub.Close()
+
+	s := &Server{
+		config: Config{
+			BridgeBaseURL: "http://localhost:8082",
+			ClientID:      "test-client",
+			ClientSecret:  "test-secret",
+		},
+		logger:          logger,
+		db:              NewDatabase(nil, logger),
+		pendingRequests: map[string]pendingAuthnRequest{},
+		router:          chi.NewRouter(),
+		monitor:         monitoring.NewNoopMonitor("identity-saml-provider", logger),
+		tracer:          tracing.NewNoopTracer(),
+		oauth2Config: &oauth2.Config{
+			ClientID:     "test-client",
+			ClientSecret: "test-secret",
+			RedirectURL:  "http://localhost:8082/saml/callback",
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  hydraStub.URL + "/oauth2/auth",
+				TokenURL: hydraStub.URL + "/oauth2/token",
+			},
+		},
+		hydraHTTPClient: hydraStub.Client(),
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/saml/callback?code=test-code&state=abc", nil)
+	rec := httptest.NewRecorder()
+
+	s.handleOIDCCallback(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "No id_token field") {
+		t.Fatalf("expected missing id_token error, got %q", rec.Body.String())
 	}
 }
 

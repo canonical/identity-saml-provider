@@ -221,6 +221,99 @@ guide for instructions on how to connect your local
 deployment to an external IDP such as one of the Prodstack
 IAM instances.
 
+### Service Provider Management CLI
+
+The `service-provider-admin` CLI tool manages SAML
+service provider registrations, including per-SP
+attribute mapping configuration.
+
+#### Registering a Service Provider
+
+```bash
+service-provider-admin add \
+  --entity-id <entity-id> \
+  --acs-url <acs-url> \
+  [--acs-binding <binding>] \
+  [--attribute-mapping-file <path-to-json>] \
+  [--nameid-format <format>] \
+  [--server <server-url>] \
+  [--output human|json]
+```
+
+| Flag | Description | Default |
+| ---- | ----------- | ------- |
+| `--entity-id`, `-e` | Entity ID of the service provider (required, must be a valid URL) | — |
+| `--acs-url`, `-a` | Assertion Consumer Service URL (required, must be a valid URL) | — |
+| `--acs-binding`, `-b` | ACS binding type | `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST` |
+| `--attribute-mapping-file` | Path to a JSON file containing the attribute mapping configuration | — |
+| `--nameid-format` | NameID format (e.g., `persistent`, `transient`, `emailAddress`) | — |
+| `--server` | Base URL of the Identity SAML Provider server | `http://localhost:8082` |
+| `--output` | Output format: `human` or `json` | `human` |
+
+#### Attribute Mapping File
+
+The attribute mapping file is a JSON configuration that
+controls how OIDC claims from the identity provider are
+mapped to SAML attributes for a specific service provider.
+All claims from the OIDC ID token are available for
+mapping.
+
+**Example `mapping.json`:**
+
+```json
+{
+  "nameid_format": "persistent",
+  "saml_attributes": {
+    "subject": "uid",
+    "email": "mail",
+    "name": "cn",
+    "groups": "memberOf",
+    "username": "preferredUsername"
+  },
+  "oidc_claims": {
+    "sub": "subject",
+    "email": "email",
+    "name": "name",
+    "groups": "groups",
+    "preferred_username": "username"
+  },
+  "options": {
+    "lowercase_email": true
+  }
+}
+```
+
+**Fields:**
+
+| Field | Description |
+| ----- | ----------- |
+| `nameid_format` | SAML NameID format. Accepted values: `persistent`, `transient`, `emailAddress`, `unspecified`, or a full URN. Defaults to `transient`. |
+| `oidc_claims` | Maps OIDC claim names (from the ID token) to internal field names. Any claim present in the OIDC ID token can be mapped. |
+| `saml_attributes` | Maps internal field names to SAML attribute names sent to the service provider. |
+| `options.lowercase_email` | When `true`, lowercases the email attribute value before mapping. |
+
+The mapping works in two stages:
+
+1. **OIDC → Internal**: `oidc_claims` maps token claim names to internal field names
+2. **Internal → SAML**: `saml_attributes` maps internal
+   field names to SAML attribute names
+
+**Example usage:**
+
+```bash
+# Register with a full attribute mapping file
+service-provider-admin add \
+  --entity-id https://myapp.example.com \
+  --acs-url https://myapp.example.com/saml/acs \
+  --attribute-mapping-file mapping.json
+
+# Register with only a NameID format override
+service-provider-admin add \
+  --entity-id https://myapp.example.com \
+  --acs-url https://myapp.example.com/saml/acs \
+  --nameid-format persistent
+```
+
 ## License
 
 See the [LICENSE](LICENSE) file for details.

@@ -1,3 +1,5 @@
+//go:build integration
+
 package provider
 
 import (
@@ -6,67 +8,89 @@ import (
 	"testing"
 	"time"
 
-	"github.com/canonical/identity-saml-provider/migrations"
 	"github.com/crewjam/saml"
 	_ "github.com/lib/pq"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/wait"
 	"go.uber.org/zap/zaptest"
 )
 
-// setupTestDB creates a test database connection and runs migrations
-func setupTestDB(t *testing.T) (*Database, *sql.DB, func()) {
-	logger := zaptest.NewLogger(t).Sugar()
+// setupPostgresContainer starts a PostgreSQL container and returns a
+// connected Database, the raw *sql.DB, and a cleanup function.
+func setupPostgresContainer(t *testing.T) (*Database, *sql.DB, func()) {
+	t.Helper()
+	ctx := context.Background()
 
-	db, err := sql.Open("postgres", "postgres://saml_provider:saml_provider@localhost:5432/saml_provider_tests?sslmode=disable")
+	pgContainer, err := postgres.Run(ctx, "postgres:16-alpine",
+		postgres.WithDatabase("saml_provider_tests"),
+		postgres.WithUsername("saml_provider"),
+		postgres.WithPassword("saml_provider"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(30*time.Second),
+		),
+	)
 	if err != nil {
-		t.Skip("Skipping database tests: PostgreSQL not available")
-		return nil, nil, func() {}
+		t.Fatalf("Failed to start PostgreSQL container: %v", err)
+	}
+
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("Failed to get connection string: %v", err)
+	}
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		t.Fatalf("Failed to open database: %v", err)
 	}
 
 	if err := db.Ping(); err != nil {
-		t.Skip("Skipping database tests: Cannot connect to PostgreSQL")
-		return nil, nil, func() {}
+		t.Fatalf("Failed to ping database: %v", err)
 	}
 
-	// Run goose migrations
-	if err := migrations.RunMigrationsUp(context.Background(), db); err != nil {
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
-
+	logger := zaptest.NewLogger(t).Sugar()
 	database := NewDatabase(db, logger)
 
 	cleanup := func() {
-		db.Exec("DROP TABLE IF EXISTS sessions")
-		db.Exec("DROP TABLE IF EXISTS service_providers")
-		db.Exec("DROP TABLE IF EXISTS goose_db_version")
 		db.Close()
+		if err := pgContainer.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate PostgreSQL container: %v", err)
+		}
 	}
 
 	return database, db, cleanup
 }
 
-func TestNewDatabase(t *testing.T) {
-	logger := zaptest.NewLogger(t).Sugar()
-	db := &sql.DB{}
+func TestIntegration_InitSchema(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
+	defer cleanup()
 
-	database := NewDatabase(db, logger)
+	err := database.InitSchema()
+	if err != nil {
+		t.Fatalf("InitSchema failed: %v", err)
+	}
 
-	if database == nil {
-		t.Fatal("Expected database instance, got nil")
+	var tableName string
+	err = database.db.QueryRow("SELECT tablename FROM pg_tables WHERE tablename = 'sessions'").Scan(&tableName)
+	if err != nil {
+		t.Errorf("Sessions table not created: %v", err)
 	}
-	if database.db != db {
-		t.Error("Database db field not set correctly")
-	}
-	if database.logger != logger {
-		t.Error("Database logger field not set correctly")
+
+	err = database.db.QueryRow("SELECT tablename FROM pg_tables WHERE tablename = 'service_providers'").Scan(&tableName)
+	if err != nil {
+		t.Errorf("Service providers table not created: %v", err)
 	}
 }
 
-func TestSaveAndGetSession(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_SaveAndGetSession(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	session := &saml.Session{
 		ID:             "test-session-id",
@@ -106,12 +130,13 @@ func TestSaveAndGetSession(t *testing.T) {
 	}
 }
 
-func TestSaveAndGetSessionWithRawClaims(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_SaveAndGetSessionWithRawClaims(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	session := &saml.Session{
 		ID:             "test-session-claims",
@@ -189,12 +214,13 @@ func TestSaveAndGetSessionWithRawClaims(t *testing.T) {
 	}
 }
 
-func TestSaveAndGetSessionWithNilClaims(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_SaveAndGetSessionWithNilClaims(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	session := &saml.Session{
 		ID:             "test-session-nil-claims",
@@ -221,12 +247,13 @@ func TestSaveAndGetSessionWithNilClaims(t *testing.T) {
 	}
 }
 
-func TestGetSession_NotFound(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_GetSession_NotFound(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	retrieved, _ := database.GetSession("non-existent-id")
 	if retrieved != nil {
@@ -234,12 +261,13 @@ func TestGetSession_NotFound(t *testing.T) {
 	}
 }
 
-func TestGetSession_Expired(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_GetSession_Expired(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	session := &saml.Session{
 		ID:             "expired-session-id",
@@ -262,12 +290,13 @@ func TestGetSession_Expired(t *testing.T) {
 	}
 }
 
-func TestCleanupExpiredSessions(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_CleanupExpiredSessions(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	expiredSession := &saml.Session{
 		ID:             "expired-cleanup-id",
@@ -311,12 +340,13 @@ func TestCleanupExpiredSessions(t *testing.T) {
 	}
 }
 
-func TestSaveAndGetServiceProvider(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_SaveAndGetServiceProvider(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	entityID := "http://example.com/saml/metadata"
 	acsURL := "http://example.com/saml/acs"
@@ -358,12 +388,13 @@ func TestSaveAndGetServiceProvider(t *testing.T) {
 	}
 }
 
-func TestGetServiceProvider_NotFound(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_GetServiceProvider_NotFound(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	descriptor, err := database.GetServiceProvider("http://non-existent.com/metadata")
 	if err == nil {
@@ -374,12 +405,13 @@ func TestGetServiceProvider_NotFound(t *testing.T) {
 	}
 }
 
-func TestSaveServiceProvider_Update(t *testing.T) {
-	database, _, cleanup := setupTestDB(t)
-	if database == nil {
-		return
-	}
+func TestIntegration_SaveServiceProvider_Update(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
 	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
 
 	entityID := "http://example.com/saml/metadata"
 	acsURL1 := "http://example.com/saml/acs1"
@@ -402,5 +434,119 @@ func TestSaveServiceProvider_Update(t *testing.T) {
 	acs := descriptor.SPSSODescriptors[0].AssertionConsumerServices[0]
 	if acs.Location != acsURL2 {
 		t.Errorf("Expected updated ACS URL %s, got %s", acsURL2, acs.Location)
+	}
+}
+
+func TestIntegration_SaveAndGetAttributeMapping(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
+	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	entityID := "http://example.com/saml/metadata"
+	acsURL := "http://example.com/saml/acs"
+	acsBinding := saml.HTTPPostBinding
+
+	mapping := &AttributeMapping{
+		NameIDFormat: "persistent",
+		SAMLAttributes: map[string]string{
+			"subject": "uid",
+			"email":   "mail",
+		},
+		OIDCClaims: map[string]string{
+			"sub":   "subject",
+			"email": "email",
+		},
+		Options: MappingOptions{
+			LowercaseEmail: true,
+		},
+	}
+
+	if err := database.SaveServiceProvider(entityID, acsURL, acsBinding, mapping); err != nil {
+		t.Fatalf("SaveServiceProvider with mapping failed: %v", err)
+	}
+
+	retrieved, err := database.GetAttributeMapping(entityID)
+	if err != nil {
+		t.Fatalf("GetAttributeMapping failed: %v", err)
+	}
+
+	if retrieved == nil {
+		t.Fatal("Expected attribute mapping, got nil")
+	}
+
+	if retrieved.NameIDFormat != "persistent" {
+		t.Errorf("Expected NameIDFormat 'persistent', got %q", retrieved.NameIDFormat)
+	}
+
+	if retrieved.SAMLAttributes["subject"] != "uid" {
+		t.Errorf("Expected SAMLAttributes[subject]='uid', got %q", retrieved.SAMLAttributes["subject"])
+	}
+
+	if retrieved.SAMLAttributes["email"] != "mail" {
+		t.Errorf("Expected SAMLAttributes[email]='mail', got %q", retrieved.SAMLAttributes["email"])
+	}
+
+	if !retrieved.Options.LowercaseEmail {
+		t.Error("Expected LowercaseEmail to be true")
+	}
+}
+
+func TestIntegration_GetAttributeMapping_NoMapping(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
+	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	entityID := "http://example.com/saml/metadata"
+	acsURL := "http://example.com/saml/acs"
+
+	if err := database.SaveServiceProvider(entityID, acsURL, saml.HTTPPostBinding, nil); err != nil {
+		t.Fatalf("SaveServiceProvider failed: %v", err)
+	}
+
+	mapping, err := database.GetAttributeMapping(entityID)
+	if err != nil {
+		t.Fatalf("GetAttributeMapping failed: %v", err)
+	}
+
+	if mapping != nil {
+		t.Error("Expected nil mapping when none configured, got non-nil")
+	}
+}
+
+func TestIntegration_GetAttributeMapping_NotFound(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
+	defer cleanup()
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Failed to initialize schema: %v", err)
+	}
+
+	mapping, err := database.GetAttributeMapping("http://non-existent.com/metadata")
+	if err != nil {
+		t.Fatalf("GetAttributeMapping should not error for non-existent SP: %v", err)
+	}
+
+	if mapping != nil {
+		t.Error("Expected nil mapping for non-existent SP")
+	}
+}
+
+func TestIntegration_InitSchema_Idempotent(t *testing.T) {
+	database, _, cleanup := setupPostgresContainer(t)
+	defer cleanup()
+
+	// Call InitSchema twice — it should be idempotent
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("First InitSchema failed: %v", err)
+	}
+
+	if err := database.InitSchema(); err != nil {
+		t.Fatalf("Second InitSchema failed (not idempotent): %v", err)
 	}
 }

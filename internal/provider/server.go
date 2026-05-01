@@ -208,9 +208,10 @@ func (sp *sessionProviderAdapter) GetSession(w http.ResponseWriter, r *http.Requ
 
 	// Retrieve the session if cookie exists
 	var session *saml.Session
+	var rawClaims map[string]interface{}
 	if err == nil && sessionCookie.Value != "" {
 		sp.server.logger.Infow("Found session cookie", "sessionID", sessionCookie.Value)
-		session = sp.server.db.GetSession(sessionCookie.Value)
+		session, rawClaims = sp.server.db.GetSession(sessionCookie.Value)
 	} else {
 		sp.server.logger.Infow("No session cookie found", "error", err)
 	}
@@ -241,6 +242,17 @@ func (sp *sessionProviderAdapter) GetSession(w http.ResponseWriter, r *http.Requ
 		sp.server.logger.Info("No valid session found, redirecting to Hydra for authentication")
 		http.Redirect(w, r, sp.server.oauth2Config.AuthCodeURL(state), http.StatusFound)
 		return nil
+	}
+
+	// Apply per-SP attribute mapping if configured
+	if req.Request.Issuer != nil && req.Request.Issuer.Value != "" {
+		mapping, err := sp.server.db.GetAttributeMapping(req.Request.Issuer.Value)
+		if err != nil {
+			sp.server.logger.Errorw("Error retrieving attribute mapping", "entityID", req.Request.Issuer.Value, "error", err)
+		} else if mapping != nil {
+			sp.server.logger.Infow("Applying per-SP attribute mapping", "entityID", req.Request.Issuer.Value)
+			session = applyAttributeMapping(session, mapping, rawClaims)
+		}
 	}
 
 	return session
@@ -305,11 +317,20 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	var claims struct {
 		Email  string   `json:"email"`
 		Sub    string   `json:"sub"`
+		Name   string   `json:"name"`
 		Groups []string `json:"groups"`
 	}
 	if err := idToken.Claims(&claims); err != nil {
 		http.Error(w, "Failed to parse claims", http.StatusInternalServerError)
 		return
+	}
+
+	// Extract all claims from the ID token for attribute mapping.
+	// This allows per-SP mappings to use any claim from the token,
+	// not just the standard email/sub/name/groups fields.
+	var rawClaims map[string]interface{}
+	if err := idToken.Claims(&rawClaims); err != nil {
+		s.logger.Warnw("Failed to extract raw claims from ID token", "error", err)
 	}
 
 	if claims.Email == "" {
@@ -319,6 +340,12 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.Debugw("User authenticated, creating SAML session", "email", claims.Email)
 
+	// Use the name claim if available, otherwise fall back to email
+	displayName := claims.Email
+	if claims.Name != "" {
+		displayName = claims.Name
+	}
+
 	// 4. Create a SAML Session
 	sessionID := fmt.Sprintf("_%d", time.Now().UnixNano())
 	samlSession := &saml.Session{
@@ -326,13 +353,14 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		CreateTime:     time.Now(),
 		ExpireTime:     time.Now().Add(10 * time.Minute),
 		Index:          sessionID,
-		NameID:         claims.Email, // Service matches users by NameID (Email)
+		NameID:         claims.Email,  // Service matches users by NameID (Email)
 		UserEmail:      claims.Email,
-		UserCommonName: claims.Email, // Use email as display name
+		UserCommonName: displayName,
+		UserName:       claims.Sub, // Store OIDC subject for attribute mapping
 		Groups:         claims.Groups,
 	}
 	// Store the session in database
-	if err := s.db.SaveSession(samlSession); err != nil {
+	if err := s.db.SaveSession(samlSession, rawClaims); err != nil {
 		s.logger.Errorw("Failed to save session to database", "error", err)
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
@@ -423,9 +451,10 @@ func (s *Server) handleServiceProviderRegistration(w http.ResponseWriter, r *htt
 
 	// Parse the JSON request body
 	var req struct {
-		EntityID   string `json:"entity_id"`
-		ACSURL     string `json:"acs_url"`
-		ACSBinding string `json:"acs_binding"`
+		EntityID         string            `json:"entity_id"`
+		ACSURL           string            `json:"acs_url"`
+		ACSBinding       string            `json:"acs_binding"`
+		AttributeMapping *AttributeMapping `json:"attribute_mapping,omitempty"`
 	}
 
 	contentType := strings.ToLower(r.Header.Get("Content-Type"))
@@ -444,6 +473,7 @@ func (s *Server) handleServiceProviderRegistration(w http.ResponseWriter, r *htt
 		req.EntityID = r.FormValue("entity_id")
 		req.ACSURL = r.FormValue("acs_url")
 		req.ACSBinding = r.FormValue("acs_binding")
+		// attribute_mapping is not supported in form-encoded requests
 	} else {
 		http.Error(w, "Unsupported Content-Type", http.StatusBadRequest)
 		return
@@ -479,7 +509,7 @@ func (s *Server) handleServiceProviderRegistration(w http.ResponseWriter, r *htt
 	}
 
 	// Save to database
-	if err := s.db.SaveServiceProvider(req.EntityID, req.ACSURL, req.ACSBinding); err != nil {
+	if err := s.db.SaveServiceProvider(req.EntityID, req.ACSURL, req.ACSBinding, req.AttributeMapping); err != nil {
 		s.logger.Errorw("Failed to save service provider", "error", err)
 		http.Error(w, "Failed to save service provider", http.StatusInternalServerError)
 		return
