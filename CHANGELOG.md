@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.1.4](https://github.com/canonical/identity-saml-provider/compare/v0.1.3...v0.1.4) (2026-05-01)
+
+
+### Features
+
+* add per-SP attribute mapping mechanism (issue [#62](https://github.com/canonical/identity-saml-provider/issues/62)) ([8a16023](https://github.com/canonical/identity-saml-provider/commit/8a16023799b1e93c07aae1be4c524d9c2a85a452))
+* adding additional server tests ([09d97d1](https://github.com/canonical/identity-saml-provider/commit/09d97d1c9cac8eb1c3176b588404e9cb5e905244))
+* extract all OIDC claims from ID token for attribute mapping and document CLI usage in README ([b51bb51](https://github.com/canonical/identity-saml-provider/commit/b51bb517d53ef1efcd8be60b58e590264e68254e))
+
+
+### Bug Fixes
+
+* add migration for attribute mapping mechanism ([c5a20ee](https://github.com/canonical/identity-saml-provider/commit/c5a20eea52d2bb0da43225a3e5b9c7930c3750f0))
+* fix the local dev testing kratos setup ([e9ce7da](https://github.com/canonical/identity-saml-provider/commit/e9ce7daee068ad6d430146c08c4e27d48a8cc957))
+
 ## [0.1.3](https://github.com/canonical/identity-saml-provider/compare/v0.1.2...v0.1.3) (2026-04-30)
 
 
