@@ -18,9 +18,37 @@ don't want others importing in their applications or
 libraries. This layout pattern is enforced by the Go
 compiler itself.
 
-- `/internal/provider` - Core SAML provider implementation
-  including server logic, database operations, and
-  configuration
+- `/internal/app` - Composition root that wires all layers
+  together and starts the server
+- `/internal/cmd` - CLI commands (serve, migrate, version)
+- `/internal/domain` - Core business entities, value objects,
+  and typed domain errors (no external dependencies)
+- `/internal/handler` - HTTP handlers (controllers) that
+  decode requests, delegate to services, and encode responses
+- `/internal/infrastructure/hydra` - Ory Hydra HTTP client
+  and OIDC provider discovery
+- `/internal/infrastructure/samlkit` - SAML certificate
+  loading and logger adapters
+- `/internal/logging` - Logger interface for structured
+  logging
+- `/internal/monitoring` - Metrics and monitoring middleware
+- `/internal/provider` - Legacy SAML provider implementation
+  (being migrated to the new layered architecture)
+- `/internal/repository` - Persistence interfaces consumed by
+  the service layer
+- `/internal/repository/memory` - In-memory repository
+  implementations
+- `/internal/repository/postgres` - PostgreSQL repository
+  implementations using pgxpool and Squirrel
+- `/internal/service` - Business-logic services that
+  orchestrate domain operations
+- `/internal/tracing` - OpenTelemetry tracing configuration
+- `/internal/version` - Build version metadata
+
+### `/mocks`
+
+Generated mock implementations for testing. Do not edit
+manually; run `make generate` to refresh.
 
 ### `/.local`
 
@@ -65,6 +93,26 @@ Install the pre-commit tool, then set up both the
 pip install pre-commit
 pre-commit install -t pre-commit -t commit-msg
 ```
+
+### Code Generation (mockgen)
+
+This project uses
+[`go.uber.org/mock/mockgen`](https://github.com/uber-go/mock)
+to generate mock implementations from interfaces. Install
+it once:
+
+```shell
+go install go.uber.org/mock/mockgen@latest
+```
+
+After adding or modifying `//go:generate` directives, run:
+
+```shell
+make generate
+```
+
+This invokes `go generate ./...` and refreshes all generated
+files under `mocks/`.
 
 ### Running Hooks Manually
 
