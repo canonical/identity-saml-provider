@@ -1,4 +1,4 @@
-.PHONY: help build build-cli certs k8s-certs k8s-copy-secrets k8s clean run docker down test test-integration migrate-up migrate-down migrate-status migrate-check
+.PHONY: help build build-cli certs k8s-certs k8s-copy-secrets k8s clean run docker down test test-integration generate migrate-up migrate-down migrate-status migrate-check
 
 # VERSION is derived from git. `--dirty` is included when uncommitted changes exist
 VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || echo "v0.0.0")
@@ -26,6 +26,7 @@ help:
 	@echo "Development:"
 	@echo "  dev                - Generate certs and start Docker environment"
 	@echo "  down               - Tear down the development environment"
+	@echo "  generate           - Run go generate for all packages (e.g. mockgen)"
 	@echo "  help               - Show this help message"
 	@echo "  run                - Run the provider locally (migrate + serve)"
 	@echo "  test               - Run all tests"
@@ -51,6 +52,9 @@ test:
 
 test-integration:
 	go test -v -tags=integration -count=1 ./...
+
+generate:
+	go generate ./...
 
 certs:
 	@mkdir -p .local/certs
