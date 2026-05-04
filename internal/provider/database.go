@@ -9,7 +9,12 @@ import (
 	"go.uber.org/zap"
 )
 
-// Database wraps a sql.DB connection and provides SAML-specific operations
+// Database wraps a sql.DB connection and provides SAML-specific operations.
+//
+// Deprecated: Database is retained for backward compatibility during the
+// migration to the repository pattern. New code should use the repository
+// interfaces in internal/repository and the PostgreSQL implementations
+// in internal/repository/postgres instead.
 type Database struct {
 	db     *sql.DB
 	logger *zap.SugaredLogger
