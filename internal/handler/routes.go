@@ -5,10 +5,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Routes returns a chi.Router with all endpoints registered.
-func (h *Handlers) Routes() chi.Router {
-	r := chi.NewRouter()
-
+// RegisterRoutes registers all endpoints on the provided chi.Router.
+func (h *Handlers) RegisterRoutes(r chi.Router) {
 	// SAML endpoints (delegated to crewjam/saml IdentityProvider)
 	r.HandleFunc("/saml/metadata", h.samlIDP.ServeMetadata)
 	r.HandleFunc("/saml/sso", h.samlIDP.ServeSSO)
@@ -21,6 +19,4 @@ func (h *Handlers) Routes() chi.Router {
 
 	// Observability
 	r.Handle("/metrics", promhttp.Handler())
-
-	return r
 }

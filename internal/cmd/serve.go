@@ -2,15 +2,12 @@ package cmd
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
+	"net/http"
 
-	"github.com/canonical/identity-saml-provider/internal/monitoring/prometheus"
-	"github.com/canonical/identity-saml-provider/internal/provider"
-	"github.com/canonical/identity-saml-provider/internal/tracing"
+	"github.com/canonical/identity-saml-provider/internal/app"
 	"github.com/canonical/identity-saml-provider/internal/version"
 	"github.com/kelseyhightower/envconfig"
-	_ "github.com/lib/pq"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 )
@@ -45,68 +42,32 @@ func runServe() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
-	defer zapLogger.Sync()
+	defer zapLogger.Sync() //nolint:errcheck
 	logger := zapLogger.Sugar()
 
 	// Print startup version information
 	logger.Infow("Starting identity-saml-provider", "version", version.Version)
 
 	// Load configuration from environment variables
-	var config provider.Config
-	if err := envconfig.Process("", &config); err != nil {
+	var cfg app.Config
+	if err := envconfig.Process("", &cfg); err != nil {
 		logger.Fatalw("Failed to process configuration", "error", err)
 	}
 
-	// -------------------------------------------------------------------------
-	// 1. Initialize Database Connection
-	// -------------------------------------------------------------------------
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		config.DBHost, config.DBPort, config.DBUser, config.DBPassword, config.DBName)
-	logger.Infow("Connecting to PostgreSQL", "host", config.DBHost, "port", config.DBPort)
-	db, err := sql.Open("postgres", dsn)
+	// Build the application (pool → repos → services → handlers → HTTP server)
+	application, err := app.Build(ctx, cfg, zapLogger)
 	if err != nil {
-		logger.Fatalw("Failed to open database connection", "error", err)
+		logger.Fatalw("Failed to build application", "error", err)
 	}
-	defer db.Close()
-
-	// Verify the connection
-	if err = db.PingContext(ctx); err != nil {
-		logger.Fatalw("Failed to connect to database", "error", err)
-	}
-	logger.Info("Database connection established")
-
-	// -------------------------------------------------------------------------
-	// 2. Create and Initialize Server
-	// -------------------------------------------------------------------------
-	monitor := prometheus.NewMonitor("identity-saml-provider", logger)
-	tracer := tracing.NewTracer(tracing.NewConfig(
-		config.TracingEnabled,
-		config.OtelGRPCEndpoint,
-		config.OtelHTTPEndpoint,
-		config.OtelSampler,
-		config.OtelSamplerRatio,
-		logger,
-	))
+	defer application.Pool.Close()
 	defer func() {
-		if err := tracer.Shutdown(); err != nil {
+		if err := application.Tracer.Shutdown(); err != nil {
 			logger.Warnw("Failed to shutdown tracer", "error", err)
 		}
 	}()
 
-	server, err := provider.NewServer(config, logger, db, monitor, tracer)
-	if err != nil {
-		logger.Fatalw("Failed to create server", "error", err)
+	logger.Infow("Starting server", "addr", application.HTTPServer.Addr)
+	if err := application.HTTPServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Fatalw("Server error", "error", err)
 	}
-
-	// Initialize OIDC and SAML providers
-	if err = server.Initialize(ctx, zapLogger); err != nil {
-		logger.Fatalw("Failed to initialize server", "error", err)
-	}
-
-	// -------------------------------------------------------------------------
-	// 3. Setup Routes and Start Server
-	// -------------------------------------------------------------------------
-	server.SetupRoutes()
-
-	logger.Fatalw("Server error", "error", server.Start())
 }
