@@ -2,34 +2,51 @@
 
 ## Project Overview
 
-**Identity SAML Provider** is a SAML-to-OIDC bridge that translates SAML authentication requests to OIDC flows via Ory Hydra. It enables SAML Service Providers to authenticate through modern OIDC providers.
+**Identity SAML Provider** is a SAML-to-OIDC bridge that
+translates SAML authentication requests to OIDC flows via
+Ory Hydra. It enables SAML Service Providers to
+authenticate through modern OIDC providers.
 
 ## Architecture
 
 The system has three layers:
-- **SAML Layer**: Handles SAML protocol requests from service providers (uses `crewjam/saml`)
-- **Bridge Layer**: Manages session state, OIDC flow coordination, and SAML-OIDC translation
-- **OIDC Layer**: Communicates with Ory Hydra for actual user authentication
+
+- **SAML Layer**: Handles SAML protocol requests from
+  service providers (uses `crewjam/saml`)
+- **Bridge Layer**: Manages session state, OIDC flow
+  coordination, and SAML-OIDC translation
+- **OIDC Layer**: Communicates with Ory Hydra for actual
+  user authentication
 
 ### Key Components
 
-| Component | File | Purpose |
-|-----------|------|---------|
-| Server | `internal/provider/server.go` | HTTP handlers, OIDC/SAML provider setup, session management |
-| Database | `internal/provider/database.go` | Manages session and service provider persistence in PostgreSQL |
-| Config | `internal/provider/config.go` | Environment-driven configuration for all services |
-| Main | `cmd/identity-saml-provider/main.go` | Orchestrates initialization: DB → Logger → Server |
+| Component    | File                                 | Purpose                                                              |
+|--------------|--------------------------------------|----------------------------------------------------------------------|
+| App          | `internal/app/app.go`                | Application wiring: pool → repos → services → handlers → HTTP server |
+| Config       | `internal/app/config.go`             | Environment-driven configuration for all services                    |
+| Handlers     | `internal/handler/`                  | HTTP handlers, SAML adapters, request/response DTOs                  |
+| Services     | `internal/service/`                  | Business logic: session, SP, mapping, OIDC, pending request          |
+| Repositories | `internal/repository/`               | Persistence interfaces and implementations (Postgres, in-memory)     |
+| Domain       | `internal/domain/`                   | Domain entities, value objects, and typed errors                     |
+| Main         | `cmd/identity-saml-provider/main.go` | CLI entry point with serve and migrate commands                      |
 
-See the [directory structure](../CONTRIBUTING.md#directory-structure) section in CONTRIBUTING.md for more details on file organization.
+See the [directory structure][dir-structure] section in
+CONTRIBUTING.md for more details on file organization.
+
+[dir-structure]: ../CONTRIBUTING.md#directory-structure
 
 ### Data Flow
 
-1. SAML Service Provider sends SAML AuthnRequest → `/saml/sso` endpoint
-2. Bridge stores pending request, redirects user to Hydra login
+1. SAML Service Provider sends SAML AuthnRequest →
+   `/saml/sso` endpoint
+2. Bridge stores pending request, redirects user to
+   Hydra login
 3. User authenticates with Hydra (OIDC provider)
-4. Hydra returns ID token with user claims → `/callback` endpoint
+4. Hydra returns ID token with user claims →
+   `/callback` endpoint
 5. Bridge converts OIDC claims to SAML assertion
-6. Bridge returns SAML Response to Service Provider ACS URL
+6. Bridge returns SAML Response to Service Provider
+   ACS URL
 
 ## Development Workflows
 
@@ -40,7 +57,8 @@ make dev           # Starts Docker containers: Hydra, Kratos, Postgres, Traefik
 make run           # Runs the SAML provider (requires make dev running)
 ```
 
-In another terminal, set up the example SAML service provider:
+In another terminal, set up the example SAML service
+provider:
 
 ```bash
 cd test/saml-service
@@ -49,6 +67,7 @@ make run  # Runs example SAML service provider
 ```
 
 ### Testing Flow
+
 - Access example service at `https://localhost:8083/hello`
 - Service redirects to SAML provider
 - Provider redirects to Hydra login
@@ -56,7 +75,11 @@ make run  # Runs example SAML service provider
 
 #### Makefile
 
-All commands are defined in the root `Makefile` for convenience. Make sure to test these when changing things related to development environment setup or testing, and make sure to update the `Makefile` if you add new commands or change existing ones.
+All commands are defined in the root `Makefile` for
+convenience. Make sure to test these when changing things
+related to development environment setup or testing, and
+make sure to update the `Makefile` if you add new commands
+or change existing ones.
 
 #### Running unit tests
 
@@ -65,77 +88,112 @@ make test
 ```
 
 ### Key Environment Setup
-- Add `127.0.0.1 hydra` to `/etc/hosts` (critical for container-to-browser communication)
-- PostgreSQL connection via `SAML_PROVIDER_DB_*` environment variables
-- Ory Hydra OIDC client credentials: `SAML_PROVIDER_OIDC_CLIENT_ID/SECRET`
+
+- Add `127.0.0.1 hydra` to `/etc/hosts` (critical for
+  container-to-browser communication)
+- PostgreSQL connection via `SAML_PROVIDER_DB_*`
+  environment variables
+- Ory Hydra OIDC client credentials:
+  `SAML_PROVIDER_OIDC_CLIENT_ID/SECRET`
 
 ## Code Patterns
 
 ### Configuration Loading
-Uses `kelseyhightower/envconfig` with struct tags. All config is in `Config` struct (config.go):
+
+Uses `kelseyhightower/envconfig` with struct tags. All
+config is in `Config` struct (config.go):
+
 ```go
 type Config struct {
     BridgeBaseURL string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_URL" default:"http://localhost:8082"`
 }
 ```
+
 Access via `s.config.FieldName` throughout the codebase.
 
 ### Database Operations
-Pattern: Create `Database` wrapper, call methods on it:
+
+Pattern: Create repository via constructor, inject into
+services:
+
 ```go
-db := provider.NewDatabase(sqlDB, logger)
-db.GetSession(id)  // Stored procedure-like methods
-db.InitSchema()    // One-time setup
+sessionRepo := postgres.NewSessionRepo(pool)
+spRepo := postgres.NewServiceProviderRepo(pool)
 ```
-Tables: `sessions` (user state) and `service_providers` (SP metadata).
+
+Tables: `sessions` (user state) and `service_providers`
+(SP metadata).
 
 ### HTTP Handlers
-All handlers in `server.go`. Common pattern:
+
+Handlers live in `internal/handler/`. Common pattern:
+
 ```go
-func (s *Server) handleSAMLSSO(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
     // Validate input
-    // Store state in pendingRequests map
-    // Redirect to Hydra
+    // Delegate to service layer
+    // Write response
 }
 ```
 
 ### OIDC/SAML Adapter Pattern
-Server implements provider interfaces:
-- `serviceProviderAdapter` → looks up SAML SP details from DB
-- `sessionProviderAdapter` → retrieves user claims from OIDC token
-Both adapt SAML library interfaces to server's DB/auth model.
+
+SAML adapters implement `crewjam/saml` interfaces:
+
+- `SAMLSPAdapter` → looks up SAML SP details from DB
+- `SAMLSessionAdapter` → retrieves user claims from
+  OIDC token
+
+Both adapt SAML library interfaces to the service layer.
 
 ## Critical Integration Points
 
 ### Ory Hydra Integration
-- Uses OpenID Provider discovery: `/.well-known/openid-configuration`
+
+- Uses OpenID Provider discovery:
+  `/.well-known/openid-configuration`
 - Scopes requested: `openid`, `email`, `profile`
-- ID token must contain user identifiers for SAML attribute mapping
+- ID token must contain user identifiers for SAML
+  attribute mapping
 
 ### SAML Service Provider Registration
+
 - SPs must be registered in database with:
   - Entity ID (unique identifier)
   - ACS URL (where to POST SAML Response)
   - Binding type (default: HTTP-POST)
-- Registration typically done via `test/saml-service/make register` command
+- Registration typically done via
+  `test/saml-service/make register` command
 
 ### Certificate Management
-- SAML signing/decryption uses TLS keypair from `.local/certs/`
+
+- SAML signing/decryption uses TLS keypair from
+  `.local/certs/`
 - Generated by `make certs` if missing
-- Paths configurable: `SAML_PROVIDER_CERT_PATH`, `SAML_PROVIDER_KEY_PATH`
+- Paths configurable: `SAML_PROVIDER_CERT_PATH`,
+  `SAML_PROVIDER_KEY_PATH`
 
 ## Dependencies to Know
 
-- **SAML**: `crewjam/saml` - parses requests, builds assertions
-- **OIDC**: `coreos/go-oidc/v3` - token verification, provider discovery
-- **OAuth2**: `golang.org/x/oauth2` - token exchange with Hydra
+- **SAML**: `crewjam/saml` - parses requests, builds
+  assertions
+- **OIDC**: `coreos/go-oidc/v3` - token verification,
+  provider discovery
+- **OAuth2**: `golang.org/x/oauth2` - token exchange
+  with Hydra
 - **Database**: `lib/pq` - PostgreSQL driver
-- **Logging**: `go.uber.org/zap` - structured logging (all logs via `logger.*w()` methods)
+- **Logging**: `go.uber.org/zap` - structured logging
+  (all logs via `logger.*w()` methods)
 
 ## Debugging Tips
 
-- Check `SAML_PROVIDER_BRIDGE_BASE_URL` matches external URL (critical for redirects)
-- Enable verbose logging: modify `zap.NewProduction()` to `zap.NewDevelopment()`
-- Pending requests stored in memory (`pendingRequests` map) - resets on restart
-- PostgreSQL connectivity: ensure `docker compose` containers running and `make dev` completed
-- SAML metadata accessible at `/saml/metadata` endpoint for SP verification
+- Check `SAML_PROVIDER_BRIDGE_BASE_URL` matches
+  external URL (critical for redirects)
+- Enable verbose logging: modify `zap.NewProduction()`
+  to `zap.NewDevelopment()`
+- Pending requests stored in memory
+  (`pendingRequests` map) - resets on restart
+- PostgreSQL connectivity: ensure `docker compose`
+  containers running and `make dev` completed
+- SAML metadata accessible at `/saml/metadata` endpoint
+  for SP verification
