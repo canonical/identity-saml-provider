@@ -32,8 +32,6 @@ compiler itself.
 - `/internal/logging` - Logger interface for structured
   logging
 - `/internal/monitoring` - Metrics and monitoring middleware
-- `/internal/provider` - Legacy SAML provider implementation
-  (being migrated to the new layered architecture)
 - `/internal/repository` - Persistence interfaces consumed by
   the service layer
 - `/internal/repository/memory` - In-memory repository

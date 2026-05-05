@@ -163,7 +163,7 @@ skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
 
 ### Environment Variables and Kratos OIDC Configuration
 
-See the [`config.go`](internal/provider/config.go) file
+See the [`config.go`](internal/app/config.go) file
 for configuration options specific to the SAML provider,
 which can all be set via environment variables.
 

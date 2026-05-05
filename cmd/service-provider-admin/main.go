@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/canonical/identity-saml-provider/internal/provider"
+	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/version"
 	"github.com/spf13/cobra"
 )
@@ -96,7 +96,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read attribute mapping file %q: %w", attributeMappingFile, err)
 		}
-		var mapping provider.AttributeMapping
+		var mapping domain.AttributeMapping
 		if err := json.Unmarshal(data, &mapping); err != nil {
 			return fmt.Errorf("failed to parse attribute mapping JSON from %q: %w", attributeMappingFile, err)
 		}
