@@ -26,7 +26,8 @@ run: certs
 	go run .
 
 register:
-	curl -X POST -H "Content-Type: application/x-www-form-urlencoded" http://localhost:8082/admin/service-providers -d "entity_id=http://localhost:8083/saml/metadata" -d "acs_url=http://localhost:8083/saml/acs"
+	curl -s -X POST -H "Content-Type: application/json" http://localhost:8082/admin/service-providers \
+		-d '{"entity_id":"http://localhost:8083/saml/metadata", "acs_url":"http://localhost:8083/saml/acs"}'
 
 register-with-email:
 	curl -s -X POST -H "Content-Type: application/json" http://localhost:8082/admin/service-providers \
