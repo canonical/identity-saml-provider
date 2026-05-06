@@ -1,4 +1,4 @@
-.PHONY: help build build-cli certs k8s-certs k8s-copy-secrets k8s clean run docker down test test-integration generate migrate-up migrate-down migrate-status migrate-check
+.PHONY: help build certs k8s-certs k8s-copy-secrets k8s clean run docker down test test-integration generate migrate-up migrate-down migrate-status migrate-check sp-add
 
 # VERSION is derived from git. `--dirty` is included when uncommitted changes exist
 VERSION := $(shell git describe --tags --dirty --always 2>/dev/null || echo "v0.0.0")
@@ -16,8 +16,7 @@ help:
 	@echo "SAML Provider Root Makefile"
 	@echo ""
 	@echo "Build & Clean:"
-	@echo "  build              - Build provider and CLI tools"
-	@echo "  build-cli          - Build service-provider-admin CLI only"
+	@echo "  build              - Build the identity-saml-provider binary"
 	@echo "  clean              - Clean all build artifacts and certificates"
 	@echo "  certs              - Generate certificates for both provider and service"
 	@echo "  certs-link         - Link provider certs into k8s for kustomize"
@@ -32,6 +31,9 @@ help:
 	@echo "  test               - Run all tests"
 	@echo "  test-integration   - Run integration tests (requires Docker)"
 	@echo ""
+	@echo "Service Provider Management:"
+	@echo "  sp-add             - Register a SAML service provider (requires ENTITY_ID and ACS_URL)"
+	@echo ""
 	@echo "Migrations:"
 	@echo "  migrate-up         - Apply all pending migrations"
 	@echo "  migrate-down       - Roll back the last migration"
@@ -41,11 +43,6 @@ help:
 build:
 	@echo "Building with version: $(VERSION)"
 	go build $(LDFLAGS) -o bin/identity-saml-provider ./cmd/identity-saml-provider
-	go build $(LDFLAGS) -o bin/service-provider-admin ./cmd/service-provider-admin
-
-build-cli:
-	@echo "Building CLI with version: $(VERSION)"
-	go build $(LDFLAGS) -o bin/service-provider-admin ./cmd/service-provider-admin
 
 test:
 	go test -v ./...
@@ -129,3 +126,6 @@ migrate-status:
 
 migrate-check:
 	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate check --dsn $(DSN)
+
+sp-add:
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider sp add --entity-id $(ENTITY_ID) --acs-url $(ACS_URL)

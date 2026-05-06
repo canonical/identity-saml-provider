@@ -3,8 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-
-	"github.com/canonical/identity-saml-provider/internal/domain"
 )
 
 // HandleRegisterServiceProvider handles POST /admin/service-providers.
@@ -23,12 +21,7 @@ func (h *Handlers) HandleRegisterServiceProvider(w http.ResponseWriter, r *http.
 		return
 	}
 
-	sp := &domain.ServiceProvider{
-		EntityID:         req.EntityID,
-		ACSURL:           req.ACSURL,
-		ACSBinding:       req.ACSBinding,
-		AttributeMapping: req.AttributeMapping,
-	}
+	sp := req.ToDomain()
 
 	if err := h.serviceProviders.Register(ctx, sp); err != nil {
 		h.logger.Errorw("Failed to register SP", "entityID", req.EntityID, "error", err)
