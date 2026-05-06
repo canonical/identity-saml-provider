@@ -223,21 +223,20 @@ IAM instances.
 
 ### Service Provider Management CLI
 
-The `service-provider-admin` CLI tool manages SAML
+The `identity-saml-provider sp` command group manages SAML
 service provider registrations, including per-SP
 attribute mapping configuration.
 
 #### Registering a Service Provider
 
 ```bash
-service-provider-admin add \
+identity-saml-provider sp add \
   --entity-id <entity-id> \
   --acs-url <acs-url> \
   [--acs-binding <binding>] \
   [--attribute-mapping-file <path-to-json>] \
   [--nameid-format <format>] \
-  [--server <server-url>] \
-  [--output human|json]
+  [--format text|json]
 ```
 
 | Flag | Description | Default |
@@ -247,8 +246,11 @@ service-provider-admin add \
 | `--acs-binding`, `-b` | ACS binding type | `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST` |
 | `--attribute-mapping-file` | Path to a JSON file containing the attribute mapping configuration | — |
 | `--nameid-format` | NameID format (e.g., `persistent`, `transient`, `emailAddress`) | — |
-| `--server` | Base URL of the Identity SAML Provider server | `http://localhost:8082` |
-| `--output` | Output format: `human` or `json` | `human` |
+| `--format`, `-f` | Output format: `text` or `json` | `text` |
+
+The command connects directly to the database using
+`SAML_PROVIDER_DB_*` environment variables (same as the
+server). No running server is required.
 
 #### Attribute Mapping File
 
@@ -302,13 +304,13 @@ The mapping works in two stages:
 
 ```bash
 # Register with a full attribute mapping file
-service-provider-admin add \
+identity-saml-provider sp add \
   --entity-id https://myapp.example.com \
   --acs-url https://myapp.example.com/saml/acs \
   --attribute-mapping-file mapping.json
 
 # Register with only a NameID format override
-service-provider-admin add \
+identity-saml-provider sp add \
   --entity-id https://myapp.example.com \
   --acs-url https://myapp.example.com/saml/acs \
   --nameid-format persistent
