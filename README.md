@@ -93,7 +93,7 @@ KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
    To stop all running services, use:
 
    ```bash
-   make down
+   make dev-down
    ```
 
 ### Running with Skaffold
@@ -130,7 +130,7 @@ This will create the necessary certificates in
 Create or edit `k8s/secrets/kratos.env` and add your OIDC
 provider credentials (for Ory Kratos) in the following
 `key=value` format (or, if these values are already set in
-your root `.env` file, run `make k8s-copy-secrets` to
+your root `.env` file, run `make k8s-secrets` to
 generate/update `k8s/secrets/kratos.env` automatically):
 
 ```bash
