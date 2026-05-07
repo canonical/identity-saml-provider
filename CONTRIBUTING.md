@@ -74,8 +74,8 @@ configurations and templates.
 
 Additional external test apps and test data.
 
-- `/test/saml-service` - A test SAML service provider used
-  for integration testing and development
+- `/test/example-sp` - An example SAML Service Provider (SP)
+  used for integration testing and development
 
 ## Pre-commit Hooks
 

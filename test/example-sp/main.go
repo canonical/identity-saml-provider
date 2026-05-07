@@ -100,8 +100,8 @@ func fetchIDPMetadataWithRetry(idpURL *url.URL) *saml.EntityDescriptor {
 }
 
 func main() {
-	certPath := flag.String("cert", "etc/certs/myservice.crt", "Path to the SAML service certificate")
-	keyPath := flag.String("key", "etc/certs/myservice.key", "Path to the SAML service private key")
+	certPath := flag.String("cert", "etc/certs/sp.crt", "Path to the SAML SP certificate")
+	keyPath := flag.String("key", "etc/certs/sp.key", "Path to the SAML SP private key")
 	idpMetadataURLStr := flag.String("idp-metadata-url", defaultIDPMetadataURLStr, "URL to the IdP metadata")
 	flag.Parse()
 
@@ -123,7 +123,7 @@ func main() {
 
 	rootURL, err := url.Parse(serviceURL)
 	if err != nil {
-		log.Fatalf("failed parsing service URL: %v", err)
+		log.Fatalf("failed parsing SP URL: %v", err)
 	}
 
 	samlSP, err := samlsp.New(samlsp.Options{
@@ -140,7 +140,7 @@ func main() {
 	http.Handle("/hello", samlSP.RequireAccount(app))
 	http.Handle("/saml/", samlSP)
 
-	log.Printf("Starting Example SAML Service at %s/hello\n", serviceURL)
+	log.Printf("Starting Example SAML SP at %s/hello\n", serviceURL)
 
 	log.Fatal(http.ListenAndServe(listenPort, nil))
 }
