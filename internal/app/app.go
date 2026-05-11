@@ -103,20 +103,33 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		SPs: spSvc,
 	}
 
+	// --- Health Handler ---
+	healthHandler := handler.NewHealthHandler(pool)
+
 	// --- HTTP Server ---
 	router := chi.NewRouter()
 
-	// Apply middleware (order matters):
-	// 1. RequestID: generates or reads X-Request-ID for each request
-	// 2. Tracing: sets span names after routing
-	// 3. Request logger: enriches context logger with requestID/traceID, logs each request
-	// 4. Response time: records Prometheus metrics
-	router.Use(middleware.RequestID)
-	router.Use(tracing.NewMiddleware(monitor, logger).RouteSpanNameMiddleware())
-	router.Use(logging.RequestLoggerMiddleware(logger))
-	router.Use(monitoring.NewMiddleware(monitor, logger).ResponseTime())
+	// Health probes — registered on the root router without
+	// middleware so they are lightweight and do not appear in
+	// metrics/logs.
+	router.Get("/healthz", healthHandler.HandleHealthz)
+	router.Get("/readyz", healthHandler.HandleReadyz)
 
-	handlers.RegisterRoutes(router)
+	// Business routes — wrapped in a Group so middleware only
+	// applies to these routes, not to health probes.
+	router.Group(func(r chi.Router) {
+		// Apply middleware (order matters):
+		// 1. RequestID: generates or reads X-Request-ID for each request
+		// 2. Tracing: sets span names after routing
+		// 3. Request logger: enriches context logger with requestID/traceID, logs each request
+		// 4. Response time: records Prometheus metrics
+		r.Use(middleware.RequestID)
+		r.Use(tracing.NewMiddleware(monitor, logger).RouteSpanNameMiddleware())
+		r.Use(logging.RequestLoggerMiddleware(logger))
+		r.Use(monitoring.NewMiddleware(monitor, logger).ResponseTime())
+
+		handlers.RegisterRoutes(r)
+	})
 
 	otelHandler := tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
 	httpServer := &http.Server{
