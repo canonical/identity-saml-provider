@@ -10,10 +10,10 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/handler"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"github.com/crewjam/saml"
 	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
 )
 
 func TestSAMLSPAdapter_GetServiceProvider(t *testing.T) {
@@ -104,7 +104,7 @@ func TestSAMLSessionAdapter_GetSession_SessionExists(t *testing.T) {
 	mockMapping := mocks.NewMockMappingService(ctrl)
 	mockPending := mocks.NewMockPendingRequestService(ctrl)
 	mockOIDC := mocks.NewMockOIDCService(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "session-123",
@@ -165,7 +165,7 @@ func TestSAMLSessionAdapter_GetSession_NoSession_RedirectsToOIDC(t *testing.T) {
 	mockMapping := mocks.NewMockMappingService(ctrl)
 	mockPending := mocks.NewMockPendingRequestService(ctrl)
 	mockOIDC := mocks.NewMockOIDCService(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	mockPending.EXPECT().Store(gomock.Any(), gomock.Any()).Return(nil)
 	mockOIDC.EXPECT().AuthCodeURL("req-42:my-relay").Return("https://hydra.example.com/auth?state=req-42:my-relay")
@@ -214,7 +214,7 @@ func TestSAMLSessionAdapter_GetSession_SessionNotFound_RedirectsToOIDC(t *testin
 	mockMapping := mocks.NewMockMappingService(ctrl)
 	mockPending := mocks.NewMockPendingRequestService(ctrl)
 	mockOIDC := mocks.NewMockOIDCService(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	// Session cookie exists but session not found in repo
 	mockSessions.EXPECT().GetByID(gomock.Any(), "gone-session").

@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
 )
 
 func TestPendingRequestService_Store(t *testing.T) {
@@ -52,7 +52,7 @@ func TestPendingRequestService_Store(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			mockRepo := mocks.NewMockPendingRequestRepository(ctrl)
-			logger := zap.NewNop().Sugar()
+			logger := logging.NewNopLogger()
 
 			tt.setupMock(mockRepo)
 
@@ -111,7 +111,7 @@ func TestPendingRequestService_Retrieve(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			mockRepo := mocks.NewMockPendingRequestRepository(ctrl)
-			logger := zap.NewNop().Sugar()
+			logger := logging.NewNopLogger()
 
 			tt.setupMock(mockRepo)
 

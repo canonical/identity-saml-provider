@@ -9,10 +9,10 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/handler"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
 )
 
 func newTestHandlers(
@@ -33,7 +33,7 @@ func newTestHandlers(
 		o(deps)
 	}
 
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 	tracer := tracing.NewNoopTracer()
 	noopMonitor := &noopMon{}
 

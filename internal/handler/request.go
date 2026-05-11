@@ -12,14 +12,6 @@ type RegisterSPRequest struct {
 	AttributeMapping *domain.AttributeMapping `json:"attribute_mapping,omitempty"`
 }
 
-// Validate checks required fields, URL format, binding value, and
-// optional attribute mapping. Returns *domain.ErrValidation on failure.
-// Delegates to domain.ServiceProvider.Validate() for business rule checks.
-func (r *RegisterSPRequest) Validate() error {
-	sp := r.ToDomain()
-	return sp.Validate()
-}
-
 // ToDomain converts the DTO to a domain.ServiceProvider.
 func (r *RegisterSPRequest) ToDomain() *domain.ServiceProvider {
 	return &domain.ServiceProvider{

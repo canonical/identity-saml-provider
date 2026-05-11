@@ -19,19 +19,23 @@ func NewPendingRequestService(repo repository.PendingRequestRepository, logger l
 }
 
 func (s *pendingRequestService) Store(ctx context.Context, req *domain.PendingAuthnRequest) error {
+	logger := logging.FromContext(ctx, s.logger)
+
 	if err := s.repo.Save(ctx, req); err != nil {
-		s.logger.Errorw("Failed to store pending request", "requestID", req.RequestID, "error", err)
+		logger.Errorw("Failed to store pending request", "requestID", req.RequestID, "error", err)
 		return err
 	}
-	s.logger.Debugw("Pending request stored", "requestID", req.RequestID)
+	logger.Debugw("Pending request stored", "requestID", req.RequestID)
 	return nil
 }
 
 func (s *pendingRequestService) Retrieve(ctx context.Context, requestID string) (*domain.PendingAuthnRequest, error) {
+	logger := logging.FromContext(ctx, s.logger)
+
 	req, err := s.repo.GetAndDelete(ctx, requestID)
 	if err != nil {
 		return nil, err // propagates *domain.ErrNotFound
 	}
-	s.logger.Debugw("Pending request retrieved", "requestID", requestID)
+	logger.Debugw("Pending request retrieved", "requestID", requestID)
 	return req, nil
 }

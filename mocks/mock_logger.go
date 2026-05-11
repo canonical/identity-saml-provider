@@ -12,6 +12,7 @@ package mocks
 import (
 	reflect "reflect"
 
+	logging "github.com/canonical/identity-saml-provider/internal/logging"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -105,4 +106,22 @@ func (mr *MockLoggerMockRecorder) Warnw(msg any, keysAndValues ...any) *gomock.C
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]any{msg}, keysAndValues...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Warnw", reflect.TypeOf((*MockLogger)(nil).Warnw), varargs...)
+}
+
+// With mocks base method.
+func (m *MockLogger) With(args ...any) logging.Logger {
+	m.ctrl.T.Helper()
+	varargs := []any{}
+	for _, a := range args {
+		varargs = append(varargs, a)
+	}
+	ret := m.ctrl.Call(m, "With", varargs...)
+	ret0, _ := ret[0].(logging.Logger)
+	return ret0
+}
+
+// With indicates an expected call of With.
+func (mr *MockLoggerMockRecorder) With(args ...any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "With", reflect.TypeOf((*MockLogger)(nil).With), args...)
 }

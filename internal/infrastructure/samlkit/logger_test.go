@@ -11,7 +11,7 @@ import (
 func TestNewZapLoggerAdapter(t *testing.T) {
 	zapLogger := zaptest.NewLogger(t)
 
-	adapter := samlkit.NewZapLoggerAdapter(zapLogger)
+	adapter := samlkit.NewZapLoggerAdapter(zapLogger.Sugar())
 	if adapter == nil {
 		t.Fatal("NewZapLoggerAdapter() returned nil")
 	}
@@ -27,7 +27,7 @@ func TestZapLoggerAdapter_PrintMethods(t *testing.T) {
 	// Use a development logger that won't exit on Fatal
 	zapLogger := zaptest.NewLogger(t, zaptest.Level(zap.DebugLevel))
 
-	adapter := samlkit.NewZapLoggerAdapter(zapLogger)
+	adapter := samlkit.NewZapLoggerAdapter(zapLogger.Sugar())
 
 	// These should not panic
 	adapter.Print("info message")

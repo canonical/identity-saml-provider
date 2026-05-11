@@ -16,20 +16,18 @@ func (h *Handlers) HandleRegisterServiceProvider(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if err := req.Validate(); err != nil {
-		WriteError(w, err)
-		return
-	}
-
 	sp := req.ToDomain()
 
-	if err := h.serviceProviders.Register(ctx, sp); err != nil {
-		h.logger.Errorw("Failed to register SP", "entityID", req.EntityID, "error", err)
+	if err := sp.Validate(); err != nil {
 		WriteError(w, err)
 		return
 	}
 
-	h.logger.Infow("Service provider registered", "entityID", req.EntityID)
+	if err := h.serviceProviders.Register(ctx, sp); err != nil {
+		WriteError(w, err)
+		return
+	}
+
 	WriteJSON(w, http.StatusCreated, RegisterSPResponse{
 		Status:   "success",
 		Message:  "Service provider registered",

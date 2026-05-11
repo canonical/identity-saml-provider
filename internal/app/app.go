@@ -5,18 +5,19 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/canonical/identity-saml-provider/internal/handler"
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/hydra"
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/samlkit"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/canonical/identity-saml-provider/internal/monitoring/prometheus"
 	"github.com/canonical/identity-saml-provider/internal/repository/memory"
 	"github.com/canonical/identity-saml-provider/internal/repository/postgres"
 	"github.com/canonical/identity-saml-provider/internal/service"
 	"github.com/canonical/identity-saml-provider/internal/tracing"
-	"go.uber.org/zap"
 )
 
 // App holds the fully wired application.
@@ -27,9 +28,7 @@ type App struct {
 }
 
 // Build constructs the application from the given configuration.
-func Build(ctx context.Context, cfg Config, zapLogger *zap.Logger) (*App, error) {
-	logger := zapLogger.Sugar()
-
+func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, error) {
 	// --- Database (pgxpool) ---
 	pool, err := postgres.NewPool(ctx, cfg.PoolConfig())
 	if err != nil {
@@ -53,7 +52,7 @@ func Build(ctx context.Context, cfg Config, zapLogger *zap.Logger) (*App, error)
 		return nil, err
 	}
 
-	samlIDP, err := samlkit.NewIdentityProvider(cfg.SAMLConfig(), zapLogger)
+	samlIDP, err := samlkit.NewIdentityProvider(cfg.SAMLConfig(), logger)
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -107,8 +106,14 @@ func Build(ctx context.Context, cfg Config, zapLogger *zap.Logger) (*App, error)
 	// --- HTTP Server ---
 	router := chi.NewRouter()
 
-	// Apply middleware
+	// Apply middleware (order matters):
+	// 1. RequestID: generates or reads X-Request-ID for each request
+	// 2. Tracing: sets span names after routing
+	// 3. Request logger: enriches context logger with requestID/traceID, logs each request
+	// 4. Response time: records Prometheus metrics
+	router.Use(middleware.RequestID)
 	router.Use(tracing.NewMiddleware(monitor, logger).RouteSpanNameMiddleware())
+	router.Use(logging.RequestLoggerMiddleware(logger))
 	router.Use(monitoring.NewMiddleware(monitor, logger).ResponseTime())
 
 	handlers.RegisterRoutes(router)

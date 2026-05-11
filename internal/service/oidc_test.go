@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
-	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 )
 
@@ -56,7 +56,7 @@ func TestOIDCService_AuthCodeURL(t *testing.T) {
 		Scopes:      []string{"openid", "email", "profile"},
 	}
 
-	svc := service.NewOIDCService(oauth2Config, nil, zap.NewNop().Sugar())
+	svc := service.NewOIDCService(oauth2Config, nil, logging.NewNopLogger())
 	url := svc.AuthCodeURL("test-state-123")
 
 	if url == "" {
@@ -172,7 +172,7 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 				verifier = &mockTokenVerifier{}
 			}
 
-			svc := service.NewOIDCService(oauth2Config, verifier, zap.NewNop().Sugar())
+			svc := service.NewOIDCService(oauth2Config, verifier, logging.NewNopLogger())
 			claims, err := svc.ExchangeCode(context.Background(), "test-code")
 
 			if tt.wantErr {

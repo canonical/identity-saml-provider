@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 )
 
 // HandleOIDCCallback handles GET /saml/callback — the OIDC redirect from Hydra.
@@ -15,7 +16,8 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.tracer.Start(r.Context(), "handler.oidc_callback")
 	defer span.End()
 
-	h.logger.Infow("Handling OIDC callback from Hydra")
+	logger := logging.FromContext(ctx, h.logger)
+	logger.Debugw("Handling OIDC callback from Hydra")
 
 	// 1. Extract authorization code
 	code := r.URL.Query().Get("code")
@@ -27,7 +29,6 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// 2. Exchange authorization code for OIDC claims
 	claims, err := h.oidc.ExchangeCode(ctx, code)
 	if err != nil {
-		h.logger.Errorw("OIDC code exchange failed", "error", err)
 		WriteError(w, err)
 		return
 	}
@@ -35,7 +36,6 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// 3. Create SAML session from OIDC claims
 	session, err := h.sessions.CreateFromOIDC(ctx, claims)
 	if err != nil {
-		h.logger.Errorw("Failed to create session", "error", err)
 		WriteError(w, err)
 		return
 	}
@@ -55,13 +55,13 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	requestID, relayState := parseState(state)
 
 	if requestID != "" {
-		h.logger.Infow("OIDC callback for SAML request", "requestID", requestID)
+		logger.Debugw("OIDC callback for SAML request", "requestID", requestID)
 	}
 
 	// 6. Build redirect URL back to SAML SSO
 	bridgeURL, err := url.Parse(h.config.BridgeBaseURL)
 	if err != nil {
-		h.logger.Errorw("Invalid BridgeBaseURL", "url", h.config.BridgeBaseURL, "error", err)
+		logger.Errorw("Invalid BridgeBaseURL", "url", h.config.BridgeBaseURL, "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -87,7 +87,7 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	redirectURL := bridgeURL.String()
 
-	h.logger.Infow("Session created, redirecting back to SAML SSO handler")
+	logger.Debugw("Session created, redirecting back to SAML SSO handler")
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 

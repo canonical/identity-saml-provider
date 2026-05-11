@@ -9,9 +9,9 @@ type ZapLoggerAdapter struct {
 	sugar *zap.SugaredLogger
 }
 
-// NewZapLoggerAdapter creates a new ZapLoggerAdapter from a *zap.Logger.
-func NewZapLoggerAdapter(zapLogger *zap.Logger) *ZapLoggerAdapter {
-	return &ZapLoggerAdapter{sugar: zapLogger.Sugar()}
+// NewZapLoggerAdapter creates a new ZapLoggerAdapter from a *zap.SugaredLogger.
+func NewZapLoggerAdapter(sugar *zap.SugaredLogger) *ZapLoggerAdapter {
+	return &ZapLoggerAdapter{sugar: sugar}
 }
 
 func (z *ZapLoggerAdapter) Print(args ...interface{}) {

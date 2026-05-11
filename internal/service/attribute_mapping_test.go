@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
 )
 
 func TestMappingService_ApplyMapping_NoMapping(t *testing.T) {
@@ -17,7 +17,7 @@ func TestMappingService_ApplyMapping_NoMapping(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",
@@ -48,7 +48,7 @@ func TestMappingService_ApplyMapping_ErrorRetrieving(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:        "test-session",
@@ -118,7 +118,7 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-			logger := zap.NewNop().Sugar()
+			logger := logging.NewNopLogger()
 
 			session := &domain.Session{
 				ID:             "test-session",
@@ -156,7 +156,7 @@ func TestMappingService_ApplyMapping_SAMLAttributes(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",
@@ -253,7 +253,7 @@ func TestMappingService_ApplyMapping_LowercaseEmail(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",
@@ -304,7 +304,7 @@ func TestMappingService_ApplyMapping_DefaultOIDCMapping(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",
@@ -350,7 +350,7 @@ func TestMappingService_ApplyMapping_WithRawClaims(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",
@@ -410,7 +410,7 @@ func TestMappingService_ApplyMapping_RawClaimsWithGroups(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",
@@ -468,7 +468,7 @@ func TestMappingService_ApplyMapping_DoesNotModifyOriginal(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",
@@ -520,7 +520,7 @@ func TestMappingService_ApplyMapping_OnlyNameIDFormat(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",
@@ -564,7 +564,7 @@ func TestMappingService_ApplyMapping_EmptyMapping(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	logger := zap.NewNop().Sugar()
+	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
 		ID:             "test-session",

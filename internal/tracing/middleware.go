@@ -4,18 +4,18 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 )
 
 type Middleware struct {
 	service string
 
 	monitor monitoring.MonitorInterface
-	logger  *zap.SugaredLogger
+	logger  logging.Logger
 }
 
 func (mdw *Middleware) OpenTelemetry(handler http.Handler) http.Handler {
@@ -53,7 +53,7 @@ func (mdw *Middleware) spanName(r *http.Request) string {
 	return r.Method + " " + routePattern
 }
 
-func NewMiddleware(monitor monitoring.MonitorInterface, logger *zap.SugaredLogger) *Middleware {
+func NewMiddleware(monitor monitoring.MonitorInterface, logger logging.Logger) *Middleware {
 	mdw := new(Middleware)
 	mdw.monitor = monitor
 	mdw.logger = logger

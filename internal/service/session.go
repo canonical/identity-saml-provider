@@ -21,6 +21,8 @@ func NewSessionService(repo repository.SessionRepository, logger logging.Logger)
 }
 
 func (s *sessionService) CreateFromOIDC(ctx context.Context, claims *OIDCClaims) (*domain.Session, error) {
+	logger := logging.FromContext(ctx, s.logger)
+
 	if claims.Email == "" {
 		return nil, &domain.ErrValidation{Field: "email", Message: "email claim is required"}
 	}
@@ -46,11 +48,12 @@ func (s *sessionService) CreateFromOIDC(ctx context.Context, claims *OIDCClaims)
 	}
 
 	if err := s.repo.Save(ctx, session); err != nil {
-		s.logger.Errorw("Failed to save session", "sessionID", sessionID, "error", err)
+		logger.Errorw("Failed to save session", "sessionID", sessionID, "error", err)
 		return nil, fmt.Errorf("save session: %w", err)
 	}
 
-	s.logger.Infow("Session created", "sessionID", sessionID, "email", claims.Email)
+	logger.Infow("Session created", "sessionID", sessionID)
+	logger.Debugw("Session detail", "sessionID", sessionID, "email", claims.Email)
 	return session, nil
 }
 
@@ -63,13 +66,15 @@ func (s *sessionService) GetByID(ctx context.Context, id string) (*domain.Sessio
 }
 
 func (s *sessionService) CleanupExpired(ctx context.Context) (int64, error) {
+	logger := logging.FromContext(ctx, s.logger)
+
 	count, err := s.repo.DeleteExpired(ctx)
 	if err != nil {
-		s.logger.Errorw("Failed to cleanup expired sessions", "error", err)
+		logger.Errorw("Failed to cleanup expired sessions", "error", err)
 		return 0, err
 	}
 	if count > 0 {
-		s.logger.Infow("Cleaned up expired sessions", "count", count)
+		logger.Infow("Cleaned up expired sessions", "count", count)
 	}
 	return count, nil
 }

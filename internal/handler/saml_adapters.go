@@ -88,21 +88,22 @@ type SAMLSessionAdapter struct {
 // request and redirects the user to the OIDC provider.
 func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) *saml.Session {
 	ctx := r.Context()
-	a.Logger.Infow("Checking for existing SAML session")
+	logger := logging.FromContext(ctx, a.Logger)
+	logger.Debugw("Checking for existing SAML session")
 
 	// 1. Check session cookie
 	sessionCookie, err := r.Cookie("saml_session")
 
 	var domainSession *domain.Session
 	if err == nil && sessionCookie.Value != "" {
-		a.Logger.Infow("Found session cookie", "sessionID", sessionCookie.Value)
+		logger.Debugw("Found session cookie", "sessionID", sessionCookie.Value)
 		domainSession, err = a.Sessions.GetByID(ctx, sessionCookie.Value)
 		if err != nil {
-			a.Logger.Infow("Session not found or expired", "sessionID", sessionCookie.Value, "error", err)
+			logger.Debugw("Session not found or expired", "sessionID", sessionCookie.Value, "error", err)
 			domainSession = nil
 		}
 	} else {
-		a.Logger.Infow("No session cookie found")
+		logger.Debugw("No session cookie found")
 	}
 
 	// 2. If no valid session, redirect to OIDC for authentication
@@ -117,7 +118,7 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 				CreatedAt:   time.Now(),
 			}
 			if storeErr := a.Pending.Store(ctx, pendingReq); storeErr != nil {
-				a.Logger.Errorw("Failed to store pending request", "error", storeErr)
+				logger.Errorw("Failed to store pending request", "error", storeErr)
 			}
 		}
 
@@ -127,7 +128,7 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 			state += ":" + req.RelayState
 		}
 
-		a.Logger.Infow("No valid session found, redirecting to OIDC provider")
+		logger.Debugw("No valid session found, redirecting to OIDC provider")
 		http.Redirect(w, r, a.OIDC.AuthCodeURL(state), http.StatusFound)
 		return nil
 	}

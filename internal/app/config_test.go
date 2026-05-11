@@ -192,4 +192,7 @@ func TestConfig_EnvconfigProcess(t *testing.T) {
 	if cfg.ClientID != "service-bridge-client" {
 		t.Errorf("ClientID = %q, want %q", cfg.ClientID, "service-bridge-client")
 	}
+	if cfg.LogLevel != "info" {
+		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+	}
 }

@@ -8,7 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"go.uber.org/zap"
+
+	"github.com/canonical/identity-saml-provider/internal/logging"
 )
 
 const (
@@ -21,7 +22,7 @@ type Middleware struct {
 	regex   *regexp.Regexp
 
 	monitor MonitorInterface
-	logger  *zap.SugaredLogger
+	logger  logging.Logger
 }
 
 func (mdw *Middleware) ResponseTime() func(http.Handler) http.Handler {
@@ -55,7 +56,7 @@ func (mdw *Middleware) ResponseTime() func(http.Handler) http.Handler {
 	}
 }
 
-func NewMiddleware(monitor MonitorInterface, logger *zap.SugaredLogger) *Middleware {
+func NewMiddleware(monitor MonitorInterface, logger logging.Logger) *Middleware {
 	mdw := new(Middleware)
 	mdw.monitor = monitor
 	mdw.logger = logger

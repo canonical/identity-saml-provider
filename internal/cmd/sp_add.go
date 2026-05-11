@@ -7,6 +7,7 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/app"
 	"github.com/canonical/identity-saml-provider/internal/domain"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/repository/postgres"
 	"github.com/canonical/identity-saml-provider/internal/service"
 	"github.com/kelseyhightower/envconfig"
@@ -62,7 +63,7 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 
 		// Register via service layer.
 		repo := postgres.NewServiceProviderRepo(pool)
-		logger := newCLILogger()
+		logger := logging.NewNopLogger()
 		svc := service.NewServiceProviderService(repo, logger)
 
 		if err := svc.Register(ctx, sp); err != nil {

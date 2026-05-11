@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
 )
 
 func TestSessionService_CreateFromOIDC(t *testing.T) {
@@ -111,7 +111,7 @@ func TestSessionService_CreateFromOIDC(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			mockRepo := mocks.NewMockSessionRepository(ctrl)
-			logger := zap.NewNop().Sugar()
+			logger := logging.NewNopLogger()
 
 			tt.setupMock(mockRepo)
 
@@ -177,7 +177,7 @@ func TestSessionService_GetByID(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			mockRepo := mocks.NewMockSessionRepository(ctrl)
-			logger := zap.NewNop().Sugar()
+			logger := logging.NewNopLogger()
 
 			tt.setupMock(mockRepo)
 
@@ -244,7 +244,7 @@ func TestSessionService_CleanupExpired(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			mockRepo := mocks.NewMockSessionRepository(ctrl)
-			logger := zap.NewNop().Sugar()
+			logger := logging.NewNopLogger()
 
 			tt.setupMock(mockRepo)
 

@@ -1,13 +1,13 @@
 package monitoring
 
-import "go.uber.org/zap"
+import "github.com/canonical/identity-saml-provider/internal/logging"
 
 type NoopMonitor struct {
 	service string
-	logger  *zap.SugaredLogger
+	logger  logging.Logger
 }
 
-func NewNoopMonitor(service string, logger *zap.SugaredLogger) *NoopMonitor {
+func NewNoopMonitor(service string, logger logging.Logger) *NoopMonitor {
 	m := new(NoopMonitor)
 	m.service = service
 	m.logger = logger

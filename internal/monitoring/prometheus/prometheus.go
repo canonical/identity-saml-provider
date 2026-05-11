@@ -3,9 +3,9 @@ package prometheus
 import (
 	"fmt"
 
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
 )
 
 type Monitor struct {
@@ -14,7 +14,7 @@ type Monitor struct {
 	responseTime           *prometheus.HistogramVec
 	dependencyAvailability *prometheus.GaugeVec
 
-	logger *zap.SugaredLogger
+	logger logging.Logger
 }
 
 var _ monitoring.MonitorInterface = (*Monitor)(nil)
@@ -117,7 +117,7 @@ func (m *Monitor) registerGauges() {
 	}
 }
 
-func NewMonitor(service string, logger *zap.SugaredLogger) *Monitor {
+func NewMonitor(service string, logger logging.Logger) *Monitor {
 	m := new(Monitor)
 	m.service = service
 	m.logger = logger

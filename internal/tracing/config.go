@@ -1,18 +1,18 @@
 package tracing
 
-import "go.uber.org/zap"
+import "github.com/canonical/identity-saml-provider/internal/logging"
 
 type Config struct {
 	OtelHTTPEndpoint string
 	OtelGRPCEndpoint string
 	OtelSampler      string
 	OtelSamplerRatio float64
-	Logger           *zap.SugaredLogger
+	Logger           logging.Logger
 
 	Enabled bool
 }
 
-func NewConfig(enabled bool, otelGRPCEndpoint, otelHTTPEndpoint, otelSampler string, otelSamplerRatio float64, logger *zap.SugaredLogger) *Config {
+func NewConfig(enabled bool, otelGRPCEndpoint, otelHTTPEndpoint, otelSampler string, otelSamplerRatio float64, logger logging.Logger) *Config {
 	c := new(Config)
 	c.OtelGRPCEndpoint = otelGRPCEndpoint
 	c.OtelHTTPEndpoint = otelHTTPEndpoint

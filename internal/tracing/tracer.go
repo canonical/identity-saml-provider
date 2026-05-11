@@ -19,14 +19,15 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
-	"go.uber.org/zap"
+
+	"github.com/canonical/identity-saml-provider/internal/logging"
 )
 
 const serviceName = "identity-saml-provider"
 
 type Tracer struct {
 	tracer   trace.Tracer
-	logger   *zap.SugaredLogger
+	logger   logging.Logger
 	shutdown func(context.Context) error
 }
 

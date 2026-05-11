@@ -9,11 +9,11 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/handler"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
 	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
-	"go.uber.org/zap"
 )
 
 func TestHandleOIDCCallback(t *testing.T) {
@@ -101,7 +101,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
 
-			logger := zap.NewNop().Sugar()
+			logger := logging.NewNopLogger()
 			tracer := tracing.NewNoopTracer()
 			noopMonitor := &noopMon{}
 

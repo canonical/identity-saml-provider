@@ -20,16 +20,18 @@ func NewMappingService(spRepo repository.ServiceProviderRepository, logger loggi
 }
 
 func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Session, entityID string) (*domain.Session, error) {
+	logger := logging.FromContext(ctx, s.logger)
+
 	mapping, err := s.spRepo.GetAttributeMapping(ctx, entityID)
 	if err != nil {
-		s.logger.Errorw("Error retrieving attribute mapping", "entityID", entityID, "error", err)
+		logger.Errorw("Error retrieving attribute mapping", "entityID", entityID, "error", err)
 		return session, nil // graceful degradation: return unmapped session
 	}
 	if mapping == nil {
 		return session, nil // no mapping configured, return as-is
 	}
 
-	s.logger.Infow("Applying per-SP attribute mapping", "entityID", entityID)
+	logger.Debugw("Applying per-SP attribute mapping", "entityID", entityID)
 
 	// Build internal user model from session fields and raw OIDC claims
 	internalModel := buildInternalModel(session, mapping.OIDCClaims, session.RawOIDCClaims)

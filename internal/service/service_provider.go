@@ -20,6 +20,8 @@ func NewServiceProviderService(repo repository.ServiceProviderRepository, logger
 }
 
 func (s *serviceProviderService) Register(ctx context.Context, sp *domain.ServiceProvider) error {
+	logger := logging.FromContext(ctx, s.logger)
+
 	// Validate attribute mapping if present
 	if sp.AttributeMapping != nil {
 		if err := sp.AttributeMapping.Validate(); err != nil {
@@ -28,11 +30,11 @@ func (s *serviceProviderService) Register(ctx context.Context, sp *domain.Servic
 	}
 
 	if err := s.repo.Save(ctx, sp); err != nil {
-		s.logger.Errorw("Failed to register service provider", "entityID", sp.EntityID, "error", err)
+		logger.Errorw("Failed to register service provider", "entityID", sp.EntityID, "error", err)
 		return fmt.Errorf("register service provider: %w", err)
 	}
 
-	s.logger.Infow("Service provider registered", "entityID", sp.EntityID)
+	logger.Infow("Service provider registered", "entityID", sp.EntityID)
 	return nil
 }
 

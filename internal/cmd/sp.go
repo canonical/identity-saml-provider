@@ -5,11 +5,9 @@ import (
 	"fmt"
 
 	"github.com/canonical/identity-saml-provider/internal/app"
-	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/repository/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 )
 
 var (
@@ -37,10 +35,4 @@ func openSPDB(ctx context.Context, cfg app.Config) (*pgxpool.Pool, error) {
 		return nil, fmt.Errorf("connect to database: %w", err)
 	}
 	return pool, nil
-}
-
-// newCLILogger creates a no-op logger for CLI commands.
-// Service-layer logs are suppressed; output is handled by the formatter.
-func newCLILogger() logging.Logger {
-	return zap.NewNop().Sugar()
 }

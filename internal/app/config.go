@@ -50,6 +50,10 @@ type Config struct {
 	// Certificate Configuration
 	SAMLCertPath string `envconfig:"SAML_PROVIDER_CERT_PATH" default:".local/certs/bridge.crt"`
 	SAMLKeyPath  string `envconfig:"SAML_PROVIDER_KEY_PATH" default:".local/certs/bridge.key"`
+
+	// Logging Configuration
+	// LogLevel sets the minimum log level.
+	LogLevel string `envconfig:"SAML_PROVIDER_LOG_LEVEL" default:"info"`
 }
 
 // PoolConfig returns pgxpool configuration derived from the database settings.
