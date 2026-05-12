@@ -1,122 +1,242 @@
-package hydra_test
+package hydra
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"encoding/pem"
-	"math/big"
-	"os"
-	"path/filepath"
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/canonical/identity-saml-provider/internal/infrastructure/hydra"
+	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
+
+	"github.com/canonical/identity-saml-provider/internal/logging"
 )
 
-func TestNewClient(t *testing.T) {
+// newTestClient builds a Client with a custom oauth2Config and
+// verifier for unit testing, bypassing OIDC discovery.
+func newTestClient(
+	oauth2Cfg *oauth2.Config,
+	verifier *oidc.IDTokenVerifier,
+	httpClient *http.Client,
+) *Client {
+	return &Client{
+		oauth2Config: oauth2Cfg,
+		verifier:     verifier,
+		httpClient:   httpClient,
+		logger:       logging.NewNopLogger(),
+	}
+}
+
+func TestClient_AuthCodeURL(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
-		name      string
-		cfg       hydra.Config
-		setupFile func(t *testing.T) string // returns path to temp file if needed
-		wantErr   bool
+		name    string
+		state   string
+		authURL string
+		wantSub []string // substrings the URL must contain
 	}{
 		{
-			name: "default config produces a valid client",
-			cfg:  hydra.Config{},
-		},
-		{
-			name: "insecure skip TLS verify",
-			cfg:  hydra.Config{InsecureSkipTLSVerify: true},
-		},
-		{
-			name: "custom CA cert file",
-			cfg:  hydra.Config{}, // CACertPath set by setupFile
-			setupFile: func(t *testing.T) string {
-				t.Helper()
-				return writeTestCACert(t)
+			name:    "includes auth endpoint and state",
+			state:   "test-state-123",
+			authURL: "https://hydra.example.com/oauth2/auth",
+			wantSub: []string{
+				"hydra.example.com/oauth2/auth",
+				"state=test-state-123",
 			},
 		},
 		{
-			name:    "CA cert file not found",
-			cfg:     hydra.Config{CACertPath: "/nonexistent/path/ca.pem"},
-			wantErr: true,
-		},
-		{
-			name: "invalid CA cert PEM",
-			cfg:  hydra.Config{}, // CACertPath set by setupFile
-			setupFile: func(t *testing.T) string {
-				t.Helper()
-				tmpDir := t.TempDir()
-				p := filepath.Join(tmpDir, "invalid.pem")
-				if err := os.WriteFile(p, []byte("not valid PEM data"), 0o600); err != nil {
-					t.Fatalf("failed to write invalid cert: %v", err)
-				}
-				return p
+			name:    "empty state",
+			state:   "",
+			authURL: "https://hydra.example.com/oauth2/auth",
+			wantSub: []string{
+				"hydra.example.com/oauth2/auth",
 			},
-			wantErr: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := tt.cfg
-			if tt.setupFile != nil {
-				cfg.CACertPath = tt.setupFile(t)
-			}
+			t.Parallel()
 
-			client, err := hydra.NewClient(cfg)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("NewClient() expected error, got nil")
+			c := newTestClient(
+				&oauth2.Config{
+					ClientID: "test-client",
+					Endpoint: oauth2.Endpoint{AuthURL: tt.authURL},
+				},
+				nil, nil,
+			)
+
+			got := c.AuthCodeURL(tt.state)
+			if got == "" {
+				t.Fatal("AuthCodeURL returned empty string")
+			}
+			for _, sub := range tt.wantSub {
+				if !strings.Contains(got, sub) {
+					t.Errorf("AuthCodeURL() = %q, want substring %q", got, sub)
 				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("NewClient() unexpected error: %v", err)
-			}
-			if client == nil {
-				t.Fatal("NewClient() returned nil client")
-			}
-			if client.Timeout != 30*time.Second {
-				t.Errorf("NewClient() timeout = %v, want 30s", client.Timeout)
 			}
 		})
 	}
 }
 
-// writeTestCACert generates a self-signed CA certificate and writes it to a temp file.
-func writeTestCACert(t *testing.T) string {
-	t.Helper()
+func TestClient_ExchangeCode(t *testing.T) {
+	t.Parallel()
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
+	tests := []struct {
+		name       string
+		handler    http.HandlerFunc
+		wantErr    bool
+		wantErrSub string
+	}{
+		{
+			name: "token exchange failure",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+			},
+			wantErr:    true,
+			wantErrSub: "token exchange",
+		},
+		{
+			name: "missing id_token in response",
+			handler: func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"access_token": "at-123",
+					"token_type":   "Bearer",
+				})
+			},
+			wantErr:    true,
+			wantErrSub: "no id_token",
+		},
 	}
 
-	template := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "Test CA"},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
-		IsCA:         true,
-		KeyUsage:     x509.KeyUsageCertSign,
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := httptest.NewServer(tt.handler)
+			defer ts.Close()
+
+			c := newTestClient(
+				&oauth2.Config{
+					ClientID:     "test-client",
+					ClientSecret: "test-secret",
+					Endpoint:     oauth2.Endpoint{TokenURL: ts.URL},
+				},
+				nil, nil,
+			)
+
+			_, err := c.ExchangeCode(context.Background(), "test-code")
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if tt.wantErrSub != "" && !strings.Contains(err.Error(), tt.wantErrSub) {
+				t.Errorf("error = %q, want substring %q", err.Error(), tt.wantErrSub)
+			}
+		})
+	}
+}
+
+func TestNewClient_DiscoveryFailure(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewClient(
+		context.Background(),
+		Config{IssuerURL: "http://127.0.0.1:1/nonexistent"},
+		OIDCConfig{ClientID: "test"},
+		logging.NewNopLogger(),
+	)
+	if err == nil {
+		t.Fatal("NewClient() expected error for unreachable issuer, got nil")
+	}
+	if !strings.Contains(err.Error(), "failed to query Hydra OIDC provider") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "failed to query Hydra OIDC provider")
+	}
+}
+
+func TestNewClient_WithDiscovery(t *testing.T) {
+	t.Parallel()
+
+	// Simulate a minimal OIDC discovery endpoint.
+	discoveryHandler := http.NewServeMux()
+	var issuerURL string
+	discoveryHandler.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"issuer":                 issuerURL,
+			"authorization_endpoint": issuerURL + "/oauth2/auth",
+			"token_endpoint":         issuerURL + "/oauth2/token",
+			"jwks_uri":               issuerURL + "/.well-known/jwks.json",
+		})
+	})
+	discoveryHandler.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"keys":[]}`))
+	})
+	ts := httptest.NewServer(discoveryHandler)
+	t.Cleanup(ts.Close)
+	issuerURL = ts.URL
+
+	tests := []struct {
+		name    string
+		oidcCfg OIDCConfig
+		wantN   int // expected number of scopes
+	}{
+		{
+			name: "default scopes",
+			oidcCfg: OIDCConfig{
+				ClientID:     "client-1",
+				ClientSecret: "secret-1",
+				RedirectURL:  "http://localhost/callback",
+			},
+			wantN: 3, // openid, email, profile
+		},
+		{
+			name: "custom scopes",
+			oidcCfg: OIDCConfig{
+				ClientID:     "client-2",
+				ClientSecret: "secret-2",
+				RedirectURL:  "http://localhost/callback",
+				Scopes:       []string{"openid", "custom"},
+			},
+			wantN: 2,
+		},
 	}
 
-	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
-	if err != nil {
-		t.Fatalf("failed to create certificate: %v", err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			c, err := NewClient(ctx, Config{IssuerURL: ts.URL}, tt.oidcCfg, logging.NewNopLogger())
+			if err != nil {
+				t.Fatalf("NewClient() unexpected error: %v", err)
+			}
+			if c == nil {
+				t.Fatal("NewClient() returned nil")
+			}
+			if c.httpClient == nil {
+				t.Error("NewClient().httpClient is nil")
+			}
+			if c.verifier == nil {
+				t.Error("NewClient().verifier is nil")
+			}
+			if len(c.oauth2Config.Scopes) != tt.wantN {
+				t.Errorf("scopes = %v (len %d), want len %d",
+					c.oauth2Config.Scopes, len(c.oauth2Config.Scopes), tt.wantN)
+			}
+		})
 	}
-
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-
-	tmpDir := t.TempDir()
-	certPath := filepath.Join(tmpDir, "ca.pem")
-	if err := os.WriteFile(certPath, certPEM, 0o600); err != nil {
-		t.Fatalf("failed to write cert: %v", err)
-	}
-
-	return certPath
 }

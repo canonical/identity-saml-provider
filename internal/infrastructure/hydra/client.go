@@ -2,24 +2,19 @@ package hydra
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
+
+	"github.com/canonical/identity-saml-provider/internal/domain"
+	"github.com/canonical/identity-saml-provider/internal/logging"
 )
 
-// Config holds the HTTP client configuration for connecting to Ory Hydra.
+// Config holds the Hydra connection settings.
 type Config struct {
-	// CACertPath is the optional file path to a custom CA certificate (PEM format).
-	CACertPath string
-	// InsecureSkipTLSVerify disables TLS certificate verification.
-	// WARNING: Do not use this in production.
-	InsecureSkipTLSVerify bool
 	// IssuerURL is the Hydra public URL used for OIDC discovery.
 	IssuerURL string
 }
@@ -32,55 +27,30 @@ type OIDCConfig struct {
 	Scopes       []string
 }
 
-// DiscoveryResult holds the result of OIDC provider discovery.
-type DiscoveryResult struct {
-	OAuth2Config *oauth2.Config
-	Verifier     *oidc.IDTokenVerifier
+// Client is the Hydra OIDC client. It handles auth URL generation,
+// token exchange, and ID token verification.
+type Client struct {
+	oauth2Config *oauth2.Config
+	verifier     *oidc.IDTokenVerifier
+	httpClient   *http.Client
+	logger       logging.Logger
 }
 
-// NewClient builds an *http.Client configured for communicating with Ory Hydra.
-// It supports optional custom CA certificates and insecure TLS skipping.
-func NewClient(cfg Config) (*http.Client, error) {
-	var rootCAs *x509.CertPool
+// NewClient performs OIDC discovery against the Hydra issuer URL and
+// returns a fully initialised Client.
+func NewClient(
+	ctx context.Context,
+	cfg Config,
+	oidcCfg OIDCConfig,
+	logger logging.Logger,
+) (*Client, error) {
+	httpClient := &http.Client{Timeout: 30 * time.Second}
 
-	if cfg.CACertPath != "" {
-		caCert, err := os.ReadFile(cfg.CACertPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read Hydra CA certificate %q: %w", cfg.CACertPath, err)
-		}
+	// Inject httpClient into context for OIDC discovery.
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
 
-		rootCAs, err = x509.SystemCertPool()
-		if err != nil || rootCAs == nil {
-			rootCAs = x509.NewCertPool()
-		}
-
-		if ok := rootCAs.AppendCertsFromPEM(caCert); !ok {
-			return nil, fmt.Errorf("failed to parse Hydra CA certificate PEM from %q", cfg.CACertPath)
-		}
-	}
-
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{
-		InsecureSkipVerify: cfg.InsecureSkipTLSVerify, //nolint:gosec // controlled by operator config
-		RootCAs:            rootCAs,
-	}
-
-	return &http.Client{
-		Transport: transport,
-		Timeout:   30 * time.Second,
-	}, nil
-}
-
-// DiscoverOIDC performs OIDC provider discovery against the Hydra issuer URL
-// and returns an OAuth2Config and IDTokenVerifier ready for use.
-func DiscoverOIDC(ctx context.Context, httpClient *http.Client, cfg Config, oidcCfg OIDCConfig) (*DiscoveryResult, error) {
-	// Inject the custom HTTP client into the context for the OIDC library.
-	if httpClient != nil {
-		ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
-	}
-
-	// InsecureIssuerURLContext allows local testing where the issuer URL
-	// seen by the provider may not match the publicly-facing URL.
+	// InsecureIssuerURLContext allows local testing where the issuer
+	// URL seen by the provider may not match the publicly-facing URL.
 	ctx = oidc.InsecureIssuerURLContext(ctx, cfg.IssuerURL)
 
 	provider, err := oidc.NewProvider(ctx, cfg.IssuerURL)
@@ -88,23 +58,68 @@ func DiscoverOIDC(ctx context.Context, httpClient *http.Client, cfg Config, oidc
 		return nil, fmt.Errorf("failed to query Hydra OIDC provider: %w", err)
 	}
 
-	verifier := provider.Verifier(&oidc.Config{ClientID: oidcCfg.ClientID})
-
 	scopes := oidcCfg.Scopes
 	if len(scopes) == 0 {
 		scopes = []string{oidc.ScopeOpenID, "email", "profile"}
 	}
 
-	oauth2Config := &oauth2.Config{
-		ClientID:     oidcCfg.ClientID,
-		ClientSecret: oidcCfg.ClientSecret,
-		RedirectURL:  oidcCfg.RedirectURL,
-		Endpoint:     provider.Endpoint(),
-		Scopes:       scopes,
+	return &Client{
+		oauth2Config: &oauth2.Config{
+			ClientID:     oidcCfg.ClientID,
+			ClientSecret: oidcCfg.ClientSecret,
+			RedirectURL:  oidcCfg.RedirectURL,
+			Endpoint:     provider.Endpoint(),
+			Scopes:       scopes,
+		},
+		verifier: provider.Verifier(&oidc.Config{
+			ClientID: oidcCfg.ClientID,
+		}),
+		httpClient: httpClient,
+		logger:     logger,
+	}, nil
+}
+
+// AuthCodeURL returns the URL to redirect the user to for OIDC
+// authentication.
+func (c *Client) AuthCodeURL(state string) string {
+	return c.oauth2Config.AuthCodeURL(state)
+}
+
+// ExchangeCode exchanges an authorization code for an OAuth2 token,
+// verifies the embedded ID token, and returns a domain IDToken with
+// structured metadata and raw claims.
+func (c *Client) ExchangeCode(ctx context.Context, code string) (*domain.IDToken, error) {
+	// Inject the same httpClient used for discovery so that TLS
+	// trust is consistent across all outbound calls.
+	if c.httpClient != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, c.httpClient)
 	}
 
-	return &DiscoveryResult{
-		OAuth2Config: oauth2Config,
-		Verifier:     verifier,
+	token, err := c.oauth2Config.Exchange(ctx, code)
+	if err != nil {
+		return nil, fmt.Errorf("token exchange: %w", err)
+	}
+
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok {
+		return nil, fmt.Errorf("no id_token in token response")
+	}
+
+	idToken, err := c.verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return nil, fmt.Errorf("id token verification: %w", err)
+	}
+
+	var claims map[string]interface{}
+	if err := idToken.Claims(&claims); err != nil {
+		return nil, fmt.Errorf("failed to extract claims: %w", err)
+	}
+
+	return &domain.IDToken{
+		Issuer:   idToken.Issuer,
+		Subject:  idToken.Subject,
+		Expiry:   idToken.Expiry,
+		IssuedAt: idToken.IssuedAt,
+		Claims:   claims,
 	}, nil
 }

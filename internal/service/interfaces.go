@@ -11,6 +11,7 @@ import (
 //go:generate mockgen -destination=../../mocks/mock_mapping_service.go -package=mocks . MappingService
 //go:generate mockgen -destination=../../mocks/mock_oidc_service.go -package=mocks . OIDCService
 //go:generate mockgen -destination=../../mocks/mock_pending_request_service.go -package=mocks . PendingRequestService
+//go:generate mockgen -destination=../../mocks/mock_hydra_client.go -package=mocks . HydraClient
 
 // SessionService manages user session lifecycle.
 type SessionService interface {
@@ -48,6 +49,13 @@ type PendingRequestService interface {
 	Retrieve(ctx context.Context, requestID string) (*domain.PendingAuthnRequest, error)
 }
 
+// HydraClient abstracts the Hydra OIDC infrastructure for auth URL
+// generation and token exchange.
+type HydraClient interface {
+	AuthCodeURL(state string) string
+	ExchangeCode(ctx context.Context, code string) (*domain.IDToken, error)
+}
+
 // OIDCClaims represents user claims extracted from an OIDC ID token.
 type OIDCClaims struct {
 	Sub       string
@@ -55,14 +63,4 @@ type OIDCClaims struct {
 	Name      string
 	Groups    []string
 	RawClaims map[string]interface{} // All claims from the OIDC ID token (for per-SP mapping)
-}
-
-// OIDCTokenVerifier abstracts OIDC ID token verification for testability.
-type OIDCTokenVerifier interface {
-	Verify(ctx context.Context, rawIDToken string) (OIDCIDToken, error)
-}
-
-// OIDCIDToken abstracts the verified ID token for claims extraction.
-type OIDCIDToken interface {
-	Claims(v interface{}) error
 }

@@ -29,12 +29,10 @@ type Config struct {
 	OtelSamplerRatio float64 `envconfig:"SAML_PROVIDER_OTEL_SAMPLER_RATIO" default:"0.1"`
 
 	// Ory Hydra Configuration
-	HydraPublicURL             string `envconfig:"SAML_PROVIDER_HYDRA_PUBLIC_URL" default:"http://localhost:4444"`
-	HydraInsecureSkipTLSVerify bool   `envconfig:"SAML_PROVIDER_HYDRA_INSECURE_SKIP_TLS_VERIFY" default:"false"`
-	HydraCACertPath            string `envconfig:"SAML_PROVIDER_HYDRA_CA_CERT_PATH" default:""`
-	ClientID                   string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_ID" default:"service-bridge-client"`
-	ClientSecret               string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_SECRET" default:"secret"`
-	RedirectURL                string `envconfig:"SAML_PROVIDER_OIDC_REDIRECT_URL" default:"http://localhost:8082/saml/callback"`
+	HydraPublicURL string `envconfig:"SAML_PROVIDER_HYDRA_PUBLIC_URL" default:"http://localhost:4444"`
+	ClientID       string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_ID" default:"service-bridge-client"`
+	ClientSecret   string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_SECRET" default:"secret"`
+	RedirectURL    string `envconfig:"SAML_PROVIDER_OIDC_REDIRECT_URL" default:"http://localhost:8082/saml/callback"`
 
 	// Service Configuration
 	ServiceACS      string `envconfig:"SAML_PROVIDER_SERVICE_ACS" default:"http://localhost:8083/saml/acs"`
@@ -73,12 +71,10 @@ func (c Config) DatabaseDSN() string {
 		c.DBUser, c.DBPassword, c.DBHost, c.DBPort, c.DBName)
 }
 
-// HydraConfig returns the subset of config needed by the Hydra HTTP client.
+// HydraConfig returns the subset of config needed by the Hydra OIDC client.
 func (c Config) HydraConfig() hydra.Config {
 	return hydra.Config{
-		CACertPath:            c.HydraCACertPath,
-		InsecureSkipTLSVerify: c.HydraInsecureSkipTLSVerify,
-		IssuerURL:             c.HydraPublicURL,
+		IssuerURL: c.HydraPublicURL,
 	}
 }
 

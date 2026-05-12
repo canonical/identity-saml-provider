@@ -41,12 +41,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	pendingRepo := memory.NewPendingRequestRepo()
 
 	// --- Infrastructure ---
-	hydraClient, err := hydra.NewClient(cfg.HydraConfig())
-	if err != nil {
-		pool.Close()
-		return nil, err
-	}
-	discovery, err := hydra.DiscoverOIDC(ctx, hydraClient, cfg.HydraConfig(), cfg.OIDCConfig())
+	hydraClient, err := hydra.NewClient(ctx, cfg.HydraConfig(), cfg.OIDCConfig(), logger)
 	if err != nil {
 		pool.Close()
 		return nil, err
@@ -79,7 +74,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	sessionSvc := service.NewSessionService(sessionRepo, logger)
 	spSvc := service.NewServiceProviderService(spRepo, logger)
 	mappingSvc := service.NewMappingService(spRepo, logger)
-	oidcSvc := service.NewOIDCService(discovery.OAuth2Config, service.NewIDTokenVerifierAdapter(discovery.Verifier), logger)
+	oidcSvc := service.NewOIDCService(hydraClient, logger)
 	pendingSvc := service.NewPendingRequestService(pendingRepo, logger)
 
 	// --- Handlers ---

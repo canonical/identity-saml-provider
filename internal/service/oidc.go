@@ -6,78 +6,70 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
-	"golang.org/x/oauth2"
 )
 
 type oidcService struct {
-	oauth2Config *oauth2.Config
-	verifier     OIDCTokenVerifier
-	logger       logging.Logger
+	hydra  HydraClient
+	logger logging.Logger
 }
 
-// NewOIDCService creates a new OIDCService with the given OAuth2 config and token verifier.
-func NewOIDCService(oauth2Config *oauth2.Config, verifier OIDCTokenVerifier, logger logging.Logger) OIDCService {
+// NewOIDCService creates a new OIDCService backed by the given HydraClient.
+func NewOIDCService(hydra HydraClient, logger logging.Logger) OIDCService {
 	return &oidcService{
-		oauth2Config: oauth2Config,
-		verifier:     verifier,
-		logger:       logger,
+		hydra:  hydra,
+		logger: logger,
 	}
 }
 
 func (s *oidcService) AuthCodeURL(state string) string {
-	return s.oauth2Config.AuthCodeURL(state)
+	return s.hydra.AuthCodeURL(state)
 }
 
 func (s *oidcService) ExchangeCode(ctx context.Context, code string) (*OIDCClaims, error) {
 	logger := logging.FromContext(ctx, s.logger)
 
-	// Exchange the authorization code for tokens
-	token, err := s.oauth2Config.Exchange(ctx, code)
+	idToken, err := s.hydra.ExchangeCode(ctx, code)
 	if err != nil {
 		logger.Errorw("Token exchange failed", "error", err)
-		return nil, &domain.ErrUpstream{Service: "hydra", Err: fmt.Errorf("token exchange: %w", err)}
-	}
-
-	// Extract the raw ID token from the OAuth2 token
-	rawIDToken, ok := token.Extra("id_token").(string)
-	if !ok {
-		return nil, &domain.ErrUpstream{Service: "hydra", Err: fmt.Errorf("no id_token in token response")}
-	}
-
-	// Verify the ID token
-	idToken, err := s.verifier.Verify(ctx, rawIDToken)
-	if err != nil {
-		logger.Errorw("ID token verification failed", "error", err)
-		return nil, &domain.ErrAuthentication{Reason: fmt.Sprintf("invalid ID token: %v", err)}
-	}
-
-	// Extract standard claims
-	var standardClaims struct {
-		Sub    string   `json:"sub"`
-		Email  string   `json:"email"`
-		Name   string   `json:"name"`
-		Groups []string `json:"groups"`
-	}
-	if err := idToken.Claims(&standardClaims); err != nil {
-		return nil, &domain.ErrAuthentication{Reason: fmt.Sprintf("failed to parse claims: %v", err)}
-	}
-
-	// Extract all raw claims for per-SP mapping
-	var rawClaims map[string]interface{}
-	if err := idToken.Claims(&rawClaims); err != nil {
-		logger.Warnw("Failed to extract raw claims", "error", err)
-		// Non-fatal: proceed without raw claims
+		return nil, &domain.ErrUpstream{
+			Service: "hydra",
+			Err:     fmt.Errorf("token exchange: %w", err),
+		}
 	}
 
 	claims := &OIDCClaims{
-		Sub:       standardClaims.Sub,
-		Email:     standardClaims.Email,
-		Name:      standardClaims.Name,
-		Groups:    standardClaims.Groups,
-		RawClaims: rawClaims,
+		Sub:       idToken.Subject,
+		Email:     claimString(idToken.Claims, "email"),
+		Name:      claimString(idToken.Claims, "name"),
+		Groups:    claimStringSlice(idToken.Claims, "groups"),
+		RawClaims: idToken.Claims,
 	}
 
 	logger.Infow("OIDC code exchange successful", "sub", claims.Sub)
 	logger.Debugw("OIDC claims detail", "sub", claims.Sub, "email", claims.Email)
+
 	return claims, nil
+}
+
+// claimString extracts a string claim from the raw claims map.
+// Returns empty string if missing or not a string.
+func claimString(claims map[string]interface{}, key string) string {
+	v, _ := claims[key].(string)
+	return v
+}
+
+// claimStringSlice extracts a string slice claim from the raw claims
+// map. Returns nil if missing or not a slice.
+func claimStringSlice(claims map[string]interface{}, key string) []string {
+	arr, ok := claims[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(arr))
+	for _, v := range arr {
+		if s, ok := v.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
 }

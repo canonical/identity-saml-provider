@@ -167,15 +167,20 @@ See the [`config.go`](internal/app/config.go) file
 for configuration options specific to the SAML provider,
 which can all be set via environment variables.
 
-For local or non-production environments with custom or
-self-signed certificate chains, set
-`SAML_PROVIDER_HYDRA_CA_CERT_PATH` to a PEM file containing
-the trusted CA certificate used by Hydra.
+### Custom CA Certificates
 
-As a last resort for local testing only, you can set
-`SAML_PROVIDER_HYDRA_INSECURE_SKIP_TLS_VERIFY=true` to
-disable TLS certificate verification for outbound Hydra
-OIDC requests.
+If Hydra uses a custom or private CA certificate chain,
+install the CA certificate into the container's system trust
+store rather than configuring it in the application. For
+example, in a Dockerfile:
+
+```Dockerfile
+COPY hydra-ca.pem /usr/local/share/ca-certificates/hydra-ca.crt
+RUN update-ca-certificates
+```
+
+For local development, Hydra runs on plain HTTP
+(`http://hydra:4444`) and no TLS configuration is needed.
 
 ### Tracing Sampler Configuration
 

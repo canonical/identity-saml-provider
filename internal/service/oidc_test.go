@@ -2,72 +2,54 @@ package service_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"go.uber.org/mock/gomock"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
-	"golang.org/x/oauth2"
+	"github.com/canonical/identity-saml-provider/mocks"
 )
-
-// mockTokenVerifier implements service.OIDCTokenVerifier for testing.
-type mockTokenVerifier struct {
-	token service.OIDCIDToken
-	err   error
-}
-
-func (m *mockTokenVerifier) Verify(_ context.Context, _ string) (service.OIDCIDToken, error) {
-	return m.token, m.err
-}
-
-// mockIDToken implements service.OIDCIDToken for testing.
-type mockIDToken struct {
-	claims interface{}
-	err    error
-}
-
-func (m *mockIDToken) Claims(v interface{}) error {
-	if m.err != nil {
-		return m.err
-	}
-	data, err := json.Marshal(m.claims)
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(data, v)
-}
 
 func TestOIDCService_AuthCodeURL(t *testing.T) {
 	t.Parallel()
 
-	oauth2Config := &oauth2.Config{
-		ClientID:     "test-client",
-		ClientSecret: "test-secret",
-		Endpoint: oauth2.Endpoint{
-			AuthURL:  "https://hydra.example.com/oauth2/auth",
-			TokenURL: "https://hydra.example.com/oauth2/token",
+	tests := []struct {
+		name    string
+		state   string
+		wantURL string
+	}{
+		{
+			name:    "returns URL from hydra client",
+			state:   "test-state-123",
+			wantURL: "https://hydra.example.com/auth?state=test-state-123",
 		},
-		RedirectURL: "https://bridge.example.com/callback",
-		Scopes:      []string{"openid", "email", "profile"},
+		{
+			name:    "empty state",
+			state:   "",
+			wantURL: "https://hydra.example.com/auth?state=",
+		},
 	}
 
-	svc := service.NewOIDCService(oauth2Config, nil, logging.NewNopLogger())
-	url := svc.AuthCodeURL("test-state-123")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	if url == "" {
-		t.Fatal("AuthCodeURL returned empty string")
-	}
-	// Should contain the auth URL and state
-	if !contains(url, "hydra.example.com/oauth2/auth") {
-		t.Errorf("URL should contain auth endpoint, got %q", url)
-	}
-	if !contains(url, "state=test-state-123") {
-		t.Errorf("URL should contain state parameter, got %q", url)
+			ctrl := gomock.NewController(t)
+			hydra := mocks.NewMockHydraClient(ctrl)
+			hydra.EXPECT().AuthCodeURL(tt.state).Return(tt.wantURL)
+
+			svc := service.NewOIDCService(hydra, logging.NewNopLogger())
+			got := svc.AuthCodeURL(tt.state)
+
+			if got != tt.wantURL {
+				t.Errorf("AuthCodeURL(%q) = %q, want %q", tt.state, got, tt.wantURL)
+			}
+		})
 	}
 }
 
@@ -76,78 +58,145 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		tokenServer func() *httptest.Server
-		verifier    service.OIDCTokenVerifier
+		code        string
+		setupMock   func(m *mocks.MockHydraClient)
 		wantErr     bool
 		errType     interface{}
 		checkResult func(t *testing.T, claims *service.OIDCClaims)
 	}{
 		{
-			name: "successful exchange with raw claims",
-			tokenServer: func() *httptest.Server {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{
-						"access_token": "access-token-123",
-						"token_type":   "Bearer",
-						"id_token":     "raw-id-token-123",
-					})
-				}))
+			name: "successful exchange with all claims",
+			code: "valid-code",
+			setupMock: func(m *mocks.MockHydraClient) {
+				m.EXPECT().
+					ExchangeCode(gomock.Any(), "valid-code").
+					Return(&domain.IDToken{
+						Subject:  "user-123",
+						Issuer:   "https://hydra.example.com",
+						Expiry:   time.Now().Add(time.Hour),
+						IssuedAt: time.Now(),
+						Claims: map[string]interface{}{
+							"sub":    "user-123",
+							"email":  "user@example.com",
+							"name":   "Jane Doe",
+							"groups": []interface{}{"admin", "users"},
+						},
+					}, nil)
 			},
-			verifier: &mockTokenVerifier{
-				token: &mockIDToken{
-					claims: map[string]interface{}{
-						"sub":    "user-123",
-						"email":  "user@example.com",
-						"name":   "Jane Doe",
-						"groups": []string{"admin", "users"},
-					},
-				},
-			},
-			checkResult: func(t *testing.T, claims *service.OIDCClaims) {
+			checkResult: func(t *testing.T, c *service.OIDCClaims) {
 				t.Helper()
-				if claims.Sub != "user-123" {
-					t.Errorf("Sub = %q, want %q", claims.Sub, "user-123")
+				if c.Sub != "user-123" {
+					t.Errorf("Sub = %q, want %q", c.Sub, "user-123")
 				}
-				if claims.Email != "user@example.com" {
-					t.Errorf("Email = %q, want %q", claims.Email, "user@example.com")
+				if c.Email != "user@example.com" {
+					t.Errorf("Email = %q, want %q", c.Email, "user@example.com")
 				}
-				if claims.Name != "Jane Doe" {
-					t.Errorf("Name = %q, want %q", claims.Name, "Jane Doe")
+				if c.Name != "Jane Doe" {
+					t.Errorf("Name = %q, want %q", c.Name, "Jane Doe")
 				}
-				if claims.RawClaims == nil {
+				if len(c.Groups) != 2 || c.Groups[0] != "admin" || c.Groups[1] != "users" {
+					t.Errorf("Groups = %v, want [admin users]", c.Groups)
+				}
+				if c.RawClaims == nil {
 					t.Error("RawClaims should not be nil")
 				}
 			},
 		},
 		{
-			name: "token exchange failure returns ErrUpstream",
-			tokenServer: func() *httptest.Server {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.WriteHeader(http.StatusInternalServerError)
-					_, _ = fmt.Fprint(w, "internal server error")
-				}))
+			name: "exchange failure returns ErrUpstream",
+			code: "bad-code",
+			setupMock: func(m *mocks.MockHydraClient) {
+				m.EXPECT().
+					ExchangeCode(gomock.Any(), "bad-code").
+					Return(nil, errors.New("connection refused"))
 			},
 			wantErr: true,
 			errType: &domain.ErrUpstream{},
 		},
 		{
-			name: "invalid ID token returns ErrAuthentication",
-			tokenServer: func() *httptest.Server {
-				return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					_ = json.NewEncoder(w).Encode(map[string]interface{}{
-						"access_token": "access-token-123",
-						"token_type":   "Bearer",
-						"id_token":     "invalid-token",
-					})
-				}))
+			name: "partial claims handled gracefully",
+			code: "valid-code",
+			setupMock: func(m *mocks.MockHydraClient) {
+				m.EXPECT().
+					ExchangeCode(gomock.Any(), "valid-code").
+					Return(&domain.IDToken{
+						Subject: "user-456",
+						Claims: map[string]interface{}{
+							"sub": "user-456",
+						},
+					}, nil)
 			},
-			verifier: &mockTokenVerifier{
-				err: errors.New("token signature verification failed"),
+			checkResult: func(t *testing.T, c *service.OIDCClaims) {
+				t.Helper()
+				if c.Sub != "user-456" {
+					t.Errorf("Sub = %q, want %q", c.Sub, "user-456")
+				}
+				if c.Email != "" {
+					t.Errorf("Email = %q, want empty", c.Email)
+				}
+				if c.Name != "" {
+					t.Errorf("Name = %q, want empty", c.Name)
+				}
+				if c.Groups != nil {
+					t.Errorf("Groups = %v, want nil", c.Groups)
+				}
+			},
+		},
+		{
+			name: "non-string email is ignored",
+			code: "valid-code",
+			setupMock: func(m *mocks.MockHydraClient) {
+				m.EXPECT().
+					ExchangeCode(gomock.Any(), "valid-code").
+					Return(&domain.IDToken{
+						Subject: "user-789",
+						Claims: map[string]interface{}{
+							"sub":   "user-789",
+							"email": 12345, // wrong type
+						},
+					}, nil)
+			},
+			checkResult: func(t *testing.T, c *service.OIDCClaims) {
+				t.Helper()
+				if c.Email != "" {
+					t.Errorf("Email = %q, want empty for non-string claim", c.Email)
+				}
+			},
+		},
+		{
+			name: "groups with mixed types filters non-strings",
+			code: "valid-code",
+			setupMock: func(m *mocks.MockHydraClient) {
+				m.EXPECT().
+					ExchangeCode(gomock.Any(), "valid-code").
+					Return(&domain.IDToken{
+						Subject: "user-mix",
+						Claims: map[string]interface{}{
+							"sub":    "user-mix",
+							"groups": []interface{}{"admin", 42, "users"},
+						},
+					}, nil)
+			},
+			checkResult: func(t *testing.T, c *service.OIDCClaims) {
+				t.Helper()
+				if len(c.Groups) != 2 || c.Groups[0] != "admin" || c.Groups[1] != "users" {
+					t.Errorf("Groups = %v, want [admin users]", c.Groups)
+				}
+			},
+		},
+		{
+			name: "upstream error wraps original error",
+			code: "err-code",
+			setupMock: func(m *mocks.MockHydraClient) {
+				m.EXPECT().
+					ExchangeCode(gomock.Any(), "err-code").
+					Return(nil, errors.New("timeout"))
 			},
 			wantErr: true,
-			errType: &domain.ErrAuthentication{},
+			errType: &domain.ErrUpstream{},
+			checkResult: func(t *testing.T, _ *service.OIDCClaims) {
+				// checked via errType
+			},
 		},
 	}
 
@@ -155,40 +204,27 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			ts := tt.tokenServer()
-			defer ts.Close()
+			ctrl := gomock.NewController(t)
+			hydra := mocks.NewMockHydraClient(ctrl)
+			tt.setupMock(hydra)
 
-			oauth2Config := &oauth2.Config{
-				ClientID:     "test-client",
-				ClientSecret: "test-secret",
-				Endpoint: oauth2.Endpoint{
-					TokenURL: ts.URL,
-				},
-				RedirectURL: "https://bridge.example.com/callback",
-			}
-
-			verifier := tt.verifier
-			if verifier == nil {
-				verifier = &mockTokenVerifier{}
-			}
-
-			svc := service.NewOIDCService(oauth2Config, verifier, logging.NewNopLogger())
-			claims, err := svc.ExchangeCode(context.Background(), "test-code")
+			svc := service.NewOIDCService(hydra, logging.NewNopLogger())
+			claims, err := svc.ExchangeCode(context.Background(), tt.code)
 
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
 				}
-				switch tt.errType.(type) {
-				case *domain.ErrUpstream:
-					var upstreamErr *domain.ErrUpstream
-					if !errors.As(err, &upstreamErr) {
-						t.Errorf("expected *domain.ErrUpstream, got %T: %v", err, err)
-					}
-				case *domain.ErrAuthentication:
-					var authErr *domain.ErrAuthentication
-					if !errors.As(err, &authErr) {
-						t.Errorf("expected *domain.ErrAuthentication, got %T: %v", err, err)
+				if tt.errType != nil {
+					switch tt.errType.(type) {
+					case *domain.ErrUpstream:
+						var upstreamErr *domain.ErrUpstream
+						if !errors.As(err, &upstreamErr) {
+							t.Errorf("expected *domain.ErrUpstream, got %T: %v", err, err)
+						}
+						if !strings.Contains(upstreamErr.Service, "hydra") {
+							t.Errorf("ErrUpstream.Service = %q, want 'hydra'", upstreamErr.Service)
+						}
 					}
 				}
 				return
@@ -201,17 +237,4 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

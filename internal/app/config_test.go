@@ -79,19 +79,11 @@ func TestConfig_PoolConfig(t *testing.T) {
 
 func TestConfig_HydraConfig(t *testing.T) {
 	cfg := app.Config{
-		HydraCACertPath:            "/path/to/ca.pem",
-		HydraInsecureSkipTLSVerify: true,
-		HydraPublicURL:             "https://hydra.example.com",
+		HydraPublicURL: "https://hydra.example.com",
 	}
 
 	hc := cfg.HydraConfig()
 
-	if hc.CACertPath != "/path/to/ca.pem" {
-		t.Errorf("HydraConfig().CACertPath = %q, want %q", hc.CACertPath, "/path/to/ca.pem")
-	}
-	if !hc.InsecureSkipTLSVerify {
-		t.Error("HydraConfig().InsecureSkipTLSVerify = false, want true")
-	}
 	if hc.IssuerURL != "https://hydra.example.com" {
 		t.Errorf("HydraConfig().IssuerURL = %q, want %q", hc.IssuerURL, "https://hydra.example.com")
 	}

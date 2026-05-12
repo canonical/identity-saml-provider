@@ -1,10 +1,15 @@
 # Connecting to an External Identity Provider
 
-To connect your local deployment to an external IDP such as one of the Prodstack IAM instances, you can follow these steps:
+To connect your local deployment to an external IDP such as one of the
+Prodstack IAM instances, you can follow these steps:
 
 1. In `k8s/deployment.yaml`:
-    - update the value for `SAML_PROVIDER_HYDRA_PUBLIC_URL` to point to the deployment URL, and
-    - if Hydra uses a custom CA chain, set `SAML_PROVIDER_HYDRA_CA_CERT_PATH` to the mounted PEM file path, and
-    - update the value for `SAML_PROVIDER_OIDC_CLIENT_ID` to your client id
+    - update the value for `SAML_PROVIDER_HYDRA_PUBLIC_URL` to point to
+      the deployment URL, and
+    - update the value for `SAML_PROVIDER_OIDC_CLIENT_ID` to your client
+      id
+    - if Hydra uses a custom CA chain, install the CA certificate in the
+      container's system trust store (see README for details)
 2. In `k8s/kustomization.yaml`:
-    - update the value for `client-secret` in `hydra-credentials` to your client secret
+    - update the value for `client-secret` in `hydra-credentials` to your
+      client secret
