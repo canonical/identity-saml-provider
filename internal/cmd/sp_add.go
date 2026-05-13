@@ -10,6 +10,7 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/repository/postgres"
 	"github.com/canonical/identity-saml-provider/internal/service"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/spf13/cobra"
 )
@@ -62,9 +63,9 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 		}
 
 		// Register via service layer.
-		repo := postgres.NewServiceProviderRepo(pool)
+		repo := postgres.NewServiceProviderRepo(pool, tracing.NewNoopTracer())
 		logger := logging.NewNopLogger()
-		svc := service.NewServiceProviderService(repo, logger)
+		svc := service.NewServiceProviderService(repo, logger, tracing.NewNoopTracer())
 
 		if err := svc.Register(ctx, sp); err != nil {
 			cmd.SilenceErrors = true

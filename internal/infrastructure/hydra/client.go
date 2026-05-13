@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"golang.org/x/oauth2"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
@@ -44,7 +45,10 @@ func NewClient(
 	oidcCfg OIDCConfig,
 	logger logging.Logger,
 ) (*Client, error) {
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	httpClient := &http.Client{
+		Timeout:   30 * time.Second,
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
 
 	// Inject httpClient into context for OIDC discovery.
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)

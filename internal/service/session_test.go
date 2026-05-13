@@ -8,6 +8,7 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
 )
@@ -115,7 +116,7 @@ func TestSessionService_CreateFromOIDC(t *testing.T) {
 
 			tt.setupMock(mockRepo)
 
-			svc := service.NewSessionService(mockRepo, logger)
+			svc := service.NewSessionService(mockRepo, logger, tracing.NewNoopTracer())
 			result, err := svc.CreateFromOIDC(context.Background(), tt.claims)
 
 			if tt.wantErr {
@@ -181,7 +182,7 @@ func TestSessionService_GetByID(t *testing.T) {
 
 			tt.setupMock(mockRepo)
 
-			svc := service.NewSessionService(mockRepo, logger)
+			svc := service.NewSessionService(mockRepo, logger, tracing.NewNoopTracer())
 			result, err := svc.GetByID(context.Background(), tt.id)
 
 			if tt.wantErr {
@@ -248,7 +249,7 @@ func TestSessionService_CleanupExpired(t *testing.T) {
 
 			tt.setupMock(mockRepo)
 
-			svc := service.NewSessionService(mockRepo, logger)
+			svc := service.NewSessionService(mockRepo, logger, tracing.NewNoopTracer())
 			count, err := svc.CleanupExpired(context.Background())
 
 			if tt.wantErr {

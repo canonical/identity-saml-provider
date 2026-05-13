@@ -8,6 +8,7 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
 )
@@ -91,7 +92,7 @@ func TestServiceProviderService_Register(t *testing.T) {
 
 			tt.setupMock(mockRepo)
 
-			svc := service.NewServiceProviderService(mockRepo, logger)
+			svc := service.NewServiceProviderService(mockRepo, logger, tracing.NewNoopTracer())
 			err := svc.Register(context.Background(), tt.sp)
 
 			if tt.wantErr {
@@ -154,7 +155,7 @@ func TestServiceProviderService_GetByEntityID(t *testing.T) {
 
 			tt.setupMock(mockRepo)
 
-			svc := service.NewServiceProviderService(mockRepo, logger)
+			svc := service.NewServiceProviderService(mockRepo, logger, tracing.NewNoopTracer())
 			result, err := svc.GetByEntityID(context.Background(), tt.entityID)
 
 			if tt.wantErr {

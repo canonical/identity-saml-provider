@@ -10,6 +10,7 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/repository/memory"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 )
 
 func TestPendingRequestRepo_SaveAndGetAndDelete(t *testing.T) {
@@ -39,7 +40,7 @@ func TestPendingRequestRepo_SaveAndGetAndDelete(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := memory.NewPendingRequestRepo()
+			repo := memory.NewPendingRequestRepo(tracing.NewNoopTracer())
 			ctx := context.Background()
 
 			if err := repo.Save(ctx, tt.req); err != nil {
@@ -64,7 +65,7 @@ func TestPendingRequestRepo_SaveAndGetAndDelete(t *testing.T) {
 }
 
 func TestPendingRequestRepo_GetAndDelete_RemovesEntry(t *testing.T) {
-	repo := memory.NewPendingRequestRepo()
+	repo := memory.NewPendingRequestRepo(tracing.NewNoopTracer())
 	ctx := context.Background()
 
 	req := &domain.PendingAuthnRequest{
@@ -103,7 +104,7 @@ func TestPendingRequestRepo_GetAndDelete_NotFound(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := memory.NewPendingRequestRepo()
+			repo := memory.NewPendingRequestRepo(tracing.NewNoopTracer())
 			ctx := context.Background()
 
 			_, err := repo.GetAndDelete(ctx, tt.requestID)
@@ -194,7 +195,7 @@ func TestPendingRequestRepo_DeleteExpired(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			repo := memory.NewPendingRequestRepo(memory.WithClock(func() time.Time { return fixedNow }))
+			repo := memory.NewPendingRequestRepo(tracing.NewNoopTracer(), memory.WithClock(func() time.Time { return fixedNow }))
 			ctx := context.Background()
 
 			for _, req := range tt.requests {
@@ -231,7 +232,7 @@ func TestPendingRequestRepo_DeleteExpired(t *testing.T) {
 }
 
 func TestPendingRequestRepo_ConcurrentAccess(t *testing.T) {
-	repo := memory.NewPendingRequestRepo()
+	repo := memory.NewPendingRequestRepo(tracing.NewNoopTracer())
 	ctx := context.Background()
 
 	const numGoroutines = 100

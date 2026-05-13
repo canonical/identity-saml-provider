@@ -8,6 +8,7 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
 )
@@ -31,7 +32,7 @@ func TestMappingService_ApplyMapping_NoMapping(t *testing.T) {
 	// No mapping configured for this SP
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(nil, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -59,7 +60,7 @@ func TestMappingService_ApplyMapping_ErrorRetrieving(t *testing.T) {
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").
 		Return(nil, errors.New("db error"))
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -135,7 +136,7 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 
 			mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-			svc := service.NewMappingService(mockRepo, logger)
+			svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 			result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -185,7 +186,7 @@ func TestMappingService_ApplyMapping_SAMLAttributes(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -278,7 +279,7 @@ func TestMappingService_ApplyMapping_LowercaseEmail(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -324,7 +325,7 @@ func TestMappingService_ApplyMapping_DefaultOIDCMapping(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -381,7 +382,7 @@ func TestMappingService_ApplyMapping_WithRawClaims(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -434,7 +435,7 @@ func TestMappingService_ApplyMapping_RawClaimsWithGroups(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -491,7 +492,7 @@ func TestMappingService_ApplyMapping_DoesNotModifyOriginal(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	_, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -537,7 +538,7 @@ func TestMappingService_ApplyMapping_OnlyNameIDFormat(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -579,7 +580,7 @@ func TestMappingService_ApplyMapping_EmptyMapping(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger)
+	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

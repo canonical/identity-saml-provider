@@ -7,6 +7,10 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 )
@@ -21,7 +25,14 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	// 1. Extract authorization code
 	code := r.URL.Query().Get("code")
+	state := r.URL.Query().Get("state")
+	span.SetAttributes(
+		attribute.Bool("handler.callback.has_code", code != ""),
+		attribute.Bool("handler.callback.has_state", state != ""),
+	)
+
 	if code == "" {
+		span.SetStatus(codes.Error, "missing authorization code")
 		http.Error(w, "No code in callback", http.StatusBadRequest)
 		return
 	}
@@ -29,20 +40,30 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// 2. Exchange authorization code for OIDC claims
 	claims, err := h.oidc.ExchangeCode(ctx, code)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "oidc code exchange failed")
 		h.monitor.IncrementBridgeOperation("oidc_code_exchange", "error")
 		WriteError(w, err)
 		return
 	}
 	h.monitor.IncrementBridgeOperation("oidc_code_exchange", "success")
+	span.AddEvent("oidc_code_exchanged")
 
 	// 3. Create SAML session from OIDC claims
 	session, err := h.sessions.CreateFromOIDC(ctx, claims)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "session creation failed")
 		h.monitor.IncrementBridgeOperation("session_create", "error")
 		WriteError(w, err)
 		return
 	}
 	h.monitor.IncrementBridgeOperation("session_create", "success")
+	span.AddEvent("session_created",
+		trace.WithAttributes(
+			attribute.String("session_id", session.ID),
+		),
+	)
 
 	// 4. Set session cookie
 	http.SetCookie(w, &http.Cookie{
@@ -55,7 +76,6 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// 5. Parse state → request ID + optional RelayState
-	state := r.URL.Query().Get("state")
 	requestID, relayState := parseState(state)
 
 	if requestID != "" {
@@ -65,6 +85,8 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// 6. Build redirect URL back to SAML SSO
 	bridgeURL, err := url.Parse(h.config.BridgeBaseURL)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "invalid BridgeBaseURL")
 		logger.Errorw("Invalid BridgeBaseURL", "url", h.config.BridgeBaseURL, "error", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return

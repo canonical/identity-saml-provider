@@ -37,24 +37,6 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		return nil, err
 	}
 
-	// --- Repositories ---
-	sessionRepo := postgres.NewSessionRepo(pool)
-	spRepo := postgres.NewServiceProviderRepo(pool)
-	pendingRepo := memory.NewPendingRequestRepo()
-
-	// --- Infrastructure ---
-	hydraClient, err := hydra.NewClient(ctx, cfg.HydraConfig(), cfg.OIDCConfig(), logger)
-	if err != nil {
-		pool.Close()
-		return nil, err
-	}
-
-	samlIDP, err := samlkit.NewIdentityProvider(cfg.SAMLConfig(), logger)
-	if err != nil {
-		pool.Close()
-		return nil, err
-	}
-
 	// --- Monitoring & Tracing ---
 	serviceName := cfg.ServiceName
 	if serviceName == "" {
@@ -76,14 +58,32 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		cfg.OtelSamplerRatio,
 		logger,
 	)
-	tracer := tracing.NewTracer(tracingCfg)
+	tracer := tracing.NewTracer(ctx, tracingCfg)
+
+	// --- Repositories ---
+	sessionRepo := postgres.NewSessionRepo(pool, tracer)
+	spRepo := postgres.NewServiceProviderRepo(pool, tracer)
+	pendingRepo := memory.NewPendingRequestRepo(tracer)
+
+	// --- Infrastructure ---
+	hydraClient, err := hydra.NewClient(ctx, cfg.HydraConfig(), cfg.OIDCConfig(), logger)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+
+	samlIDP, err := samlkit.NewIdentityProvider(cfg.SAMLConfig(), logger)
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
 
 	// --- Services ---
-	sessionSvc := service.NewSessionService(sessionRepo, logger)
-	spSvc := service.NewServiceProviderService(spRepo, logger)
-	mappingSvc := service.NewMappingService(spRepo, logger)
-	oidcSvc := service.NewOIDCService(hydraClient, logger)
-	pendingSvc := service.NewPendingRequestService(pendingRepo, logger)
+	sessionSvc := service.NewSessionService(sessionRepo, logger, tracer)
+	spSvc := service.NewServiceProviderService(spRepo, logger, tracer)
+	mappingSvc := service.NewMappingService(spRepo, logger, tracer)
+	oidcSvc := service.NewOIDCService(hydraClient, logger, tracer)
+	pendingSvc := service.NewPendingRequestService(pendingRepo, logger, tracer)
 
 	// --- Handlers ---
 	handlers := handler.NewHandlers(
@@ -101,9 +101,11 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		OIDC:     oidcSvc,
 		Config:   handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL},
 		Logger:   logger,
+		Tracer:   tracer,
 	}
 	samlIDP.ServiceProviderProvider = &handler.SAMLSPAdapter{
-		SPs: spSvc,
+		SPs:    spSvc,
+		Tracer: tracer,
 	}
 
 	// --- Health Handler ---
@@ -128,14 +130,14 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		// 3. Request logger: enriches context logger with requestID/traceID, logs each request
 		// 4. Metrics: records Prometheus request duration and counter
 		r.Use(middleware.RequestID)
-		r.Use(tracing.NewTracingMiddleware(logger).RouteSpanNameMiddleware())
+		r.Use(tracing.NewTracingMiddleware().RouteSpanNameMiddleware())
 		r.Use(logging.RequestLoggerMiddleware(logger))
 		r.Use(monitoring.NewMiddleware(monitor).Metrics())
 
 		handlers.RegisterRoutes(r)
 	})
 
-	otelHandler := tracing.NewTracingMiddleware(logger).OpenTelemetry(router)
+	otelHandler := tracing.NewTracingMiddleware().OpenTelemetry(router)
 	httpServer := &http.Server{
 		Addr:    ":" + cfg.BridgeBasePort,
 		Handler: otelHandler,

@@ -7,19 +7,24 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/repository"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 )
 
 type mappingService struct {
 	spRepo repository.ServiceProviderRepository
 	logger logging.Logger
+	tracer tracing.TracingInterface
 }
 
 // NewMappingService creates a new MappingService.
-func NewMappingService(spRepo repository.ServiceProviderRepository, logger logging.Logger) MappingService {
-	return &mappingService{spRepo: spRepo, logger: logger}
+func NewMappingService(spRepo repository.ServiceProviderRepository, logger logging.Logger, tracer tracing.TracingInterface) MappingService {
+	return &mappingService{spRepo: spRepo, logger: logger, tracer: tracer}
 }
 
 func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Session, entityID string) (*domain.Session, error) {
+	ctx, span := s.tracer.Start(ctx, "service.mapping.apply_mapping")
+	defer span.End()
+
 	logger := logging.FromContext(ctx, s.logger)
 
 	mapping, err := s.spRepo.GetAttributeMapping(ctx, entityID)

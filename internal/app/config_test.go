@@ -132,34 +132,6 @@ func TestConfig_SAMLConfig(t *testing.T) {
 	}
 }
 
-func TestConfig_TracingConfig(t *testing.T) {
-	cfg := app.Config{
-		TracingEnabled:   true,
-		OtelGRPCEndpoint: "grpc.example.com:4317",
-		OtelHTTPEndpoint: "http.example.com:4318",
-		OtelSampler:      "always_on",
-		OtelSamplerRatio: 0.5,
-	}
-
-	tc := cfg.TracingConfig()
-
-	if !tc.Enabled {
-		t.Error("TracingConfig().Enabled = false, want true")
-	}
-	if tc.OtelGRPCEndpoint != "grpc.example.com:4317" {
-		t.Errorf("TracingConfig().OtelGRPCEndpoint = %q, want %q", tc.OtelGRPCEndpoint, "grpc.example.com:4317")
-	}
-	if tc.OtelHTTPEndpoint != "http.example.com:4318" {
-		t.Errorf("TracingConfig().OtelHTTPEndpoint = %q, want %q", tc.OtelHTTPEndpoint, "http.example.com:4318")
-	}
-	if tc.OtelSampler != "always_on" {
-		t.Errorf("TracingConfig().OtelSampler = %q, want %q", tc.OtelSampler, "always_on")
-	}
-	if tc.OtelSamplerRatio != 0.5 {
-		t.Errorf("TracingConfig().OtelSamplerRatio = %f, want 0.5", tc.OtelSamplerRatio)
-	}
-}
-
 func TestConfig_EnvconfigProcess(t *testing.T) {
 	// Verify that envconfig.Process works with the Config struct
 	// (all env vars use the same names as the original provider.Config)

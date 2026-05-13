@@ -9,6 +9,7 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
 )
@@ -56,7 +57,7 @@ func TestPendingRequestService_Store(t *testing.T) {
 
 			tt.setupMock(mockRepo)
 
-			svc := service.NewPendingRequestService(mockRepo, logger)
+			svc := service.NewPendingRequestService(mockRepo, logger, tracing.NewNoopTracer())
 			err := svc.Store(context.Background(), tt.req)
 
 			if tt.wantErr {
@@ -115,7 +116,7 @@ func TestPendingRequestService_Retrieve(t *testing.T) {
 
 			tt.setupMock(mockRepo)
 
-			svc := service.NewPendingRequestService(mockRepo, logger)
+			svc := service.NewPendingRequestService(mockRepo, logger, tracing.NewNoopTracer())
 			result, err := svc.Retrieve(context.Background(), tt.requestID)
 
 			if tt.wantErr {

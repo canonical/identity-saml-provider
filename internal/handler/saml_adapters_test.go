@@ -11,6 +11,7 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/handler"
 	"github.com/canonical/identity-saml-provider/internal/logging"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"github.com/crewjam/saml"
 	"go.uber.org/mock/gomock"
@@ -72,7 +73,7 @@ func TestSAMLSPAdapter_GetServiceProvider(t *testing.T) {
 			mockSPs := mocks.NewMockServiceProviderService(ctrl)
 			tt.setup(mockSPs)
 
-			adapter := &handler.SAMLSPAdapter{SPs: mockSPs}
+			adapter := &handler.SAMLSPAdapter{SPs: mockSPs, Tracer: tracing.NewNoopTracer()}
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 			desc, err := adapter.GetServiceProvider(req, tt.spID)
@@ -126,6 +127,7 @@ func TestSAMLSessionAdapter_GetSession_SessionExists(t *testing.T) {
 		OIDC:     mockOIDC,
 		Config:   handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
 		Logger:   logger,
+		Tracer:   tracing.NewNoopTracer(),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=test", nil)
@@ -177,6 +179,7 @@ func TestSAMLSessionAdapter_GetSession_NoSession_RedirectsToOIDC(t *testing.T) {
 		OIDC:     mockOIDC,
 		Config:   handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
 		Logger:   logger,
+		Tracer:   tracing.NewNoopTracer(),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=encoded-request", nil)
@@ -230,6 +233,7 @@ func TestSAMLSessionAdapter_GetSession_SessionNotFound_RedirectsToOIDC(t *testin
 		OIDC:     mockOIDC,
 		Config:   handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
 		Logger:   logger,
+		Tracer:   tracing.NewNoopTracer(),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=encoded-request", nil)

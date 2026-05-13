@@ -5,26 +5,36 @@ import (
 	"fmt"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/repository"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 )
 
 type sessionService struct {
 	repo   repository.SessionRepository
 	logger logging.Logger
+	tracer tracing.TracingInterface
 }
 
 // NewSessionService creates a new SessionService backed by the given repository.
-func NewSessionService(repo repository.SessionRepository, logger logging.Logger) SessionService {
-	return &sessionService{repo: repo, logger: logger}
+func NewSessionService(repo repository.SessionRepository, logger logging.Logger, tracer tracing.TracingInterface) SessionService {
+	return &sessionService{repo: repo, logger: logger, tracer: tracer}
 }
 
 func (s *sessionService) CreateFromOIDC(ctx context.Context, claims *OIDCClaims) (*domain.Session, error) {
+	ctx, span := s.tracer.Start(ctx, "service.session.create_from_oidc")
+	defer span.End()
+
 	logger := logging.FromContext(ctx, s.logger)
 
 	if claims.Email == "" {
-		return nil, &domain.ErrValidation{Field: "email", Message: "email claim is required"}
+		err := &domain.ErrValidation{Field: "email", Message: "email claim is required"}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err
 	}
 
 	// Use the name claim if available, otherwise fall back to email
@@ -48,6 +58,8 @@ func (s *sessionService) CreateFromOIDC(ctx context.Context, claims *OIDCClaims)
 	}
 
 	if err := s.repo.Save(ctx, session); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		logger.Errorw("Failed to save session", "sessionID", sessionID, "error", err)
 		return nil, fmt.Errorf("save session: %w", err)
 	}
@@ -58,18 +70,28 @@ func (s *sessionService) CreateFromOIDC(ctx context.Context, claims *OIDCClaims)
 }
 
 func (s *sessionService) GetByID(ctx context.Context, id string) (*domain.Session, error) {
+	ctx, span := s.tracer.Start(ctx, "service.session.get_by_id")
+	defer span.End()
+
 	session, err := s.repo.GetByID(ctx, id)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, err // propagates *domain.ErrNotFound or infrastructure error
 	}
 	return session, nil
 }
 
 func (s *sessionService) CleanupExpired(ctx context.Context) (int64, error) {
+	ctx, span := s.tracer.Start(ctx, "service.session.cleanup_expired")
+	defer span.End()
+
 	logger := logging.FromContext(ctx, s.logger)
 
 	count, err := s.repo.DeleteExpired(ctx)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		logger.Errorw("Failed to cleanup expired sessions", "error", err)
 		return 0, err
 	}

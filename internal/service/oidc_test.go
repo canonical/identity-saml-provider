@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"go.uber.org/mock/gomock"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
@@ -43,7 +44,7 @@ func TestOIDCService_AuthCodeURL(t *testing.T) {
 			hydra := mocks.NewMockHydraClient(ctrl)
 			hydra.EXPECT().AuthCodeURL(tt.state).Return(tt.wantURL)
 
-			svc := service.NewOIDCService(hydra, logging.NewNopLogger())
+			svc := service.NewOIDCService(hydra, logging.NewNopLogger(), tracing.NewNoopTracer())
 			got := svc.AuthCodeURL(tt.state)
 
 			if got != tt.wantURL {
@@ -208,7 +209,7 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 			hydra := mocks.NewMockHydraClient(ctrl)
 			tt.setupMock(hydra)
 
-			svc := service.NewOIDCService(hydra, logging.NewNopLogger())
+			svc := service.NewOIDCService(hydra, logging.NewNopLogger(), tracing.NewNoopTracer())
 			claims, err := svc.ExchangeCode(context.Background(), tt.code)
 
 			if tt.wantErr {

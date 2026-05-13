@@ -7,7 +7,6 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/hydra"
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/samlkit"
 	"github.com/canonical/identity-saml-provider/internal/repository/postgres"
-	"github.com/canonical/identity-saml-provider/internal/tracing"
 )
 
 // Config defines the configuration for the SAML provider application.
@@ -95,16 +94,4 @@ func (c Config) SAMLConfig() samlkit.Config {
 		CertPath:      c.SAMLCertPath,
 		KeyPath:       c.SAMLKeyPath,
 	}
-}
-
-// TracingConfig returns tracing configuration.
-func (c Config) TracingConfig() *tracing.Config {
-	return tracing.NewConfig(
-		c.TracingEnabled,
-		c.OtelGRPCEndpoint,
-		c.OtelHTTPEndpoint,
-		c.OtelSampler,
-		c.OtelSamplerRatio,
-		nil, // logger is set in Build()
-	)
 }

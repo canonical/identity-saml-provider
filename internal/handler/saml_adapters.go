@@ -5,9 +5,12 @@ import (
 	"os"
 	"time"
 
+	"go.opentelemetry.io/otel/codes"
+
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
+	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/crewjam/saml"
 )
 
@@ -80,6 +83,7 @@ type SAMLSessionAdapter struct {
 	OIDC     service.OIDCService
 	Config   HandlerConfig
 	Logger   logging.Logger
+	Tracer   tracing.TracingInterface
 }
 
 // GetSession implements saml.SessionProvider. It checks for an existing session
@@ -88,6 +92,9 @@ type SAMLSessionAdapter struct {
 // request and redirects the user to the OIDC provider.
 func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) *saml.Session {
 	ctx := r.Context()
+	ctx, span := a.Tracer.Start(ctx, "handler.saml.get_session")
+	defer span.End()
+
 	logger := logging.FromContext(ctx, a.Logger)
 	logger.Debugw("Checking for existing SAML session")
 
@@ -96,13 +103,18 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 
 	var domainSession *domain.Session
 	if err == nil && sessionCookie.Value != "" {
+		span.AddEvent("session_cookie_found")
 		logger.Debugw("Found session cookie", "sessionID", sessionCookie.Value)
 		domainSession, err = a.Sessions.GetByID(ctx, sessionCookie.Value)
 		if err != nil {
+			span.AddEvent("session_lookup_miss")
 			logger.Debugw("Session not found or expired", "sessionID", sessionCookie.Value, "error", err)
 			domainSession = nil
+		} else {
+			span.AddEvent("session_lookup_hit")
 		}
 	} else {
+		span.AddEvent("session_cookie_missing")
 		logger.Debugw("No session cookie found")
 	}
 
@@ -118,7 +130,10 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 				CreatedAt:   time.Now(),
 			}
 			if storeErr := a.Pending.Store(ctx, pendingReq); storeErr != nil {
+				span.RecordError(storeErr)
 				logger.Errorw("Failed to store pending request", "error", storeErr)
+			} else {
+				span.AddEvent("pending_request_stored")
 			}
 		}
 
@@ -128,6 +143,7 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 			state += ":" + req.RelayState
 		}
 
+		span.AddEvent("oidc_redirect_initiated")
 		logger.Debugw("No valid session found, redirecting to OIDC provider")
 		http.Redirect(w, r, a.OIDC.AuthCodeURL(state), http.StatusFound)
 		return nil
@@ -136,6 +152,7 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 	// 3. Apply per-SP attribute mapping if configured
 	if req.Request.Issuer != nil && req.Request.Issuer.Value != "" {
 		domainSession, _ = a.Mapping.ApplyMapping(ctx, domainSession, req.Request.Issuer.Value)
+		span.AddEvent("attribute_mapping_applied")
 	}
 
 	// 4. Convert domain.Session → saml.Session
@@ -148,7 +165,8 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 
 // SAMLSPAdapter implements the crewjam/saml ServiceProviderProvider interface.
 type SAMLSPAdapter struct {
-	SPs service.ServiceProviderService
+	SPs    service.ServiceProviderService
+	Tracer tracing.TracingInterface
 }
 
 // GetServiceProvider implements saml.ServiceProviderProvider. It looks up
@@ -156,8 +174,13 @@ type SAMLSPAdapter struct {
 // Returns os.ErrNotExist when the SP is not found, as required by the
 // crewjam/saml library contract.
 func (a *SAMLSPAdapter) GetServiceProvider(r *http.Request, serviceProviderID string) (*saml.EntityDescriptor, error) {
-	sp, err := a.SPs.GetByEntityID(r.Context(), serviceProviderID)
+	ctx, span := a.Tracer.Start(r.Context(), "handler.saml.get_service_provider")
+	defer span.End()
+
+	sp, err := a.SPs.GetByEntityID(ctx, serviceProviderID)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return nil, os.ErrNotExist
 	}
 
