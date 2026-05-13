@@ -5,17 +5,14 @@ import (
 	"strings"
 
 	"github.com/canonical/identity-saml-provider/internal/logging"
-	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
 )
 
+// Middleware provides OpenTelemetry tracing middleware for HTTP handlers.
 type Middleware struct {
-	service string
-
-	monitor monitoring.MonitorInterface
-	logger  logging.Logger
+	logger logging.Logger
 }
 
 func (mdw *Middleware) OpenTelemetry(handler http.Handler) http.Handler {
@@ -53,13 +50,7 @@ func (mdw *Middleware) spanName(r *http.Request) string {
 	return r.Method + " " + routePattern
 }
 
-func NewMiddleware(monitor monitoring.MonitorInterface, logger logging.Logger) *Middleware {
-	mdw := new(Middleware)
-	mdw.monitor = monitor
-	mdw.logger = logger
-	if monitor != nil {
-		mdw.service = monitor.GetService()
-	}
-
-	return mdw
+// NewTracingMiddleware creates a tracing middleware.
+func NewTracingMiddleware(logger logging.Logger) *Middleware {
+	return &Middleware{logger: logger}
 }

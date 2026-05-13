@@ -3,68 +3,52 @@ package monitoring
 import (
 	"fmt"
 	"net/http"
-	"regexp"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-
-	"github.com/canonical/identity-saml-provider/internal/logging"
 )
 
-const (
-	// IDPathRegex swaps route placeholders like {id} for a stable "id" label value.
-	IDPathRegex string = "{[^}]+}"
-)
-
+// Middleware records HTTP metrics for each request.
 type Middleware struct {
-	service string
-	regex   *regexp.Regexp
-
 	monitor MonitorInterface
-	logger  logging.Logger
 }
 
-func (mdw *Middleware) ResponseTime() func(http.Handler) http.Handler {
+// NewMiddleware creates a monitoring middleware.
+func NewMiddleware(monitor MonitorInterface) *Middleware {
+	return &Middleware{monitor: monitor}
+}
+
+// Metrics returns a chi-compatible middleware that observes request
+// duration and increments the request counter after every response.
+func (mdw *Middleware) Metrics() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(
-			func(w http.ResponseWriter, r *http.Request) {
-				ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-				startTime := time.Now()
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			start := time.Now()
 
-				next.ServeHTTP(ww, r)
+			next.ServeHTTP(ww, r)
 
-				if mdw.monitor == nil {
-					return
+			if mdw.monitor == nil {
+				return
+			}
+
+			// Use the chi route pattern to keep label cardinality
+			// bounded. Falls back to the raw path only if chi has
+			// no route context.
+			route := r.URL.Path
+			if rctx := chi.RouteContext(r.Context()); rctx != nil {
+				if pattern := rctx.RoutePattern(); pattern != "" {
+					route = pattern
 				}
+			}
 
-				routePattern := r.URL.Path
-				if routeCtx := chi.RouteContext(r.Context()); routeCtx != nil {
-					if matched := routeCtx.RoutePattern(); matched != "" {
-						routePattern = matched
-					}
-				}
+			method := r.Method
+			status := fmt.Sprint(ww.Status())
+			duration := time.Since(start).Seconds()
 
-				tags := map[string]string{
-					"route":  fmt.Sprintf("%s%s", r.Method, mdw.regex.ReplaceAllString(routePattern, "id")),
-					"status": fmt.Sprint(ww.Status()),
-				}
-
-				_ = mdw.monitor.SetResponseTimeMetric(tags, time.Since(startTime).Seconds())
-			},
-		)
+			mdw.monitor.ObserveHTTPRequestDuration(method, route, status, duration)
+			mdw.monitor.IncrementHTTPRequestsTotal(method, route, status)
+		})
 	}
-}
-
-func NewMiddleware(monitor MonitorInterface, logger logging.Logger) *Middleware {
-	mdw := new(Middleware)
-	mdw.monitor = monitor
-	mdw.logger = logger
-	mdw.regex = regexp.MustCompile(IDPathRegex)
-
-	if monitor != nil {
-		mdw.service = monitor.GetService()
-	}
-
-	return mdw
 }

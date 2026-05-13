@@ -2,7 +2,6 @@ package handler
 
 import (
 	"github.com/go-chi/chi/v5"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // RegisterRoutes registers all endpoints on the provided chi.Router.
@@ -16,7 +15,4 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 
 	// Admin API
 	r.Post("/admin/service-providers", h.HandleRegisterServiceProvider)
-
-	// Observability
-	r.Handle("/metrics", promhttp.Handler())
 }

@@ -63,9 +63,9 @@ type testHandlerDeps struct {
 // noopMon implements monitoring.MonitorInterface.
 type noopMon struct{}
 
-func (n *noopMon) GetService() string                                         { return "test" }
-func (n *noopMon) SetResponseTimeMetric(map[string]string, float64) error     { return nil }
-func (n *noopMon) SetDependencyAvailability(map[string]string, float64) error { return nil }
+func (n *noopMon) ObserveHTTPRequestDuration(_, _, _ string, _ float64) {}
+func (n *noopMon) IncrementHTTPRequestsTotal(_, _, _ string)            {}
+func (n *noopMon) IncrementBridgeOperation(_, _ string)                 {}
 
 func TestHandleRegisterServiceProvider(t *testing.T) {
 	t.Parallel()

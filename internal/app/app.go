@@ -7,13 +7,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
+	prom "github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/canonical/identity-saml-provider/internal/handler"
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/hydra"
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/samlkit"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
-	"github.com/canonical/identity-saml-provider/internal/monitoring/prometheus"
+	prommon "github.com/canonical/identity-saml-provider/internal/monitoring/prometheus"
 	"github.com/canonical/identity-saml-provider/internal/repository/memory"
 	"github.com/canonical/identity-saml-provider/internal/repository/postgres"
 	"github.com/canonical/identity-saml-provider/internal/service"
@@ -58,7 +60,13 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	if serviceName == "" {
 		serviceName = "identity-saml-provider"
 	}
-	monitor := prometheus.NewMonitor(serviceName, logger)
+	monitor := prommon.NewMonitor(serviceName, prom.DefaultRegisterer)
+
+	// Register pgxpool connection pool collector.
+	poolCollector := prommon.NewPoolCollector(serviceName, func() prommon.PoolStats {
+		return pool.Stat()
+	})
+	prom.DefaultRegisterer.MustRegister(poolCollector)
 
 	tracingCfg := tracing.NewConfig(
 		cfg.TracingEnabled,
@@ -104,29 +112,30 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	// --- HTTP Server ---
 	router := chi.NewRouter()
 
-	// Health probes — registered on the root router without
+	// Operational endpoints — registered on the root router without
 	// middleware so they are lightweight and do not appear in
 	// metrics/logs.
 	router.Get("/healthz", healthHandler.HandleHealthz)
 	router.Get("/readyz", healthHandler.HandleReadyz)
+	router.Handle("/metrics", promhttp.Handler())
 
 	// Business routes — wrapped in a Group so middleware only
-	// applies to these routes, not to health probes.
+	// applies to these routes, not to health/metrics probes.
 	router.Group(func(r chi.Router) {
 		// Apply middleware (order matters):
 		// 1. RequestID: generates or reads X-Request-ID for each request
 		// 2. Tracing: sets span names after routing
 		// 3. Request logger: enriches context logger with requestID/traceID, logs each request
-		// 4. Response time: records Prometheus metrics
+		// 4. Metrics: records Prometheus request duration and counter
 		r.Use(middleware.RequestID)
-		r.Use(tracing.NewMiddleware(monitor, logger).RouteSpanNameMiddleware())
+		r.Use(tracing.NewTracingMiddleware(logger).RouteSpanNameMiddleware())
 		r.Use(logging.RequestLoggerMiddleware(logger))
-		r.Use(monitoring.NewMiddleware(monitor, logger).ResponseTime())
+		r.Use(monitoring.NewMiddleware(monitor).Metrics())
 
 		handlers.RegisterRoutes(r)
 	})
 
-	otelHandler := tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
+	otelHandler := tracing.NewTracingMiddleware(logger).OpenTelemetry(router)
 	httpServer := &http.Server{
 		Addr:    ":" + cfg.BridgeBasePort,
 		Handler: otelHandler,

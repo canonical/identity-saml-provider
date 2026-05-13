@@ -29,16 +29,20 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// 2. Exchange authorization code for OIDC claims
 	claims, err := h.oidc.ExchangeCode(ctx, code)
 	if err != nil {
+		h.monitor.IncrementBridgeOperation("oidc_code_exchange", "error")
 		WriteError(w, err)
 		return
 	}
+	h.monitor.IncrementBridgeOperation("oidc_code_exchange", "success")
 
 	// 3. Create SAML session from OIDC claims
 	session, err := h.sessions.CreateFromOIDC(ctx, claims)
 	if err != nil {
+		h.monitor.IncrementBridgeOperation("session_create", "error")
 		WriteError(w, err)
 		return
 	}
+	h.monitor.IncrementBridgeOperation("session_create", "success")
 
 	// 4. Set session cookie
 	http.SetCookie(w, &http.Cookie{
@@ -71,12 +75,16 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	if requestID != "" {
 		pending, err := h.pending.Retrieve(ctx, requestID)
 		if err == nil && pending != nil {
+			h.monitor.IncrementBridgeOperation("pending_request_retrieve", "success")
 			query.Set("SAMLRequest", pending.SAMLRequest)
 			if pending.RelayState != "" {
 				query.Set("RelayState", pending.RelayState)
 			}
-		} else if relayState != "" {
-			query.Set("RelayState", relayState)
+		} else {
+			h.monitor.IncrementBridgeOperation("pending_request_retrieve", "error")
+			if relayState != "" {
+				query.Set("RelayState", relayState)
+			}
 		}
 	} else if relayState != "" {
 		query.Set("RelayState", relayState)
