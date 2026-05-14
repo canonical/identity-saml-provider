@@ -13,10 +13,15 @@ on:
       - "*"
 
 jobs:
+  pre-commit:
+    uses: ./.github/workflows/pre-commit.yaml
+
   build:
     uses: canonical/identity-team/.github/workflows/_rock-build.yaml@6b27807be4ec7c25045d52ef09ac780d684f65a2 # v1.10.0
+
   unit-test:
     uses: ./.github/workflows/unittest.yaml
+
   gh-publish:
     if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
     needs: [ build, unit-test ]
