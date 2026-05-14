@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -158,7 +159,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 
 	otelHandler := tracing.NewTracingMiddleware().OpenTelemetry(router)
 	httpServer := &http.Server{
-		Addr:              ":" + cfg.BridgeBasePort,
+		Addr:              fmt.Sprintf(":%d", cfg.BridgeBasePort),
 		Handler:           otelHandler,
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		IdleTimeout:       cfg.IdleTimeout,

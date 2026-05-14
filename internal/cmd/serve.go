@@ -35,6 +35,9 @@ func runServe() {
 	if err := envconfig.Process("", &cfg); err != nil {
 		panic(fmt.Sprintf("Failed to process configuration: %v", err))
 	}
+	if err := cfg.Validate(); err != nil {
+		panic(fmt.Sprintf("Invalid configuration: %v", err))
+	}
 
 	logger, err := logging.BuildLogger(cfg.LogLevel)
 	if err != nil {

@@ -2,6 +2,9 @@ package app
 
 import (
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/hydra"
@@ -10,11 +13,9 @@ import (
 )
 
 // Config defines the configuration for the SAML provider application.
-// All environment variable names are kept identical to the original
-// provider.Config for backward compatibility.
 type Config struct {
 	// Bridge Configuration
-	BridgeBasePort string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_PORT" default:"8082"`
+	BridgeBasePort int    `envconfig:"SAML_PROVIDER_BRIDGE_BASE_PORT" default:"8082"`
 	BridgeBaseURL  string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_URL"  default:"http://localhost:8082"`
 
 	// ServiceName is set programmatically (not from env).
@@ -31,18 +32,20 @@ type Config struct {
 	HydraPublicURL string `envconfig:"SAML_PROVIDER_HYDRA_PUBLIC_URL" default:"http://localhost:4444"`
 	ClientID       string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_ID" default:"service-bridge-client"`
 	ClientSecret   string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_SECRET" default:"secret"`
-	RedirectURL    string `envconfig:"SAML_PROVIDER_OIDC_REDIRECT_URL" default:"http://localhost:8082/saml/callback"`
-
-	// Service Configuration
-	ServiceACS      string `envconfig:"SAML_PROVIDER_SERVICE_ACS" default:"http://localhost:8083/saml/acs"`
-	ServiceEntityID string `envconfig:"SAML_PROVIDER_SERVICE_ENTITY_ID" default:"http://localhost:8083/saml/metadata"`
 
 	// Database Configuration
 	DBHost     string `envconfig:"SAML_PROVIDER_DB_HOST" default:"localhost"`
-	DBPort     string `envconfig:"SAML_PROVIDER_DB_PORT" default:"5432"`
+	DBPort     int    `envconfig:"SAML_PROVIDER_DB_PORT" default:"5432"`
 	DBName     string `envconfig:"SAML_PROVIDER_DB_NAME" default:"saml_provider"`
 	DBUser     string `envconfig:"SAML_PROVIDER_DB_USER" default:"saml_provider"`
 	DBPassword string `envconfig:"SAML_PROVIDER_DB_PASSWORD" default:"saml_provider"`
+	DBSSLMode  string `envconfig:"SAML_PROVIDER_DB_SSLMODE" default:"disable"`
+
+	// Database Pool Configuration
+	DBMaxConns        int32         `envconfig:"SAML_PROVIDER_DB_MAX_CONNS" default:"10"`
+	DBMinConns        int32         `envconfig:"SAML_PROVIDER_DB_MIN_CONNS" default:"2"`
+	DBMaxConnLifetime time.Duration `envconfig:"SAML_PROVIDER_DB_MAX_CONN_LIFETIME" default:"30m"`
+	DBMaxConnIdleTime time.Duration `envconfig:"SAML_PROVIDER_DB_MAX_CONN_IDLE_TIME" default:"5m"`
 
 	// Certificate Configuration
 	SAMLCertPath string `envconfig:"SAML_PROVIDER_CERT_PATH" default:".local/certs/bridge.crt"`
@@ -63,42 +66,108 @@ type Config struct {
 	IdleTimeout time.Duration `envconfig:"SAML_PROVIDER_IDLE_TIMEOUT" default:"120s"`
 }
 
+// validSSLModes is the set of PostgreSQL SSL modes accepted by Validate.
+var validSSLModes = map[string]bool{
+	"disable":     true,
+	"allow":       true,
+	"prefer":      true,
+	"require":     true,
+	"verify-ca":   true,
+	"verify-full": true,
+}
+
+// Validate checks that the configuration is semantically valid.
+func (c *Config) Validate() error {
+	if c.BridgeBaseURL == "" {
+		return fmt.Errorf("SAML_PROVIDER_BRIDGE_BASE_URL must not be empty")
+	}
+	if _, err := url.ParseRequestURI(c.BridgeBaseURL); err != nil {
+		return fmt.Errorf("invalid SAML_PROVIDER_BRIDGE_BASE_URL %q: %w", c.BridgeBaseURL, err)
+	}
+
+	if c.BridgeBasePort < 1 || c.BridgeBasePort > 65535 {
+		return fmt.Errorf("SAML_PROVIDER_BRIDGE_BASE_PORT must be 1–65535, got %d", c.BridgeBasePort)
+	}
+
+	if c.HydraPublicURL == "" {
+		return fmt.Errorf("SAML_PROVIDER_HYDRA_PUBLIC_URL must not be empty")
+	}
+	if _, err := url.ParseRequestURI(c.HydraPublicURL); err != nil {
+		return fmt.Errorf("invalid SAML_PROVIDER_HYDRA_PUBLIC_URL %q: %w", c.HydraPublicURL, err)
+	}
+
+	if c.ClientID == "" {
+		return fmt.Errorf("SAML_PROVIDER_OIDC_CLIENT_ID must not be empty")
+	}
+	if c.ClientSecret == "" {
+		return fmt.Errorf("SAML_PROVIDER_OIDC_CLIENT_SECRET must not be empty")
+	}
+
+	if c.DBPort < 1 || c.DBPort > 65535 {
+		return fmt.Errorf("SAML_PROVIDER_DB_PORT must be 1–65535, got %d", c.DBPort)
+	}
+
+	if !validSSLModes[c.DBSSLMode] {
+		return fmt.Errorf("invalid SAML_PROVIDER_DB_SSLMODE %q", c.DBSSLMode)
+	}
+
+	if c.DBMaxConns < c.DBMinConns {
+		return fmt.Errorf("SAML_PROVIDER_DB_MAX_CONNS (%d) must be >= SAML_PROVIDER_DB_MIN_CONNS (%d)",
+			c.DBMaxConns, c.DBMinConns)
+	}
+
+	if c.SAMLCertPath == "" {
+		return fmt.Errorf("SAML_PROVIDER_CERT_PATH must not be empty")
+	}
+	if c.SAMLKeyPath == "" {
+		return fmt.Errorf("SAML_PROVIDER_KEY_PATH must not be empty")
+	}
+
+	return nil
+}
+
 // PoolConfig returns pgxpool configuration derived from the database settings.
-func (c Config) PoolConfig() postgres.PoolConfig {
+func (c *Config) PoolConfig() postgres.PoolConfig {
 	return postgres.PoolConfig{
 		DSN:             c.DatabaseDSN(),
-		MaxConns:        10,
-		MinConns:        2,
-		MaxConnLifetime: 30 * time.Minute,
-		MaxConnIdleTime: 5 * time.Minute,
+		MaxConns:        c.DBMaxConns,
+		MinConns:        c.DBMinConns,
+		MaxConnLifetime: c.DBMaxConnLifetime,
+		MaxConnIdleTime: c.DBMaxConnIdleTime,
 	}
 }
 
-// DatabaseDSN builds the PostgreSQL connection string.
-func (c Config) DatabaseDSN() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		c.DBUser, c.DBPassword, c.DBHost, c.DBPort, c.DBName)
+// DatabaseDSN builds a safely-encoded PostgreSQL connection string.
+func (c *Config) DatabaseDSN() string {
+	u := url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(c.DBUser, c.DBPassword),
+		Host:     net.JoinHostPort(c.DBHost, strconv.Itoa(c.DBPort)),
+		Path:     c.DBName,
+		RawQuery: url.Values{"sslmode": {c.DBSSLMode}}.Encode(),
+	}
+	return u.String()
 }
 
 // HydraConfig returns the subset of config needed by the Hydra OIDC client.
-func (c Config) HydraConfig() hydra.Config {
+func (c *Config) HydraConfig() hydra.Config {
 	return hydra.Config{
 		IssuerURL: c.HydraPublicURL,
 	}
 }
 
-// OIDCConfig returns the OIDC client credentials/redirect settings.
-func (c Config) OIDCConfig() hydra.OIDCConfig {
+// OIDCConfig returns the OIDC client credentials and redirect settings.
+func (c *Config) OIDCConfig() hydra.OIDCConfig {
 	return hydra.OIDCConfig{
 		ClientID:     c.ClientID,
 		ClientSecret: c.ClientSecret,
-		RedirectURL:  c.RedirectURL,
+		RedirectURL:  c.BridgeBaseURL + "/saml/callback",
 		Scopes:       []string{"openid", "email", "profile"},
 	}
 }
 
 // SAMLConfig returns the subset needed for SAML IdP setup.
-func (c Config) SAMLConfig() samlkit.Config {
+func (c *Config) SAMLConfig() samlkit.Config {
 	return samlkit.Config{
 		BridgeBaseURL: c.BridgeBaseURL,
 		CertPath:      c.SAMLCertPath,

@@ -48,6 +48,9 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 		if err := envconfig.Process("", &cfg); err != nil {
 			return fmt.Errorf("load config from environment: %w", err)
 		}
+		if err := cfg.Validate(); err != nil {
+			return fmt.Errorf("invalid configuration: %w", err)
+		}
 
 		// Open DB connection.
 		pool, err := openSPDB(ctx, cfg)
