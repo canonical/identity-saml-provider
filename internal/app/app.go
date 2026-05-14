@@ -27,6 +27,25 @@ type App struct {
 	HTTPServer *http.Server
 	Tracer     tracing.TracingInterface
 	Pool       *pgxpool.Pool
+	logger     *logging.ZapLogger
+}
+
+// Shutdown performs an ordered teardown of the application. It first
+// shuts down the HTTP server (draining in-flight requests), then
+// closes the database pool and tracer exporter, and finally syncs the
+// logger. ctx controls the overall deadline for the shutdown.
+func (a *App) Shutdown(ctx context.Context) {
+	if err := a.HTTPServer.Shutdown(ctx); err != nil {
+		a.logger.Errorw("HTTP server shutdown error", "error", err)
+	}
+
+	a.Pool.Close()
+
+	if err := a.Tracer.Shutdown(); err != nil {
+		a.logger.Warnw("Failed to shutdown tracer", "error", err)
+	}
+
+	_ = a.logger.Sync()
 }
 
 // Build constructs the application from the given configuration.
@@ -139,13 +158,16 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 
 	otelHandler := tracing.NewTracingMiddleware().OpenTelemetry(router)
 	httpServer := &http.Server{
-		Addr:    ":" + cfg.BridgeBasePort,
-		Handler: otelHandler,
+		Addr:              ":" + cfg.BridgeBasePort,
+		Handler:           otelHandler,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+		IdleTimeout:       cfg.IdleTimeout,
 	}
 
 	return &App{
 		HTTPServer: httpServer,
 		Tracer:     tracer,
 		Pool:       pool,
+		logger:     logger,
 	}, nil
 }

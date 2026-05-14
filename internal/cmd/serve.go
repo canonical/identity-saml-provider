@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"os/signal"
+	"syscall"
 
 	"github.com/canonical/identity-saml-provider/internal/app"
 	"github.com/canonical/identity-saml-provider/internal/logging"
@@ -37,7 +40,6 @@ func runServe() {
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
-	defer logger.Sync() //nolint:errcheck
 
 	logger.Infow("Starting identity-saml-provider", "version", version.Version, "logLevel", cfg.LogLevel)
 
@@ -45,15 +47,33 @@ func runServe() {
 	if err != nil {
 		logger.Fatalw("Failed to build application", "error", err)
 	}
-	defer application.Pool.Close()
-	defer func() {
-		if err := application.Tracer.Shutdown(); err != nil {
-			logger.Warnw("Failed to shutdown tracer", "error", err)
+
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		logger.Infow("Starting server", "addr", application.HTTPServer.Addr)
+		if err := application.HTTPServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
 		}
+		close(errCh)
 	}()
 
-	logger.Infow("Starting server", "addr", application.HTTPServer.Addr)
-	if err := application.HTTPServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Fatalw("Server error", "error", err)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			logger.Errorw("Server error", "error", err)
+		}
+	case <-ctx.Done():
+		stop()
+		logger.Infow("Shutting down server", "timeout", cfg.ShutdownTimeout.String())
 	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+
+	application.Shutdown(shutdownCtx)
+
+	logger.Infow("Server exited gracefully")
 }

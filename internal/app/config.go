@@ -51,6 +51,16 @@ type Config struct {
 	// Logging Configuration
 	// LogLevel sets the minimum log level.
 	LogLevel string `envconfig:"SAML_PROVIDER_LOG_LEVEL" default:"info"`
+
+	// Server Configuration
+	// ShutdownTimeout is the maximum duration to wait for in-flight
+	// requests to complete during graceful shutdown.
+	ShutdownTimeout time.Duration `envconfig:"SAML_PROVIDER_SHUTDOWN_TIMEOUT" default:"30s"`
+	// ReadHeaderTimeout is the amount of time allowed to read request headers.
+	ReadHeaderTimeout time.Duration `envconfig:"SAML_PROVIDER_READ_HEADER_TIMEOUT" default:"10s"`
+	// IdleTimeout is the maximum amount of time to wait for the next
+	// request when keep-alives are enabled.
+	IdleTimeout time.Duration `envconfig:"SAML_PROVIDER_IDLE_TIMEOUT" default:"120s"`
 }
 
 // PoolConfig returns pgxpool configuration derived from the database settings.
