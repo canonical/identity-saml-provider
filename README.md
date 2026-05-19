@@ -62,7 +62,7 @@ KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
 1. **Run the supporting services** (generates certs and starts the supporting services):
 
    ```bash
-   make docker
+   make dev
    ```
 
 2. **Run the SAML provider**:
@@ -79,14 +79,14 @@ KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
    with the SAML provider, and then run it.
 
    ```bash
-   cd test/saml-service
+   cd test/example-sp
    make register
    make run
    ```
 
 4. **Access the services**:
 
-   In a browser, access the Example SAML Service: <https://localhost:8083/hello>
+   In a browser, access the Example SAML Service: <http://localhost:8083/hello>
 
 5. **Shut down supporting services**:
 
