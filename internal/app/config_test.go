@@ -105,13 +105,13 @@ func TestConfig_DatabaseDSN(t *testing.T) {
 
 func TestConfig_PoolConfig(t *testing.T) {
 	tests := []struct {
-		name              string
-		cfg               app.Config
-		wantDSN           string
-		wantMaxConns      int32
-		wantMinConns      int32
-		wantMaxLifetime   time.Duration
-		wantMaxIdleTime   time.Duration
+		name            string
+		cfg             app.Config
+		wantDSN         string
+		wantMaxConns    int32
+		wantMinConns    int32
+		wantMaxLifetime time.Duration
+		wantMaxIdleTime time.Duration
 	}{
 		{
 			name: "default pool settings",
@@ -180,9 +180,9 @@ func TestConfig_PoolConfig(t *testing.T) {
 
 func TestConfig_HydraConfig(t *testing.T) {
 	tests := []struct {
-		name         string
-		hydraURL     string
-		wantIssuer   string
+		name       string
+		hydraURL   string
+		wantIssuer string
 	}{
 		{
 			name:       "default URL",
@@ -267,10 +267,10 @@ func TestConfig_OIDCConfig(t *testing.T) {
 
 func TestConfig_SAMLConfig(t *testing.T) {
 	tests := []struct {
-		name         string
-		bridgeURL    string
-		certPath     string
-		keyPath      string
+		name      string
+		bridgeURL string
+		certPath  string
+		keyPath   string
 	}{
 		{
 			name:      "default paths",

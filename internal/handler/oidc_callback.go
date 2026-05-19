@@ -36,7 +36,7 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 
 	if code == "" {
 		span.SetStatus(codes.Error, "missing authorization code")
-		http.Error(w, "No code in callback", http.StatusBadRequest)
+		WriteJSON(w, http.StatusBadRequest, APIError{Status: http.StatusBadRequest, Message: "missing authorization code in callback"})
 		return
 	}
 
@@ -91,7 +91,7 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "invalid BridgeBaseURL")
 		logger.Errorw("Invalid BridgeBaseURL", "url", h.config.BridgeBaseURL, "error", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		WriteJSON(w, http.StatusInternalServerError, APIError{Status: http.StatusInternalServerError, Message: "internal server error"})
 		return
 	}
 	bridgeURL.Path = path.Join(bridgeURL.Path, "saml", "sso")
