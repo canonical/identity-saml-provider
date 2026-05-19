@@ -1,3 +1,8 @@
+---
+description: 'Core project instructions for the Identity SAML Provider, a SAML-to-OIDC bridge via Ory Hydra'
+applyTo: '**'
+---
+
 # AI Coding Agent Instructions - Identity SAML Provider
 
 ## Project Overview
@@ -7,193 +12,296 @@ translates SAML authentication requests to OIDC flows via
 Ory Hydra. It enables SAML Service Providers to
 authenticate through modern OIDC providers.
 
+## General Instructions
+
+- Clean architecture: Domain → Repository → Service →
+  Handler → App (composition root)
+- All dependencies flow inward via interfaces
+- Config via environment variables prefixed
+  `SAML_PROVIDER_`
+- Domain layer has zero external dependencies
+- Handlers delegate to services; services return typed
+  domain errors
+
 ## Architecture
 
-The system has three layers:
+The application follows clean architecture with strict
+layer separation:
 
-- **SAML Layer**: Handles SAML protocol requests from
-  service providers (uses `crewjam/saml`)
-- **Bridge Layer**: Manages session state, OIDC flow
-  coordination, and SAML-OIDC translation
-- **OIDC Layer**: Communicates with Ory Hydra for actual
-  user authentication
+- **Domain Layer** (`internal/domain/`): Entities, value
+  objects, typed errors. No external dependencies.
+  Entities own `Validate()` methods.
+- **Repository Layer** (`internal/repository/`):
+  Persistence interfaces and implementations
+  (Postgres, in-memory). Defined in `interfaces.go`.
+- **Service Layer** (`internal/service/`): Business logic
+  and orchestration. Defined in `interfaces.go`. Returns
+  domain errors only.
+- **Handler Layer** (`internal/handler/`): HTTP handlers,
+  SAML adapters, request/response DTOs. Maps domain
+  errors to HTTP status codes.
+- **App Layer** (`internal/app/`): Composition root.
+  Wires pool → repos → services → handlers → HTTP
+  server.
 
-### Key Components
+Dependencies flow strictly inward. Outer layers depend
+on inner layer interfaces, never on concrete
+implementations.
 
-| Component    | File                                 | Purpose                                                              |
-|--------------|--------------------------------------|----------------------------------------------------------------------|
-| App          | `internal/app/app.go`                | Application wiring: pool → repos → services → handlers → HTTP server |
-| Config       | `internal/app/config.go`             | Environment-driven configuration for all services                    |
-| Handlers     | `internal/handler/`                  | HTTP handlers, SAML adapters, request/response DTOs                  |
-| Services     | `internal/service/`                  | Business logic: session, SP, mapping, OIDC, pending request          |
-| Repositories | `internal/repository/`               | Persistence interfaces and implementations (Postgres, in-memory)     |
-| Domain       | `internal/domain/`                   | Domain entities, value objects, and typed errors                     |
-| Main         | `cmd/identity-saml-provider/main.go` | CLI entry point with serve and migrate commands                      |
+### Authentication Flow
 
-See the [directory structure][dir-structure] section in
-CONTRIBUTING.md for more details on file organization.
-
-[dir-structure]: ../CONTRIBUTING.md#directory-structure
-
-### Data Flow
-
-1. SAML Service Provider sends SAML AuthnRequest →
-   `/saml/sso` endpoint
+1. SAML Service Provider sends AuthnRequest →
+   `/saml/sso`
 2. Bridge stores pending request, redirects user to
    Hydra login
 3. User authenticates with Hydra (OIDC provider)
 4. Hydra returns ID token with user claims →
-   `/callback` endpoint
+   `/saml/callback`
 5. Bridge converts OIDC claims to SAML assertion
 6. Bridge returns SAML Response to Service Provider
    ACS URL
 
-## Development Workflows
+See `docs/authentication-flow/` for detailed sequence
+diagrams and edge cases.
 
-### Initial Setup
+## Code Standards
 
-```bash
-make dev           # Starts Docker containers: Hydra, Kratos, Postgres, Traefik
-make run           # Runs the SAML provider (requires make dev running)
-```
+Follow these references in order of precedence:
 
-In another terminal, set up the example SAML service
-provider:
+1. Project-specific conventions (below)
+2. [Canonical Go Style Guide](https://github.com/canonical/copilot-collections/blob/main/assets/agents/go-style-guide.md)
+3. [Effective Go](https://go.dev/doc/effective_go)
 
-```bash
-cd test/saml-service
-make register  # Registers example service with provider
-make run  # Runs example SAML service provider
-```
+### Error Handling
 
-### Testing Flow
+Use typed domain errors; services return domain errors,
+handlers map them to HTTP status codes.
 
-- Access example service at `https://localhost:8083/hello`
-- Service redirects to SAML provider
-- Provider redirects to Hydra login
-- Post-login: user data flows back to example service
-
-#### Makefile
-
-All commands are defined in the root `Makefile` for
-convenience. Make sure to test these when changing things
-related to development environment setup or testing, and
-make sure to update the `Makefile` if you add new commands
-or change existing ones.
-
-#### Running unit tests
-
-```bash
-make test
-```
-
-### Key Environment Setup
-
-- Add `127.0.0.1 hydra` to `/etc/hosts` (critical for
-  container-to-browser communication)
-- PostgreSQL connection via `SAML_PROVIDER_DB_*`
-  environment variables
-- Ory Hydra OIDC client credentials:
-  `SAML_PROVIDER_OIDC_CLIENT_ID/SECRET`
-
-## Code Patterns
-
-### Configuration Loading
-
-Uses `kelseyhightower/envconfig` with struct tags. All
-config is in `Config` struct (config.go):
+#### Correct Error Handling
 
 ```go
-type Config struct {
-    BridgeBaseURL string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_URL" default:"http://localhost:8082"`
+func (s *SessionService) Get(ctx context.Context, id string) (*domain.Session, error) {
+    session, err := s.repo.Get(ctx, id)
+    if err != nil {
+        return nil, domain.ErrNotFound("session", id)
+    }
+    return session, nil
 }
 ```
 
-Access via `s.config.FieldName` throughout the codebase.
-
-### Database Operations
-
-Pattern: Create repository via constructor, inject into
-services:
+#### Incorrect Error Handling
 
 ```go
-sessionRepo := postgres.NewSessionRepo(pool)
-spRepo := postgres.NewServiceProviderRepo(pool)
-```
-
-Tables: `sessions` (user state) and `service_providers`
-(SP metadata).
-
-### HTTP Handlers
-
-Handlers live in `internal/handler/`. Common pattern:
-
-```go
-func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
-    // Validate input
-    // Delegate to service layer
-    // Write response
+func (s *SessionService) Get(ctx context.Context, id string) (*domain.Session, error) {
+    session, err := s.repo.Get(ctx, id)
+    if err != nil {
+        return nil, fmt.Errorf("session not found: %w", err) // loses typed error semantics
+    }
+    return session, nil
 }
 ```
 
-### OIDC/SAML Adapter Pattern
+### Logging
 
-SAML adapters implement `crewjam/saml` interfaces:
+Use `logging.Logger` interface with structured key-value
+pairs. Use `logging.FromContext(ctx)` for request-scoped
+loggers.
 
-- `SAMLSPAdapter` → looks up SAML SP details from DB
-- `SAMLSessionAdapter` → retrieves user claims from
-  OIDC token
+#### Correct Logging
 
-Both adapt SAML library interfaces to the service layer.
+```go
+func (h *Handlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
+    logger := logging.FromContext(r.Context())
+    logger.Infow("processing OIDC callback", "request_id", requestID)
+}
+```
 
-## Critical Integration Points
+#### Incorrect Logging
 
-### Ory Hydra Integration
+```go
+func (h *Handlers) HandleCallback(w http.ResponseWriter, r *http.Request) {
+    zap.L().Info("processing OIDC callback") // bypasses interface, loses request context
+}
+```
 
-- Uses OpenID Provider discovery:
-  `/.well-known/openid-configuration`
-- Scopes requested: `openid`, `email`, `profile`
-- ID token must contain user identifiers for SAML
-  attribute mapping
+### Dependency Injection
 
-### SAML Service Provider Registration
+Use constructor injection of interfaces everywhere. Use
+`logging.Logger`, `monitoring.MonitorInterface`,
+`tracing.TracingInterface` (not concrete types).
 
-- SPs must be registered in database with:
-  - Entity ID (unique identifier)
-  - ACS URL (where to POST SAML Response)
-  - Binding type (default: HTTP-POST)
-- Registration typically done via
-  `test/saml-service/make register` command
+#### Correct Dependency Injection
 
-### Certificate Management
+```go
+type SessionService struct {
+    repo   repository.SessionRepository
+    logger logging.Logger
+}
 
-- SAML signing/decryption uses TLS keypair from
-  `.local/certs/`
-- Generated by `make certs` if missing
-- Paths configurable: `SAML_PROVIDER_CERT_PATH`,
-  `SAML_PROVIDER_KEY_PATH`
+func NewSessionService(repo repository.SessionRepository, logger logging.Logger) *SessionService {
+    return &SessionService{repo: repo, logger: logger}
+}
+```
 
-## Dependencies to Know
+#### Incorrect Dependency Injection
 
-- **SAML**: `crewjam/saml` - parses requests, builds
-  assertions
-- **OIDC**: `coreos/go-oidc/v3` - token verification,
-  provider discovery
-- **OAuth2**: `golang.org/x/oauth2` - token exchange
-  with Hydra
-- **Database**: `lib/pq` - PostgreSQL driver
-- **Logging**: `go.uber.org/zap` - structured logging
-  (all logs via `logger.*w()` methods)
+```go
+type SessionService struct {
+    repo   *postgres.SessionRepo  // concrete type, not interface
+    logger *zap.SugaredLogger     // concrete logger, not interface
+}
+```
 
-## Debugging Tips
+### Mocks
 
-- Check `SAML_PROVIDER_BRIDGE_BASE_URL` matches
-  external URL (critical for redirects)
-- Enable verbose logging: modify `zap.NewProduction()`
-  to `zap.NewDevelopment()`
-- Pending requests stored in memory
-  (`pendingRequests` map) - resets on restart
-- PostgreSQL connectivity: ensure `docker compose`
-  containers running and `make dev` completed
-- SAML metadata accessible at `/saml/metadata` endpoint
-  for SP verification
+- Generated via `go.uber.org/mock/mockgen`
+- Run `make generate` after changing interfaces
+- Files in `mocks/` are generated — never edit manually
+
+## Design Principles & Patterns
+
+### SOLID Principles in Go
+
+| Principle | Go Interpretation | Project Example |
+| --- | --- | --- |
+| **Single Responsibility** | Each struct/package does one thing | `SessionService` handles session logic only; `Handlers` handles HTTP only |
+| **Open/Closed** | Extend behavior via interfaces, not by modifying existing code | Add new repository implementations without changing service code |
+| **Liskov Substitution** | Any interface implementation is interchangeable | `postgres.SessionRepo` and `memory.SessionRepo` both satisfy `repository.SessionRepository` |
+| **Interface Segregation** | Define small, focused interfaces | `repository.SessionRepository` is separate from `repository.ServiceProviderRepository` |
+| **Dependency Inversion** | Depend on interfaces, not concrete types | Services accept `repository.X` interfaces, never `*postgres.XRepo` |
+
+### Common Go Design Patterns
+
+- **Constructor Pattern**: Use `NewXxx()` functions that
+  accept interface dependencies and return concrete
+  types. Every service, repository, and handler follows
+  this.
+- **Dependency Injection**: Use constructor injection
+  exclusively. Accept interfaces, wire in
+  `internal/app/app.go` (composition root). No service
+  locators, no global state, no init-time side effects.
+- **Adapter Pattern**: Wrap external library interfaces
+  with project-specific implementations. Used for
+  `crewjam/saml` via `SAMLSPAdapter` and
+  `SAMLSessionAdapter`.
+- **Repository Pattern**: Abstract persistence behind
+  interfaces defined in `repository/interfaces.go`.
+  Implementations live in `postgres/` or `memory/`.
+- **Accept Interfaces, Return Structs**: Functions accept
+  interface parameters and return concrete types. This
+  enables testability and follows Go convention.
+- **Context Propagation**: Pass `context.Context` as the
+  first parameter to all service and repository methods.
+  Use it for cancellation, timeouts, and request-scoped
+  values (logger, tracing).
+
+## Adding a Feature
+
+1. Define domain entities/errors in `internal/domain/`
+2. Add repository interface in
+   `repository/interfaces.go`, implement in `postgres/`
+   or `memory/`
+3. Add service interface in `service/interfaces.go`,
+   implement service
+4. Run `make generate` to regenerate mocks
+5. Add handler in `internal/handler/`, register routes
+   in `routes.go`
+6. Wire in `internal/app/app.go`
+7. Add migration in `migrations/` if needed (Goose
+   format, sequential numbering)
+8. Write tests
+
+## Testing
+
+- Place unit tests in `*_test.go` alongside source files
+- Run tests: `make test` (verbose: `make test V=1`)
+- Regenerate mocks after interface changes:
+  `make generate`
+- Use table-driven tests as the default pattern for
+  unit tests
+- Integration test flow via `test/example-sp/`
+
+### Table-Driven Tests
+
+```go
+func TestSessionService_Get(t *testing.T) {
+    tests := []struct {
+        name    string
+        id      string
+        setup   func(repo *mocks.MockSessionRepository)
+        want    *domain.Session
+        wantErr error
+    }{
+        {
+            name: "existing session",
+            id:   "abc-123",
+            setup: func(repo *mocks.MockSessionRepository) {
+                repo.EXPECT().Get(gomock.Any(), "abc-123").Return(&domain.Session{ID: "abc-123"}, nil)
+            },
+            want: &domain.Session{ID: "abc-123"},
+        },
+        {
+            name: "not found",
+            id:   "missing",
+            setup: func(repo *mocks.MockSessionRepository) {
+                repo.EXPECT().Get(gomock.Any(), "missing").Return(nil, errors.New("not found"))
+            },
+            wantErr: domain.ErrNotFound("session", "missing"),
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            ctrl := gomock.NewController(t)
+            repo := mocks.NewMockSessionRepository(ctrl)
+            tt.setup(repo)
+
+            svc := service.NewSessionService(repo, logging.NewNoop())
+            got, err := svc.Get(context.Background(), tt.id)
+
+            if tt.wantErr != nil {
+                assert.Equal(t, tt.wantErr, err)
+                return
+            }
+            assert.NoError(t, err)
+            assert.Equal(t, tt.want, got)
+        })
+    }
+}
+```
+
+### Integration Testing Flow
+
+1. Start services: `make dev`
+2. Run provider: `make run`
+3. In another terminal:
+   `cd test/example-sp && make register && make run`
+4. Access example service at
+   `https://localhost:8083/hello`
+5. Verify: Service → SAML provider → Hydra login →
+   user data flows back
+
+## Development Setup
+
+```bash
+make dev  # Start Docker containers
+make run  # Run migrations and start the SAML provider
+```
+
+All commands are defined in the root `Makefile`. Update
+the `Makefile` when adding new commands or changing
+existing ones.
+
+## Validation and Verification
+
+| Command | Purpose |
+| ------- | ------- |
+| `make build` | Build binary |
+| `make test` | Run unit tests |
+| `make lint` | Run golangci-lint |
+| `make fmt` | Format source |
+| `make generate` | Regenerate mocks |
+| `make migrate-up` | Apply migrations |
+| `make migrate-down` | Roll back last migration |
+| `make certs` | Generate local dev certificates |
+| `make clean` | Remove build artifacts |

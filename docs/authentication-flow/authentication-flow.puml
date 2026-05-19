@@ -1,0 +1,149 @@
+@startuml authentication_flow
+!theme plain
+
+skinparam backgroundColor #FEFEFE
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam sequenceParticipantBorderColor #444444
+skinparam sequenceLifeLineBorderColor #888888
+skinparam sequenceMessageAlign center
+skinparam noteBorderColor #888888
+skinparam noteBackgroundColor #FFFDE7
+
+skinparam participant {
+  BackgroundColor #E3F2FD
+  BorderColor #1565C0
+  FontColor #1A237E
+  FontSize 13
+}
+
+skinparam actor {
+  BackgroundColor #FFF3E0
+  BorderColor #E65100
+}
+
+actor "User\n(Browser)" as User #FFF3E0
+participant "SAML Service\nProvider (SP)" as SP #E8F5E9
+participant "SAML-OIDC Bridge\n(Identity SAML Provider)" as Bridge #E3F2FD
+database "PostgreSQL" as DB #F3E5F5
+participant "Ory Hydra\n(OIDC Provider)" as Hydra #FFF8E1
+participant "Ory Kratos\n(Login UI)" as Kratos #FFEBEE
+
+title **Identity SAML Provider — End-to-End Authentication Flow**
+
+== SP-Initiated SAML Authentication ==
+
+User -> SP: 1. Access protected resource
+activate SP #C8E6C9
+
+SP -> SP: Detect unauthenticated user
+SP --> User: 2. Redirect with **SAMLRequest**\n(HTTP-Redirect / HTTP-POST)
+deactivate SP
+
+User -> Bridge: 3. GET /saml/sso?SAMLRequest=...&RelayState=...
+activate Bridge #BBDEFB
+
+Bridge -> Bridge: Parse SAMLRequest\n(crewjam/saml ServeSSO)
+
+== Session Check ==
+
+Bridge -> Bridge: 4. Check for "saml_session" cookie
+
+Bridge -> DB: Lookup session by cookie value
+activate DB #E1BEE7
+DB --> Bridge: No valid session found
+deactivate DB
+
+== OIDC Authentication via Hydra ==
+
+Bridge -> Bridge: 5. Store pending SAML request\n(in-memory, keyed by request ID)
+Bridge --> User: Redirect to Hydra authorization URL\nstate = requestID[:relayState]\nscopes = openid, email, profile
+deactivate Bridge
+
+User -> Hydra: 6. GET /oauth2/auth?scope=openid+email+profile&state=...
+activate Hydra #FFF9C4
+
+Hydra --> User: Redirect to login UI
+deactivate Hydra
+
+User -> Kratos: Present credentials
+activate Kratos #FFCDD2
+Kratos -> Kratos: Validate credentials
+Kratos --> User: Authentication success
+deactivate Kratos
+
+User -> Hydra: Complete consent
+activate Hydra #FFF9C4
+Hydra --> User: Redirect to /saml/callback\nwith authorization **code** + **state**
+deactivate Hydra
+
+User -> Bridge: 7. GET /saml/callback?code=...&state=...
+activate Bridge #BBDEFB
+
+Bridge -> Hydra: Exchange code for tokens\n(POST /oauth2/token)
+activate Hydra #FFF9C4
+Hydra --> Bridge: Access Token + **ID Token**
+deactivate Hydra
+
+Bridge -> Bridge: Verify ID Token, extract claims
+
+note right of Bridge
+  Claims extracted:
+  * sub (subject identifier)
+  * email
+  * name
+  * groups
+  * all raw claims (for per-SP mapping)
+end note
+
+Bridge -> DB: 8. Save session (10 min TTL)
+activate DB #E1BEE7
+DB --> Bridge: OK
+deactivate DB
+
+Bridge -> Bridge: Recover pending SAML request from state
+
+Bridge --> User: Set "saml_session" cookie\nRedirect to /saml/sso\nwith original SAMLRequest
+deactivate Bridge
+
+== SAML Response Generation (Second Pass) ==
+
+User -> Bridge: 9. GET /saml/sso?SAMLRequest=...&RelayState=...
+activate Bridge #BBDEFB
+
+Bridge -> Bridge: Check "saml_session" cookie - found
+
+Bridge -> DB: Lookup session - valid
+activate DB #E1BEE7
+DB --> Bridge: Session with user claims
+deactivate DB
+
+Bridge -> DB: Apply per-SP attribute mapping\n(if configured)
+activate DB #E1BEE7
+DB --> Bridge: Mapped session
+deactivate DB
+
+Bridge -> DB: Lookup SP metadata\n(ACS URL, binding)
+activate DB #E1BEE7
+DB --> Bridge: SP descriptor
+deactivate DB
+
+Bridge -> Bridge: Build & sign SAML Response
+
+Bridge --> User: 10. Auto-submit form with SAMLResponse\n(HTTP-POST binding)
+deactivate Bridge
+
+== Session Established at SP ==
+
+User -> SP: 11. POST /saml/acs\n(SAMLResponse + RelayState)
+activate SP #C8E6C9
+SP -> SP: Validate signature, create session
+SP --> User: Redirect to original resource
+deactivate SP
+
+User -> SP: Access granted
+activate SP #C8E6C9
+SP --> User: Protected resource content
+deactivate SP
+
+@enduml
