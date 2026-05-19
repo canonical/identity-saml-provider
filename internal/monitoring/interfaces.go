@@ -1,3 +1,6 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package monitoring
 
 //go:generate mockgen -destination=../../mocks/mock_monitor.go -package=mocks . MonitorInterface

@@ -72,6 +72,24 @@ Follow these references in order of precedence:
 2. [Canonical Go Style Guide](https://github.com/canonical/copilot-collections/blob/main/assets/agents/go-style-guide.md)
 3. [Effective Go](https://go.dev/doc/effective_go)
 
+### License Header
+
+Every new Go file (excluding generated files in `mocks/`
+and `vendor/`) must start with the following license
+header:
+
+```go
+// Copyright <YEAR> Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+```
+
+Replace `<YEAR>` with the current calendar year at the
+time the file is created. Do not update the year when
+modifying existing files.
+
+The header must be the very first lines of the file,
+followed by a blank line before the `package` statement.
+
 ### Error Handling
 
 Use typed domain errors; services return domain errors,
@@ -301,6 +319,8 @@ existing ones.
 | `make lint` | Run golangci-lint |
 | `make fmt` | Format source |
 | `make generate` | Regenerate mocks |
+| `make license-check` | Verify all Go files have license headers |
+| `make license-add` | Add missing license headers (current year) |
 | `make migrate-up` | Apply migrations |
 | `make migrate-down` | Roll back last migration |
 | `make certs` | Generate local dev certificates |

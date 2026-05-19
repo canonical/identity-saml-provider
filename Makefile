@@ -6,7 +6,7 @@
 	certs \
 	dev docker dev-down \
 	example-sp-register example-sp-run example-sp-clean \
-	fmt lint \
+	fmt lint license-check license-add \
 	generate \
 	k8s k8s-certs k8s-secrets \
 	migrate-up migrate-down migrate-status migrate-check \
@@ -60,6 +60,8 @@ help:
 	@echo "  generate               - Run go generate for all packages (e.g. mockgen)"
 	@echo "  help                   - Show this help message"
 	@echo "  lint                   - Run golangci-lint (install: https://golangci-lint.run)"
+	@echo "  license-check          - Check that all Go files have the license header"
+	@echo "  license-add            - Add missing license headers (uses current year)"
 	@echo "  run                    - Run the provider locally (migrate + serve)"
 	@echo "  test                   - Run all tests (verbose: make test V=1)"
 	@echo ""
@@ -133,6 +135,30 @@ test:
 
 generate:
 	go generate ./...
+
+license-check:
+	@MISSING=0; \
+	for f in $$(find . -name '*.go' -not -path '*/vendor/*' -not -path '*/mocks/*'); do \
+		if ! head -1 "$$f" | grep -q '^// Copyright [0-9]\{4\} Canonical Ltd$$'; then \
+			echo "Missing license header: $$f"; \
+			MISSING=$$((MISSING + 1)); \
+		fi; \
+	done; \
+	if [ "$$MISSING" -gt 0 ]; then \
+		echo "$$MISSING file(s) missing license header"; \
+		exit 1; \
+	else \
+		echo "All Go files have license headers"; \
+	fi
+
+license-add:
+	@YEAR=$$(date +%Y); \
+	for f in $$(find . -name '*.go' -not -path '*/vendor/*' -not -path '*/mocks/*'); do \
+		if ! head -1 "$$f" | grep -q '^// Copyright [0-9]\{4\} Canonical Ltd$$'; then \
+			sed -i "1i// Copyright $$YEAR Canonical Ltd\n// SPDX-License-Identifier: AGPL-3.0-only\n" "$$f"; \
+			echo "Added header: $$f"; \
+		fi; \
+	done
 
 # Example SP (delegates to test/example-sp)
 

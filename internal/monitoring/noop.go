@@ -1,3 +1,6 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package monitoring
 
 // NoopMonitor is a no-op implementation of MonitorInterface.

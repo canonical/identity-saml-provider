@@ -1,3 +1,6 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Package domain defines the core business entities, value objects,
 // and typed errors for the Identity SAML Provider.
 //
