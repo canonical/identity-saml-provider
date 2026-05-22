@@ -1,27 +1,17 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package monitoring
 
-import "go.uber.org/zap"
+// NoopMonitor is a no-op implementation of MonitorInterface.
+// Used in tests and when monitoring is disabled.
+type NoopMonitor struct{}
 
-type NoopMonitor struct {
-	service string
-	logger  *zap.SugaredLogger
+// NewNoopMonitor returns a no-op monitor.
+func NewNoopMonitor() *NoopMonitor {
+	return &NoopMonitor{}
 }
 
-func NewNoopMonitor(service string, logger *zap.SugaredLogger) *NoopMonitor {
-	m := new(NoopMonitor)
-	m.service = service
-	m.logger = logger
-	return m
-}
-
-func (m *NoopMonitor) GetService() string {
-	return m.service
-}
-
-func (m *NoopMonitor) SetResponseTimeMetric(map[string]string, float64) error {
-	return nil
-}
-
-func (m *NoopMonitor) SetDependencyAvailability(map[string]string, float64) error {
-	return nil
-}
+func (*NoopMonitor) ObserveHTTPRequestDuration(_, _, _ string, _ float64) {}
+func (*NoopMonitor) IncrementHTTPRequestsTotal(_, _, _ string)            {}
+func (*NoopMonitor) IncrementBridgeOperation(_, _ string)                 {}

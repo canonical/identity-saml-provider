@@ -1,3 +1,6 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package tracing
 
 import (
@@ -16,17 +19,18 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.18.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
-	"go.uber.org/zap"
+
+	"github.com/canonical/identity-saml-provider/internal/logging"
 )
 
 const serviceName = "identity-saml-provider"
 
 type Tracer struct {
 	tracer   trace.Tracer
-	logger   *zap.SugaredLogger
+	logger   logging.Logger
 	shutdown func(context.Context) error
 }
 
@@ -126,7 +130,7 @@ func (t *Tracer) Shutdown() error {
 	return t.shutdown(ctx)
 }
 
-func NewTracer(cfg *Config) *Tracer {
+func NewTracer(ctx context.Context, cfg *Config) *Tracer {
 	t := new(Tracer)
 	t.logger = cfg.Logger
 
@@ -141,7 +145,7 @@ func NewTracer(cfg *Config) *Tracer {
 
 	if cfg.OtelGRPCEndpoint != "" {
 		exporter, err = otlptrace.New(
-			context.TODO(),
+			ctx,
 			otlptracegrpc.NewClient(
 				otlptracegrpc.WithEndpoint(cfg.OtelGRPCEndpoint),
 				otlptracegrpc.WithInsecure(),
@@ -149,7 +153,7 @@ func NewTracer(cfg *Config) *Tracer {
 		)
 	} else if cfg.OtelHTTPEndpoint != "" {
 		exporter, err = otlptrace.New(
-			context.TODO(),
+			ctx,
 			otlptracehttp.NewClient(
 				otlptracehttp.WithEndpoint(cfg.OtelHTTPEndpoint),
 				otlptracehttp.WithInsecure(),
@@ -166,8 +170,4 @@ func NewTracer(cfg *Config) *Tracer {
 
 	t.init(serviceName, t.buildSampler(cfg), exporter)
 	return t
-}
-
-func NewNoopTracer() *Tracer {
-	return NewTracer(NewNoopConfig())
 }

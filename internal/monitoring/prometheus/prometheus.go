@@ -1,127 +1,74 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package prometheus
 
 import (
-	"fmt"
-
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/prometheus/client_golang/prometheus"
-	"go.uber.org/zap"
 )
 
+// Monitor implements monitoring.MonitorInterface backed by Prometheus
+// metrics. All metrics carry "service" as a constant label set at
+// construction time.
 type Monitor struct {
-	service string
-
-	responseTime           *prometheus.HistogramVec
-	dependencyAvailability *prometheus.GaugeVec
-
-	logger *zap.SugaredLogger
+	requestDuration *prometheus.HistogramVec
+	requestsTotal   *prometheus.CounterVec
+	bridgeOpsTotal  *prometheus.CounterVec
 }
 
 var _ monitoring.MonitorInterface = (*Monitor)(nil)
 
-func (m *Monitor) GetService() string {
-	return m.service
-}
+// NewMonitor creates a Monitor and registers Prometheus metrics on the
+// provided registerer. Pass prometheus.DefaultRegisterer for production;
+// pass a prometheus.NewRegistry() in tests to avoid global state leaks.
+func NewMonitor(service string, registerer prometheus.Registerer) *Monitor {
+	constLabels := prometheus.Labels{"service": service}
 
-func (m *Monitor) SetResponseTimeMetric(tags map[string]string, value float64) error {
-	if m.responseTime == nil {
-		return fmt.Errorf("metric not instantiated")
+	m := &Monitor{
+		requestDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:        "http_server_request_duration_seconds",
+				Help:        "HTTP request duration in seconds.",
+				ConstLabels: constLabels,
+			},
+			[]string{"method", "route", "status"},
+		),
+		requestsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name:        "http_server_requests_total",
+				Help:        "Total number of HTTP requests.",
+				ConstLabels: constLabels,
+			},
+			[]string{"method", "route", "status"},
+		),
+		bridgeOpsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name:        "bridge_operations_total",
+				Help:        "Total bridge operations by operation and result.",
+				ConstLabels: constLabels,
+			},
+			[]string{"operation", "result"},
+		),
 	}
 
-	m.responseTime.With(tags).Observe(value)
-	return nil
-}
-
-func (m *Monitor) SetDependencyAvailability(tags map[string]string, value float64) error {
-	if m.dependencyAvailability == nil {
-		return fmt.Errorf("metric not instantiated")
-	}
-
-	m.dependencyAvailability.With(tags).Set(value)
-	return nil
-}
-
-func (m *Monitor) registerHistograms() {
-	histograms := make([]*prometheus.HistogramVec, 0)
-	labels := map[string]string{"service": m.service}
-
-	m.responseTime = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:        "http_response_time_seconds",
-			Help:        "http_response_time_seconds",
-			ConstLabels: labels,
-		},
-		[]string{"route", "status"},
+	registerer.MustRegister(
+		m.requestDuration,
+		m.requestsTotal,
+		m.bridgeOpsTotal,
 	)
 
-	histograms = append(histograms, m.responseTime)
-
-	for _, histogram := range histograms {
-		err := prometheus.Register(histogram)
-
-		switch err.(type) {
-		case nil:
-			continue
-		case prometheus.AlreadyRegisteredError:
-			regErr := err.(prometheus.AlreadyRegisteredError)
-			existingHistogram, ok := regErr.ExistingCollector.(*prometheus.HistogramVec)
-			if !ok {
-				m.logger.Errorw("existing collector is not a histogram vec", "metric", histogram)
-				return
-			}
-
-			m.responseTime = existingHistogram
-			m.logger.Debugw("metric already registered, reusing existing collector", "metric", histogram)
-			return
-		default:
-			m.logger.Errorw("metric could not be registered", "metric", histogram, "error", err)
-		}
-	}
-}
-
-func (m *Monitor) registerGauges() {
-	gauges := make([]*prometheus.GaugeVec, 0)
-	labels := map[string]string{"service": m.service}
-
-	m.dependencyAvailability = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name:        "dependency_available",
-			Help:        "dependency_available",
-			ConstLabels: labels,
-		},
-		[]string{"component"},
-	)
-
-	gauges = append(gauges, m.dependencyAvailability)
-
-	for _, gauge := range gauges {
-		err := prometheus.Register(gauge)
-
-		switch err.(type) {
-		case nil:
-			continue
-		case prometheus.AlreadyRegisteredError:
-			regErr := err.(prometheus.AlreadyRegisteredError)
-			existingGauge, ok := regErr.ExistingCollector.(*prometheus.GaugeVec)
-			if !ok {
-				m.logger.Errorw("existing collector is not a gauge vec", "metric", gauge)
-				return
-			}
-
-			m.dependencyAvailability = existingGauge
-			m.logger.Debugw("metric already registered, reusing existing collector", "metric", gauge)
-			return
-		default:
-			m.logger.Errorw("metric could not be registered", "metric", gauge, "error", err)
-		}
-	}
-}
-
-func NewMonitor(service string, logger *zap.SugaredLogger) *Monitor {
-	m := new(Monitor)
-	m.service = service
-	m.logger = logger
-	m.registerHistograms()
-	m.registerGauges()
 	return m
+}
+
+func (m *Monitor) ObserveHTTPRequestDuration(method, route, status string, durationSeconds float64) {
+	m.requestDuration.WithLabelValues(method, route, status).Observe(durationSeconds)
+}
+
+func (m *Monitor) IncrementHTTPRequestsTotal(method, route, status string) {
+	m.requestsTotal.WithLabelValues(method, route, status).Inc()
+}
+
+func (m *Monitor) IncrementBridgeOperation(operation, result string) {
+	m.bridgeOpsTotal.WithLabelValues(operation, result).Inc()
 }

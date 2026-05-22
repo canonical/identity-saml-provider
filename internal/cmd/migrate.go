@@ -1,3 +1,6 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package cmd
 
 import (
@@ -11,8 +14,8 @@ import (
 )
 
 var (
-	dsn    string
-	format string
+	dsn           string
+	migrateFormat string
 )
 
 var migrateCmd = &cobra.Command{
@@ -23,7 +26,7 @@ var migrateCmd = &cobra.Command{
 
 func init() {
 	migrateCmd.PersistentFlags().StringVar(&dsn, "dsn", "", "PostgreSQL DSN connection string")
-	migrateCmd.PersistentFlags().StringVarP(&format, "format", "f", "text", "Output format (text or json)")
+	migrateCmd.PersistentFlags().StringVarP(&migrateFormat, "format", "f", "text", "Output format (text or json)")
 	_ = migrateCmd.MarkPersistentFlagRequired("dsn")
 
 	migrateDownCmd.Flags().Int64("version", -1, "Target version to migrate down to (default: roll back one)")
@@ -66,7 +69,7 @@ var migrateUpCmd = &cobra.Command{
 	Short:        "Apply all pending migrations",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter, err := newFormatter(format)
+		formatter, err := newMigrateFormatter(migrateFormat)
 		if err != nil {
 			return err
 		}
@@ -99,7 +102,7 @@ var migrateDownCmd = &cobra.Command{
 	Long:         "Roll back the last migration, or down to a specific version with --version",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter, err := newFormatter(format)
+		formatter, err := newMigrateFormatter(migrateFormat)
 		if err != nil {
 			return err
 		}
@@ -145,7 +148,7 @@ var migrateStatusCmd = &cobra.Command{
 	Short:        "Show migration status",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter, err := newFormatter(format)
+		formatter, err := newMigrateFormatter(migrateFormat)
 		if err != nil {
 			return err
 		}
@@ -177,7 +180,7 @@ var migrateCheckCmd = &cobra.Command{
 	Short:        "Check if there are pending migrations",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter, err := newFormatter(format)
+		formatter, err := newMigrateFormatter(migrateFormat)
 		if err != nil {
 			return err
 		}

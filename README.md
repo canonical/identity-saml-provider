@@ -62,7 +62,7 @@ KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
 1. **Run the supporting services** (generates certs and starts the supporting services):
 
    ```bash
-   make docker
+   make dev
    ```
 
 2. **Run the SAML provider**:
@@ -79,21 +79,21 @@ KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
    with the SAML provider, and then run it.
 
    ```bash
-   cd test/saml-service
+   cd test/example-sp
    make register
    make run
    ```
 
 4. **Access the services**:
 
-   In a browser, access the Example SAML Service: <https://localhost:8083/hello>
+   In a browser, access the Example SAML Service: <http://localhost:8083/hello>
 
 5. **Shut down supporting services**:
 
    To stop all running services, use:
 
    ```bash
-   make down
+   make dev-down
    ```
 
 ### Running with Skaffold
@@ -130,7 +130,7 @@ This will create the necessary certificates in
 Create or edit `k8s/secrets/kratos.env` and add your OIDC
 provider credentials (for Ory Kratos) in the following
 `key=value` format (or, if these values are already set in
-your root `.env` file, run `make k8s-copy-secrets` to
+your root `.env` file, run `make k8s-secrets` to
 generate/update `k8s/secrets/kratos.env` automatically):
 
 ```bash
@@ -163,19 +163,24 @@ skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
 
 ### Environment Variables and Kratos OIDC Configuration
 
-See the [`config.go`](internal/provider/config.go) file
+See the [`config.go`](internal/app/config.go) file
 for configuration options specific to the SAML provider,
 which can all be set via environment variables.
 
-For local or non-production environments with custom or
-self-signed certificate chains, set
-`SAML_PROVIDER_HYDRA_CA_CERT_PATH` to a PEM file containing
-the trusted CA certificate used by Hydra.
+### Custom CA Certificates
 
-As a last resort for local testing only, you can set
-`SAML_PROVIDER_HYDRA_INSECURE_SKIP_TLS_VERIFY=true` to
-disable TLS certificate verification for outbound Hydra
-OIDC requests.
+If Hydra uses a custom or private CA certificate chain,
+install the CA certificate into the container's system trust
+store rather than configuring it in the application. For
+example, in a Dockerfile:
+
+```Dockerfile
+COPY hydra-ca.pem /usr/local/share/ca-certificates/hydra-ca.crt
+RUN update-ca-certificates
+```
+
+For local development, Hydra runs on plain HTTP
+(`http://hydra:4444`) and no TLS configuration is needed.
 
 ### Tracing Sampler Configuration
 
@@ -223,21 +228,20 @@ IAM instances.
 
 ### Service Provider Management CLI
 
-The `service-provider-admin` CLI tool manages SAML
+The `identity-saml-provider sp` command group manages SAML
 service provider registrations, including per-SP
 attribute mapping configuration.
 
 #### Registering a Service Provider
 
 ```bash
-service-provider-admin add \
+identity-saml-provider sp add \
   --entity-id <entity-id> \
   --acs-url <acs-url> \
   [--acs-binding <binding>] \
   [--attribute-mapping-file <path-to-json>] \
   [--nameid-format <format>] \
-  [--server <server-url>] \
-  [--output human|json]
+  [--format text|json]
 ```
 
 | Flag | Description | Default |
@@ -247,8 +251,11 @@ service-provider-admin add \
 | `--acs-binding`, `-b` | ACS binding type | `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST` |
 | `--attribute-mapping-file` | Path to a JSON file containing the attribute mapping configuration | — |
 | `--nameid-format` | NameID format (e.g., `persistent`, `transient`, `emailAddress`) | — |
-| `--server` | Base URL of the Identity SAML Provider server | `http://localhost:8082` |
-| `--output` | Output format: `human` or `json` | `human` |
+| `--format`, `-f` | Output format: `text` or `json` | `text` |
+
+The command connects directly to the database using
+`SAML_PROVIDER_DB_*` environment variables (same as the
+server). No running server is required.
 
 #### Attribute Mapping File
 
@@ -302,13 +309,13 @@ The mapping works in two stages:
 
 ```bash
 # Register with a full attribute mapping file
-service-provider-admin add \
+identity-saml-provider sp add \
   --entity-id https://myapp.example.com \
   --acs-url https://myapp.example.com/saml/acs \
   --attribute-mapping-file mapping.json
 
 # Register with only a NameID format override
-service-provider-admin add \
+identity-saml-provider sp add \
   --entity-id https://myapp.example.com \
   --acs-url https://myapp.example.com/saml/acs \
   --nameid-format persistent

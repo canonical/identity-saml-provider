@@ -1,22 +1,19 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package tracing
 
 import (
 	"net/http"
 	"strings"
 
-	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/go-chi/chi/v5"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/trace"
-	"go.uber.org/zap"
 )
 
-type Middleware struct {
-	service string
-
-	monitor monitoring.MonitorInterface
-	logger  *zap.SugaredLogger
-}
+// Middleware provides OpenTelemetry tracing middleware for HTTP handlers.
+type Middleware struct{}
 
 func (mdw *Middleware) OpenTelemetry(handler http.Handler) http.Handler {
 	return otelhttp.NewHandler(
@@ -53,13 +50,7 @@ func (mdw *Middleware) spanName(r *http.Request) string {
 	return r.Method + " " + routePattern
 }
 
-func NewMiddleware(monitor monitoring.MonitorInterface, logger *zap.SugaredLogger) *Middleware {
-	mdw := new(Middleware)
-	mdw.monitor = monitor
-	mdw.logger = logger
-	if monitor != nil {
-		mdw.service = monitor.GetService()
-	}
-
-	return mdw
+// NewTracingMiddleware creates a tracing middleware.
+func NewTracingMiddleware() *Middleware {
+	return &Middleware{}
 }

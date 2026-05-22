@@ -6,7 +6,7 @@ summary: Canonical Identity SAML Provider
 description: >
   This is the Canonical Identity SAML Provider used for bridging SAML
   authentication to OIDC flows
-license: Apache-2.0
+license: AGPL-3.0
 platforms:
   amd64: null
 services:

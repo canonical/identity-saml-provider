@@ -1,3 +1,6 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package cmd
 
 import (
@@ -24,7 +27,7 @@ func TestNewFormatter(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			f, err := newFormatter(tt.format)
+			f, err := newMigrateFormatter(tt.format)
 			if tt.wantError {
 				if err == nil {
 					t.Error("expected error but got nil")

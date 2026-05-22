@@ -1,30 +1,27 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package tracing
 
-import "go.uber.org/zap"
+import "github.com/canonical/identity-saml-provider/internal/logging"
 
 type Config struct {
 	OtelHTTPEndpoint string
 	OtelGRPCEndpoint string
 	OtelSampler      string
 	OtelSamplerRatio float64
-	Logger           *zap.SugaredLogger
+	Logger           logging.Logger
 
 	Enabled bool
 }
 
-func NewConfig(enabled bool, otelGRPCEndpoint, otelHTTPEndpoint, otelSampler string, otelSamplerRatio float64, logger *zap.SugaredLogger) *Config {
-	c := new(Config)
-	c.OtelGRPCEndpoint = otelGRPCEndpoint
-	c.OtelHTTPEndpoint = otelHTTPEndpoint
-	c.OtelSampler = otelSampler
-	c.OtelSamplerRatio = otelSamplerRatio
-	c.Logger = logger
-	c.Enabled = enabled
-	return c
-}
-
-func NewNoopConfig() *Config {
-	c := new(Config)
-	c.Enabled = false
-	return c
+func NewConfig(enabled bool, otelGRPCEndpoint, otelHTTPEndpoint, otelSampler string, otelSamplerRatio float64, logger logging.Logger) *Config {
+	return &Config{
+		Enabled:          enabled,
+		OtelGRPCEndpoint: otelGRPCEndpoint,
+		OtelHTTPEndpoint: otelHTTPEndpoint,
+		OtelSampler:      otelSampler,
+		OtelSamplerRatio: otelSamplerRatio,
+		Logger:           logger,
+	}
 }

@@ -1,0 +1,69 @@
+@startuml returning_user_flow
+!theme plain
+
+skinparam backgroundColor #FEFEFE
+skinparam sequenceArrowThickness 2
+skinparam roundcorner 10
+skinparam sequenceParticipantBorderColor #444444
+skinparam sequenceLifeLineBorderColor #888888
+
+skinparam participant {
+  BackgroundColor #E3F2FD
+  BorderColor #1565C0
+  FontColor #1A237E
+  FontSize 13
+}
+
+skinparam actor {
+  BackgroundColor #FFF3E0
+  BorderColor #E65100
+}
+
+actor "User\n(Browser)" as User #FFF3E0
+participant "SAML Service\nProvider (SP)" as SP #E8F5E9
+participant "SAML-OIDC Bridge" as Bridge #E3F2FD
+database "PostgreSQL" as DB #F3E5F5
+
+title **Returning User — Session Already Exists**
+
+User -> SP: Access protected resource
+activate SP #C8E6C9
+SP --> User: Redirect with SAMLRequest
+deactivate SP
+
+User -> Bridge: GET /saml/sso?SAMLRequest=...
+activate Bridge #BBDEFB
+
+Bridge -> Bridge: Check "saml_session" cookie - found
+
+Bridge -> DB: Lookup session (not expired)
+activate DB #E1BEE7
+DB --> Bridge: Valid session found
+deactivate DB
+
+note right of Bridge
+  Session still valid (within 10 min TTL).
+  No OIDC round-trip needed.
+end note
+
+Bridge -> DB: Apply per-SP attribute mapping\n(if configured)
+activate DB #E1BEE7
+DB --> Bridge: Mapped session
+deactivate DB
+
+Bridge -> DB: Lookup SP metadata
+activate DB #E1BEE7
+DB --> Bridge: SP descriptor
+deactivate DB
+
+Bridge -> Bridge: Build & sign SAML Response
+
+Bridge --> User: HTTP-POST SAMLResponse to ACS URL
+deactivate Bridge
+
+User -> SP: POST /saml/acs
+activate SP #C8E6C9
+SP --> User: Access granted
+deactivate SP
+
+@enduml

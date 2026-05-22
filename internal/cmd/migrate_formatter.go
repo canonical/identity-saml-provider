@@ -1,3 +1,6 @@
+// Copyright 2026 Canonical Ltd
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package cmd
 
 import (
@@ -44,8 +47,8 @@ type CheckResult struct {
 	Version int64 `json:"version"`
 }
 
-// newFormatter returns a MigrateOutputFormatter for the given format name.
-func newFormatter(format string) (MigrateOutputFormatter, error) {
+// newMigrateFormatter returns a MigrateOutputFormatter for the given format name.
+func newMigrateFormatter(format string) (MigrateOutputFormatter, error) {
 	switch format {
 	case "text":
 		return &textFormatter{}, nil
