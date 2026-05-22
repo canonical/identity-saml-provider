@@ -22,5 +22,5 @@ type IDToken struct {
 
 	// Claims contains all claims from the ID token, including
 	// standard and custom claims. Used for per-SP attribute mapping.
-	Claims map[string]interface{}
+	Claims map[string]any
 }
