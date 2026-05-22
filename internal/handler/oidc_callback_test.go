@@ -14,7 +14,6 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/handler"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
-	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
 )
@@ -105,7 +104,6 @@ func TestHandleOIDCCallback(t *testing.T) {
 			ctrl := gomock.NewController(t)
 
 			logger := logging.NewNopLogger()
-			tracer := tracing.NewNoopTracer()
 			noopMonitor := &noopMon{}
 
 			deps := &testHandlerDeps{
@@ -122,7 +120,7 @@ func TestHandleOIDCCallback(t *testing.T) {
 				deps.oidc, deps.pending,
 				nil,
 				handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
-				logger, noopMonitor, tracer,
+				logger, noopMonitor,
 			)
 
 			req := httptest.NewRequest(http.MethodGet, "/saml/callback?"+tt.query, nil)

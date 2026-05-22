@@ -7,7 +7,6 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/canonical/identity-saml-provider/internal/service"
-	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/crewjam/saml"
 )
 
@@ -27,7 +26,6 @@ type Handlers struct {
 	config           HandlerConfig
 	logger           logging.Logger
 	monitor          monitoring.MonitorInterface
-	tracer           tracing.TracingInterface
 }
 
 // NewHandlers creates a new Handlers instance with all dependencies injected.
@@ -41,7 +39,6 @@ func NewHandlers(
 	cfg HandlerConfig,
 	logger logging.Logger,
 	monitor monitoring.MonitorInterface,
-	tracer tracing.TracingInterface,
 ) *Handlers {
 	return &Handlers{
 		sessions:         sessions,
@@ -53,6 +50,5 @@ func NewHandlers(
 		config:           cfg,
 		logger:           logger,
 		monitor:          monitor,
-		tracer:           tracer,
 	}
 }

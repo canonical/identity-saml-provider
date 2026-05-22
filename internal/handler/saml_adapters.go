@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
-	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/crewjam/saml"
 )
 
@@ -86,7 +86,6 @@ type SAMLSessionAdapter struct {
 	OIDC     service.OIDCService
 	Config   HandlerConfig
 	Logger   logging.Logger
-	Tracer   tracing.TracingInterface
 }
 
 // GetSession implements saml.SessionProvider. It checks for an existing session
@@ -95,8 +94,7 @@ type SAMLSessionAdapter struct {
 // request and redirects the user to the OIDC provider.
 func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, req *saml.IdpAuthnRequest) *saml.Session {
 	ctx := r.Context()
-	ctx, span := a.Tracer.Start(ctx, "handler.saml.get_session")
-	defer span.End()
+	span := trace.SpanFromContext(ctx)
 
 	logger := logging.FromContext(ctx, a.Logger)
 	logger.Debugw("Checking for existing SAML session")
@@ -168,8 +166,7 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 
 // SAMLSPAdapter implements the crewjam/saml ServiceProviderProvider interface.
 type SAMLSPAdapter struct {
-	SPs    service.ServiceProviderService
-	Tracer tracing.TracingInterface
+	SPs service.ServiceProviderService
 }
 
 // GetServiceProvider implements saml.ServiceProviderProvider. It looks up
@@ -177,8 +174,8 @@ type SAMLSPAdapter struct {
 // Returns os.ErrNotExist when the SP is not found, as required by the
 // crewjam/saml library contract.
 func (a *SAMLSPAdapter) GetServiceProvider(r *http.Request, serviceProviderID string) (*saml.EntityDescriptor, error) {
-	ctx, span := a.Tracer.Start(r.Context(), "handler.saml.get_service_provider")
-	defer span.End()
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
 
 	sp, err := a.SPs.GetByEntityID(ctx, serviceProviderID)
 	if err != nil {

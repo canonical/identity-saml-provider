@@ -13,7 +13,6 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/handler"
 	"github.com/canonical/identity-saml-provider/internal/logging"
-	"github.com/canonical/identity-saml-provider/internal/tracing"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"go.uber.org/mock/gomock"
 )
@@ -37,7 +36,6 @@ func newTestHandlers(
 	}
 
 	logger := logging.NewNopLogger()
-	tracer := tracing.NewNoopTracer()
 	noopMonitor := &noopMon{}
 
 	h := handler.NewHandlers(
@@ -50,7 +48,6 @@ func newTestHandlers(
 		handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
 		logger,
 		noopMonitor,
-		tracer,
 	)
 	return h, deps
 }

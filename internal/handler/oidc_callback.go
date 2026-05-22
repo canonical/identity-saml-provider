@@ -20,8 +20,8 @@ import (
 
 // HandleOIDCCallback handles GET /saml/callback — the OIDC redirect from Hydra.
 func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
-	ctx, span := h.tracer.Start(r.Context(), "handler.oidc_callback")
-	defer span.End()
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
 
 	logger := logging.FromContext(ctx, h.logger)
 	logger.Debugw("Handling OIDC callback from Hydra")

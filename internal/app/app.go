@@ -113,7 +113,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		sessionSvc, spSvc, mappingSvc, oidcSvc, pendingSvc,
 		samlIDP,
 		handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL},
-		logger, monitor, tracer,
+		logger, monitor,
 	)
 
 	// Wire SAML adapters (these need the services)
@@ -124,11 +124,9 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		OIDC:     oidcSvc,
 		Config:   handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL},
 		Logger:   logger,
-		Tracer:   tracer,
 	}
 	samlIDP.ServiceProviderProvider = &handler.SAMLSPAdapter{
-		SPs:    spSvc,
-		Tracer: tracer,
+		SPs: spSvc,
 	}
 
 	// --- Health Handler ---

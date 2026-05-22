@@ -9,12 +9,13 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // HandleRegisterServiceProvider handles POST /admin/service-providers.
 func (h *Handlers) HandleRegisterServiceProvider(w http.ResponseWriter, r *http.Request) {
-	ctx, span := h.tracer.Start(r.Context(), "handler.register_service_provider")
-	defer span.End()
+	ctx := r.Context()
+	span := trace.SpanFromContext(ctx)
 
 	var req RegisterSPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
