@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -133,19 +134,10 @@ func TestHandleOIDCCallback(t *testing.T) {
 			}
 			if tt.wantHeader != "" {
 				loc := rec.Header().Get("Location")
-				if loc == "" || !containsSubstr(loc, tt.wantHeader) {
+				if loc == "" || !strings.Contains(loc, tt.wantHeader) {
 					t.Errorf("Location = %q, want containing %q", loc, tt.wantHeader)
 				}
 			}
 		})
 	}
-}
-
-func containsSubstr(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

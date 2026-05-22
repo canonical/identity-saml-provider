@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,7 +97,7 @@ func TestLoadKeyPair(t *testing.T) {
 				if err == nil {
 					t.Fatal("LoadKeyPair() expected error, got nil")
 				}
-				if tt.errMatch != "" && !containsString(err.Error(), tt.errMatch) {
+				if tt.errMatch != "" && !strings.Contains(err.Error(), tt.errMatch) {
 					t.Errorf("LoadKeyPair() error = %q, want to contain %q", err.Error(), tt.errMatch)
 				}
 				return
@@ -115,19 +116,6 @@ func TestLoadKeyPair(t *testing.T) {
 			}
 		})
 	}
-}
-
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsSubstr(s, substr))
-}
-
-func containsSubstr(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }
 
 // generateTestRSAKeyPair creates a temporary RSA cert+key pair and returns their paths.

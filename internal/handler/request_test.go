@@ -4,6 +4,7 @@
 package handler_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
@@ -126,7 +127,7 @@ func TestRegisterSPRequest_Validate(t *testing.T) {
 				}
 				if tt.errMsg != "" {
 					var validErr *domain.ErrValidation
-					if ok := isValidationErr(err, &validErr); ok {
+					if errors.As(err, &validErr) {
 						if validErr.Field != tt.errMsg {
 							t.Errorf("field = %q, want containing %q", validErr.Field, tt.errMsg)
 						}
@@ -139,20 +140,4 @@ func TestRegisterSPRequest_Validate(t *testing.T) {
 			}
 		})
 	}
-}
-
-func isValidationErr(err error, target **domain.ErrValidation) bool {
-	for err != nil {
-		if e, ok := err.(*domain.ErrValidation); ok {
-			*target = e
-			return true
-		}
-		// Try unwrapping
-		u, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = u.Unwrap()
-	}
-	return false
 }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,7 +205,7 @@ func TestSAMLSessionAdapter_GetSession_NoSession_RedirectsToOIDC(t *testing.T) {
 	if loc == "" {
 		t.Fatal("expected Location header")
 	}
-	if !containsSubstr(loc, "hydra.example.com/auth") {
+	if !strings.Contains(loc, "hydra.example.com/auth") {
 		t.Errorf("Location = %q, want OIDC URL", loc)
 	}
 }
