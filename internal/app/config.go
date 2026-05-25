@@ -21,6 +21,12 @@ type Config struct {
 	BridgeBasePort int    `envconfig:"SAML_PROVIDER_BRIDGE_BASE_PORT" default:"8082"`
 	BridgeBaseURL  string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_URL"  default:"http://localhost:8082"`
 
+	// DevMode relaxes security settings for local development.
+	// When true: session cookies omit the Secure attribute, OIDC
+	// issuer URL validation is relaxed, and the logger uses
+	// human-readable output. Must not be enabled in production.
+	DevMode bool `envconfig:"SAML_PROVIDER_DEV_MODE" default:"false"`
+
 	// ServiceName is set programmatically (not from env).
 	ServiceName string `envconfig:"-"`
 
@@ -126,6 +132,13 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("SAML_PROVIDER_KEY_PATH must not be empty")
 	}
 
+	if c.DevMode {
+		fmt.Println("WARNING: SAML_PROVIDER_DEV_MODE is enabled." +
+			" Secure cookie attribute is disabled and" +
+			" OIDC issuer validation is relaxed." +
+			" Do not use in production.")
+	}
+
 	return nil
 }
 
@@ -156,6 +169,7 @@ func (c *Config) DatabaseDSN() string {
 func (c *Config) HydraConfig() hydra.Config {
 	return hydra.Config{
 		IssuerURL: c.HydraPublicURL,
+		DevMode:   c.DevMode,
 	}
 }
 

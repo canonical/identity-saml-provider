@@ -75,6 +75,7 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   int(time.Until(session.ExpireTime).Seconds()),
 		HttpOnly: true,
+		Secure:   !h.config.DevMode,
 		SameSite: http.SameSiteLaxMode,
 	})
 

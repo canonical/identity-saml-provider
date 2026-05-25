@@ -180,29 +180,43 @@ func TestConfig_PoolConfig(t *testing.T) {
 
 func TestConfig_HydraConfig(t *testing.T) {
 	tests := []struct {
-		name       string
-		hydraURL   string
-		wantIssuer string
+		name        string
+		hydraURL    string
+		devMode     bool
+		wantIssuer  string
+		wantDevMode bool
 	}{
 		{
-			name:       "default URL",
-			hydraURL:   "http://localhost:4444",
-			wantIssuer: "http://localhost:4444",
+			name:        "default URL",
+			hydraURL:    "http://localhost:4444",
+			wantIssuer:  "http://localhost:4444",
+			wantDevMode: false,
 		},
 		{
-			name:       "custom URL",
-			hydraURL:   "https://hydra.example.com",
-			wantIssuer: "https://hydra.example.com",
+			name:        "custom URL",
+			hydraURL:    "https://hydra.example.com",
+			wantIssuer:  "https://hydra.example.com",
+			wantDevMode: false,
+		},
+		{
+			name:        "dev mode enabled",
+			hydraURL:    "http://localhost:4444",
+			devMode:     true,
+			wantIssuer:  "http://localhost:4444",
+			wantDevMode: true,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := app.Config{HydraPublicURL: tc.hydraURL}
+			cfg := app.Config{HydraPublicURL: tc.hydraURL, DevMode: tc.devMode}
 			hc := cfg.HydraConfig()
 
 			if hc.IssuerURL != tc.wantIssuer {
 				t.Errorf("HydraConfig().IssuerURL = %q, want %q", hc.IssuerURL, tc.wantIssuer)
+			}
+			if hc.DevMode != tc.wantDevMode {
+				t.Errorf("HydraConfig().DevMode = %v, want %v", hc.DevMode, tc.wantDevMode)
 			}
 		})
 	}
@@ -418,6 +432,10 @@ func TestConfig_Validate(t *testing.T) {
 			name:    "empty SAMLKeyPath",
 			modify:  func(c *app.Config) { c.SAMLKeyPath = "" },
 			wantErr: "SAML_PROVIDER_KEY_PATH must not be empty",
+		},
+		{
+			name:   "dev mode is valid",
+			modify: func(c *app.Config) { c.DevMode = true },
 		},
 	}
 

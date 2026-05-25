@@ -112,7 +112,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	handlers := handler.NewHandlers(
 		sessionSvc, spSvc, mappingSvc, oidcSvc, pendingSvc,
 		samlIDP,
-		handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL},
+		handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL, DevMode: cfg.DevMode},
 		logger, monitor,
 	)
 
@@ -122,7 +122,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		Mapping:  mappingSvc,
 		Pending:  pendingSvc,
 		OIDC:     oidcSvc,
-		Config:   handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL},
+		Config:   handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL, DevMode: cfg.DevMode},
 		Logger:   logger,
 	}
 	samlIDP.ServiceProviderProvider = &handler.SAMLSPAdapter{

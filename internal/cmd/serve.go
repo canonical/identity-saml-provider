@@ -42,12 +42,12 @@ func runServe() {
 		panic(fmt.Sprintf("Invalid configuration: %v", err))
 	}
 
-	logger, err := logging.BuildLogger(cfg.LogLevel)
+	logger, err := logging.BuildLogger(cfg.LogLevel, cfg.DevMode)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
-	logger.Infow("Starting identity-saml-provider", "version", version.Version, "logLevel", cfg.LogLevel)
+	logger.Infow("Starting identity-saml-provider", "version", version.Version, "logLevel", cfg.LogLevel, "devMode", cfg.DevMode)
 
 	application, err := app.Build(ctx, cfg, logger)
 	if err != nil {

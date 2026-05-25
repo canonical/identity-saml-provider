@@ -141,3 +141,80 @@ func TestHandleOIDCCallback(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleOIDCCallback_CookieSecureAttribute(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		devMode    bool
+		wantSecure bool
+	}{
+		{
+			name:       "production mode sets Secure cookie",
+			devMode:    false,
+			wantSecure: true,
+		},
+		{
+			name:       "dev mode omits Secure cookie",
+			devMode:    true,
+			wantSecure: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+
+			logger := logging.NewNopLogger()
+			noopMonitor := &noopMon{}
+
+			deps := &testHandlerDeps{
+				sessions: mocks.NewMockSessionService(ctrl),
+				sps:      mocks.NewMockServiceProviderService(ctrl),
+				mapping:  mocks.NewMockMappingService(ctrl),
+				oidc:     mocks.NewMockOIDCService(ctrl),
+				pending:  mocks.NewMockPendingRequestService(ctrl),
+			}
+
+			deps.oidc.EXPECT().ExchangeCode(gomock.Any(), "valid-code").Return(&service.OIDCClaims{
+				Sub:   "user-sub",
+				Email: "user@example.com",
+			}, nil)
+			deps.sessions.EXPECT().CreateFromOIDC(gomock.Any(), gomock.Any()).Return(&domain.Session{
+				ID:         "session-1",
+				ExpireTime: time.Now().Add(10 * time.Minute),
+			}, nil)
+			deps.pending.EXPECT().Retrieve(gomock.Any(), "req-123").
+				Return(nil, &domain.ErrNotFound{Resource: "pending_request", ID: "req-123"})
+
+			h := handler.NewHandlers(
+				deps.sessions, deps.sps, deps.mapping,
+				deps.oidc, deps.pending,
+				nil,
+				handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082", DevMode: tt.devMode},
+				logger, noopMonitor,
+			)
+
+			req := httptest.NewRequest(http.MethodGet, "/saml/callback?code=valid-code&state=req-123", nil)
+			rec := httptest.NewRecorder()
+
+			h.HandleOIDCCallback(rec, req)
+
+			cookies := rec.Result().Cookies()
+			var found bool
+			for _, c := range cookies {
+				if c.Name == "saml_session" {
+					found = true
+					if c.Secure != tt.wantSecure {
+						t.Errorf("cookie Secure = %v, want %v", c.Secure, tt.wantSecure)
+					}
+				}
+			}
+			if !found {
+				t.Error("saml_session cookie not found in response")
+			}
+		})
+	}
+}

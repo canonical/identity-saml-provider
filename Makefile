@@ -119,7 +119,9 @@ run: certs
 	@echo "Running migrations..."
 	go run $(LDFLAGS) ./cmd/identity-saml-provider migrate up --dsn $(DSN)
 	@echo "Running with version: $(VERSION)"
-	SAML_PROVIDER_DB_PORT=$(DB_PORT) go run $(LDFLAGS) ./cmd/identity-saml-provider serve
+	SAML_PROVIDER_DEV_MODE=true \
+	SAML_PROVIDER_DB_PORT=$(DB_PORT) \
+	go run $(LDFLAGS) ./cmd/identity-saml-provider serve
 
 # Code Quality
 

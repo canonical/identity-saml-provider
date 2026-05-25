@@ -43,16 +43,17 @@ func (z *ZapLogger) Sync() error {
 }
 
 // BuildLogger constructs a production-ready Logger for the given
-// level string. Accepted values: "debug", "info", "warn", "error".
-// When level is "debug", a development config is used (human-readable
-// output, stack traces on warn+). All other levels use production
-// config (JSON output).
+// level string and mode. Accepted values: "debug", "info", "warn",
+// "error". When devMode is true, a development config is used
+// (human-readable output, stack traces on warn+). When false,
+// production config is used (JSON output) regardless of the log
+// level.
 //
 // Returns the Logger and any build error. Call Sync() on the returned
 // logger to flush buffered entries before exit.
-func BuildLogger(level string) (*ZapLogger, error) {
+func BuildLogger(level string, devMode bool) (*ZapLogger, error) {
 	zapCfg := zap.NewProductionConfig()
-	if level == "debug" {
+	if devMode {
 		zapCfg = zap.NewDevelopmentConfig()
 	}
 

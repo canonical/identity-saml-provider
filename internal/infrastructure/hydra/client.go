@@ -21,6 +21,11 @@ import (
 type Config struct {
 	// IssuerURL is the Hydra public URL used for OIDC discovery.
 	IssuerURL string
+
+	// DevMode, when true, enables InsecureIssuerURLContext for
+	// local development where the issuer URL seen by the provider
+	// may differ from the publicly-facing URL.
+	DevMode bool
 }
 
 // OIDCConfig holds the OIDC client credentials and redirect settings.
@@ -56,9 +61,12 @@ func NewClient(
 	// Inject httpClient into context for OIDC discovery.
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
 
-	// InsecureIssuerURLContext allows local testing where the issuer
-	// URL seen by the provider may not match the publicly-facing URL.
-	ctx = oidc.InsecureIssuerURLContext(ctx, cfg.IssuerURL)
+	if cfg.DevMode {
+		// InsecureIssuerURLContext allows local testing where the
+		// issuer URL seen by the provider may not match the
+		// publicly-facing URL.
+		ctx = oidc.InsecureIssuerURLContext(ctx, cfg.IssuerURL)
+	}
 
 	provider, err := oidc.NewProvider(ctx, cfg.IssuerURL)
 	if err != nil {
