@@ -100,156 +100,185 @@ func TestSAMLSPAdapter_GetServiceProvider(t *testing.T) {
 	}
 }
 
-func TestSAMLSessionAdapter_GetSession_SessionExists(t *testing.T) {
+func TestSAMLSessionAdapter_GetSession(t *testing.T) {
 	t.Parallel()
-	ctrl := gomock.NewController(t)
 
-	mockSessions := mocks.NewMockSessionService(ctrl)
-	mockMapping := mocks.NewMockMappingService(ctrl)
-	mockPending := mocks.NewMockPendingRequestService(ctrl)
-	mockOIDC := mocks.NewMockOIDCService(ctrl)
-	logger := logging.NewNopLogger()
+	tests := []struct {
+		name         string
+		cookies      []*http.Cookie
+		authnReq     *saml.IdpAuthnRequest
+		setup        func(deps *testSessionAdapterDeps)
+		wantNil      bool
+		wantRedirect bool
+		checkResult  func(t *testing.T, result *saml.Session, rec *httptest.ResponseRecorder)
+	}{
+		{
+			name: "session exists — returns session without redirect",
+			cookies: []*http.Cookie{
+				{Name: "saml_session", Value: "session-123"},
+			},
+			authnReq: &saml.IdpAuthnRequest{
+				Request: saml.AuthnRequest{
+					ID: "req-1",
+					Issuer: &saml.Issuer{
+						Value: "https://sp.example.com",
+					},
+				},
+			},
+			setup: func(deps *testSessionAdapterDeps) {
+				session := &domain.Session{
+					ID:             "session-123",
+					CreateTime:     time.Now(),
+					ExpireTime:     time.Now().Add(10 * time.Minute),
+					Index:          "session-123",
+					NameID:         "user@example.com",
+					UserEmail:      "user@example.com",
+					UserCommonName: "Test User",
+				}
+				deps.sessions.EXPECT().GetByID(gomock.Any(), "session-123").Return(session, nil)
+				deps.mapping.EXPECT().ApplyMapping(gomock.Any(), session, "https://sp.example.com").Return(session, nil)
+			},
+			wantNil:      false,
+			wantRedirect: false,
+			checkResult: func(t *testing.T, result *saml.Session, _ *httptest.ResponseRecorder) {
+				t.Helper()
+				if result.ID != "session-123" {
+					t.Errorf("ID = %q, want %q", result.ID, "session-123")
+				}
+				if result.NameID != "user@example.com" {
+					t.Errorf("NameID = %q", result.NameID)
+				}
+			},
+		},
+		{
+			name:    "no session cookie — redirects to OIDC with oauth_nonce cookie",
+			cookies: nil,
+			authnReq: &saml.IdpAuthnRequest{
+				Request: saml.AuthnRequest{
+					ID: "req-42",
+				},
+				RelayState: "my-relay",
+			},
+			setup: func(deps *testSessionAdapterDeps) {
+				deps.pending.EXPECT().Store(gomock.Any(), gomock.Any()).Return(nil)
+				deps.oidc.EXPECT().AuthCodeURL(gomock.Any(), gomock.Any()).Return("https://hydra.example.com/auth?state=test")
+			},
+			wantNil:      true,
+			wantRedirect: true,
+			checkResult: func(t *testing.T, _ *saml.Session, rec *httptest.ResponseRecorder) {
+				t.Helper()
+				loc := rec.Header().Get("Location")
+				if !strings.Contains(loc, "hydra.example.com/auth") {
+					t.Errorf("Location = %q, want OIDC URL", loc)
+				}
 
-	session := &domain.Session{
-		ID:             "session-123",
-		CreateTime:     time.Now(),
-		ExpireTime:     time.Now().Add(10 * time.Minute),
-		Index:          "session-123",
-		NameID:         "user@example.com",
-		UserEmail:      "user@example.com",
-		UserCommonName: "Test User",
-	}
-
-	mockSessions.EXPECT().GetByID(gomock.Any(), "session-123").Return(session, nil)
-	mockMapping.EXPECT().ApplyMapping(gomock.Any(), session, "https://sp.example.com").Return(session, nil)
-
-	adapter := &handler.SAMLSessionAdapter{
-		Sessions: mockSessions,
-		Mapping:  mockMapping,
-		Pending:  mockPending,
-		OIDC:     mockOIDC,
-		Config:   handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
-		Logger:   logger,
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=test", nil)
-	req.AddCookie(&http.Cookie{Name: "saml_session", Value: "session-123"})
-	rec := httptest.NewRecorder()
-
-	authnReq := &saml.IdpAuthnRequest{
-		Request: saml.AuthnRequest{
-			ID: "req-1",
-			Issuer: &saml.Issuer{
-				Value: "https://sp.example.com",
+				// Verify oauth_nonce cookie attributes
+				cookies := rec.Result().Cookies()
+				var nonceCookie *http.Cookie
+				for _, c := range cookies {
+					if c.Name == "oauth_nonce" {
+						nonceCookie = c
+						break
+					}
+				}
+				if nonceCookie == nil {
+					t.Fatal("oauth_nonce cookie not found in response")
+				}
+				if nonceCookie.Path != "/saml/callback" {
+					t.Errorf("cookie Path = %q, want %q", nonceCookie.Path, "/saml/callback")
+				}
+				if !nonceCookie.HttpOnly {
+					t.Error("cookie should be HttpOnly")
+				}
+				if nonceCookie.MaxAge != 600 {
+					t.Errorf("cookie MaxAge = %d, want 600", nonceCookie.MaxAge)
+				}
+				if nonceCookie.SameSite != http.SameSiteLaxMode {
+					t.Errorf("cookie SameSite = %d, want Lax", nonceCookie.SameSite)
+				}
+				if !strings.Contains(nonceCookie.Value, ":") {
+					t.Error("cookie value should contain ':' delimiter for dual values")
+				}
+			},
+		},
+		{
+			name: "session cookie exists but session not found — redirects to OIDC",
+			cookies: []*http.Cookie{
+				{Name: "saml_session", Value: "gone-session"},
+			},
+			authnReq: &saml.IdpAuthnRequest{
+				Request: saml.AuthnRequest{ID: "req-99"},
+			},
+			setup: func(deps *testSessionAdapterDeps) {
+				deps.sessions.EXPECT().GetByID(gomock.Any(), "gone-session").
+					Return(nil, &domain.ErrNotFound{Resource: "session", ID: "gone-session"})
+				deps.pending.EXPECT().Store(gomock.Any(), gomock.Any()).Return(nil)
+				deps.oidc.EXPECT().AuthCodeURL(gomock.Any(), gomock.Any()).Return("https://hydra.example.com/auth")
+			},
+			wantNil:      true,
+			wantRedirect: true,
+			checkResult: func(t *testing.T, _ *saml.Session, rec *httptest.ResponseRecorder) {
+				t.Helper()
+				loc := rec.Header().Get("Location")
+				if loc == "" {
+					t.Error("expected Location header")
+				}
 			},
 		},
 	}
 
-	result := adapter.GetSession(rec, req, authnReq)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
 
-	if result == nil {
-		t.Fatal("expected non-nil session")
-	}
-	if result.ID != "session-123" {
-		t.Errorf("ID = %q, want %q", result.ID, "session-123")
-	}
-	if result.NameID != "user@example.com" {
-		t.Errorf("NameID = %q", result.NameID)
-	}
-	if rec.Code == http.StatusFound {
-		t.Error("should not redirect when session exists")
-	}
-}
+			deps := &testSessionAdapterDeps{
+				sessions: mocks.NewMockSessionService(ctrl),
+				mapping:  mocks.NewMockMappingService(ctrl),
+				pending:  mocks.NewMockPendingRequestService(ctrl),
+				oidc:     mocks.NewMockOIDCService(ctrl),
+			}
+			tt.setup(deps)
 
-func TestSAMLSessionAdapter_GetSession_NoSession_RedirectsToOIDC(t *testing.T) {
-	t.Parallel()
-	ctrl := gomock.NewController(t)
+			adapter := &handler.SAMLSessionAdapter{
+				Sessions: deps.sessions,
+				Mapping:  deps.mapping,
+				Pending:  deps.pending,
+				OIDC:     deps.oidc,
+				Config:   handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
+				Logger:   logging.NewNopLogger(),
+			}
 
-	mockSessions := mocks.NewMockSessionService(ctrl)
-	mockMapping := mocks.NewMockMappingService(ctrl)
-	mockPending := mocks.NewMockPendingRequestService(ctrl)
-	mockOIDC := mocks.NewMockOIDCService(ctrl)
-	logger := logging.NewNopLogger()
+			req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=encoded-request", nil)
+			for _, c := range tt.cookies {
+				req.AddCookie(c)
+			}
+			rec := httptest.NewRecorder()
 
-	mockPending.EXPECT().Store(gomock.Any(), gomock.Any()).Return(nil)
-	mockOIDC.EXPECT().AuthCodeURL("req-42:my-relay").Return("https://hydra.example.com/auth?state=req-42:my-relay")
+			result := adapter.GetSession(rec, req, tt.authnReq)
 
-	adapter := &handler.SAMLSessionAdapter{
-		Sessions: mockSessions,
-		Mapping:  mockMapping,
-		Pending:  mockPending,
-		OIDC:     mockOIDC,
-		Config:   handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
-		Logger:   logger,
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=encoded-request", nil)
-	rec := httptest.NewRecorder()
-
-	authnReq := &saml.IdpAuthnRequest{
-		Request: saml.AuthnRequest{
-			ID: "req-42",
-		},
-		RelayState: "my-relay",
-	}
-
-	result := adapter.GetSession(rec, req, authnReq)
-
-	if result != nil {
-		t.Error("expected nil session when unauthenticated")
-	}
-	if rec.Code != http.StatusFound {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
-	}
-	loc := rec.Header().Get("Location")
-	if loc == "" {
-		t.Fatal("expected Location header")
-	}
-	if !strings.Contains(loc, "hydra.example.com/auth") {
-		t.Errorf("Location = %q, want OIDC URL", loc)
+			if tt.wantNil && result != nil {
+				t.Error("expected nil session")
+			}
+			if !tt.wantNil && result == nil {
+				t.Fatal("expected non-nil session")
+			}
+			if tt.wantRedirect && rec.Code != http.StatusFound {
+				t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+			}
+			if !tt.wantRedirect && rec.Code == http.StatusFound {
+				t.Error("should not redirect")
+			}
+			if tt.checkResult != nil {
+				tt.checkResult(t, result, rec)
+			}
+		})
 	}
 }
 
-func TestSAMLSessionAdapter_GetSession_SessionNotFound_RedirectsToOIDC(t *testing.T) {
-	t.Parallel()
-	ctrl := gomock.NewController(t)
-
-	mockSessions := mocks.NewMockSessionService(ctrl)
-	mockMapping := mocks.NewMockMappingService(ctrl)
-	mockPending := mocks.NewMockPendingRequestService(ctrl)
-	mockOIDC := mocks.NewMockOIDCService(ctrl)
-	logger := logging.NewNopLogger()
-
-	// Session cookie exists but session not found in repo
-	mockSessions.EXPECT().GetByID(gomock.Any(), "gone-session").
-		Return(nil, &domain.ErrNotFound{Resource: "session", ID: "gone-session"})
-
-	mockPending.EXPECT().Store(gomock.Any(), gomock.Any()).Return(nil)
-	mockOIDC.EXPECT().AuthCodeURL(gomock.Any()).Return("https://hydra.example.com/auth")
-
-	adapter := &handler.SAMLSessionAdapter{
-		Sessions: mockSessions,
-		Mapping:  mockMapping,
-		Pending:  mockPending,
-		OIDC:     mockOIDC,
-		Config:   handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
-		Logger:   logger,
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=encoded-request", nil)
-	req.AddCookie(&http.Cookie{Name: "saml_session", Value: "gone-session"})
-	rec := httptest.NewRecorder()
-
-	authnReq := &saml.IdpAuthnRequest{
-		Request: saml.AuthnRequest{ID: "req-99"},
-	}
-
-	result := adapter.GetSession(rec, req, authnReq)
-
-	if result != nil {
-		t.Error("expected nil session for not-found session")
-	}
-	if rec.Code != http.StatusFound {
-		t.Errorf("status = %d, want redirect", rec.Code)
-	}
+type testSessionAdapterDeps struct {
+	sessions *mocks.MockSessionService
+	mapping  *mocks.MockMappingService
+	pending  *mocks.MockPendingRequestService
+	oidc     *mocks.MockOIDCService
 }

@@ -42,30 +42,30 @@ func (m *MockHydraClient) EXPECT() *MockHydraClientMockRecorder {
 }
 
 // AuthCodeURL mocks base method.
-func (m *MockHydraClient) AuthCodeURL(state string) string {
+func (m *MockHydraClient) AuthCodeURL(state, nonce string) string {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AuthCodeURL", state)
+	ret := m.ctrl.Call(m, "AuthCodeURL", state, nonce)
 	ret0, _ := ret[0].(string)
 	return ret0
 }
 
 // AuthCodeURL indicates an expected call of AuthCodeURL.
-func (mr *MockHydraClientMockRecorder) AuthCodeURL(state any) *gomock.Call {
+func (mr *MockHydraClientMockRecorder) AuthCodeURL(state, nonce any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthCodeURL", reflect.TypeOf((*MockHydraClient)(nil).AuthCodeURL), state)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthCodeURL", reflect.TypeOf((*MockHydraClient)(nil).AuthCodeURL), state, nonce)
 }
 
 // ExchangeCode mocks base method.
-func (m *MockHydraClient) ExchangeCode(ctx context.Context, code string) (*domain.IDToken, error) {
+func (m *MockHydraClient) ExchangeCode(ctx context.Context, code, expectedNonce string) (*domain.IDToken, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ExchangeCode", ctx, code)
+	ret := m.ctrl.Call(m, "ExchangeCode", ctx, code, expectedNonce)
 	ret0, _ := ret[0].(*domain.IDToken)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ExchangeCode indicates an expected call of ExchangeCode.
-func (mr *MockHydraClientMockRecorder) ExchangeCode(ctx, code any) *gomock.Call {
+func (mr *MockHydraClientMockRecorder) ExchangeCode(ctx, code, expectedNonce any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeCode", reflect.TypeOf((*MockHydraClient)(nil).ExchangeCode), ctx, code)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ExchangeCode", reflect.TypeOf((*MockHydraClient)(nil).ExchangeCode), ctx, code, expectedNonce)
 }

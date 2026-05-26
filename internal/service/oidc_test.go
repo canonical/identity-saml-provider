@@ -25,17 +25,20 @@ func TestOIDCService_AuthCodeURL(t *testing.T) {
 	tests := []struct {
 		name    string
 		state   string
+		nonce   string
 		wantURL string
 	}{
 		{
 			name:    "returns URL from hydra client",
 			state:   "test-state-123",
-			wantURL: "https://hydra.example.com/auth?state=test-state-123",
+			nonce:   "test-nonce-456",
+			wantURL: "https://hydra.example.com/auth?state=test-state-123&nonce=test-nonce-456",
 		},
 		{
-			name:    "empty state",
+			name:    "empty state and nonce",
 			state:   "",
-			wantURL: "https://hydra.example.com/auth?state=",
+			nonce:   "",
+			wantURL: "https://hydra.example.com/auth?state=&nonce=",
 		},
 	}
 
@@ -45,13 +48,13 @@ func TestOIDCService_AuthCodeURL(t *testing.T) {
 
 			ctrl := gomock.NewController(t)
 			hydra := mocks.NewMockHydraClient(ctrl)
-			hydra.EXPECT().AuthCodeURL(tt.state).Return(tt.wantURL)
+			hydra.EXPECT().AuthCodeURL(tt.state, tt.nonce).Return(tt.wantURL)
 
 			svc := service.NewOIDCService(hydra, logging.NewNopLogger(), tracing.NewNoopTracer())
-			got := svc.AuthCodeURL(tt.state)
+			got := svc.AuthCodeURL(tt.state, tt.nonce)
 
 			if got != tt.wantURL {
-				t.Errorf("AuthCodeURL(%q) = %q, want %q", tt.state, got, tt.wantURL)
+				t.Errorf("AuthCodeURL(%q, %q) = %q, want %q", tt.state, tt.nonce, got, tt.wantURL)
 			}
 		})
 	}
@@ -61,19 +64,21 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name        string
-		code        string
-		setupMock   func(m *mocks.MockHydraClient)
-		wantErr     bool
-		errType     interface{}
-		checkResult func(t *testing.T, claims *service.OIDCClaims)
+		name          string
+		code          string
+		expectedNonce string
+		setupMock     func(m *mocks.MockHydraClient)
+		wantErr       bool
+		errType       interface{}
+		checkResult   func(t *testing.T, claims *service.OIDCClaims)
 	}{
 		{
-			name: "successful exchange with all claims",
-			code: "valid-code",
+			name:          "successful exchange with all claims",
+			code:          "valid-code",
+			expectedNonce: "test-nonce",
 			setupMock: func(m *mocks.MockHydraClient) {
 				m.EXPECT().
-					ExchangeCode(gomock.Any(), "valid-code").
+					ExchangeCode(gomock.Any(), "valid-code", "test-nonce").
 					Return(&domain.IDToken{
 						Subject:  "user-123",
 						Issuer:   "https://hydra.example.com",
@@ -107,22 +112,36 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 			},
 		},
 		{
-			name: "exchange failure returns ErrUpstream",
-			code: "bad-code",
+			name:          "exchange failure returns ErrUpstream",
+			code:          "bad-code",
+			expectedNonce: "test-nonce",
 			setupMock: func(m *mocks.MockHydraClient) {
 				m.EXPECT().
-					ExchangeCode(gomock.Any(), "bad-code").
+					ExchangeCode(gomock.Any(), "bad-code", "test-nonce").
 					Return(nil, errors.New("connection refused"))
 			},
 			wantErr: true,
 			errType: &domain.ErrUpstream{},
 		},
 		{
-			name: "partial claims handled gracefully",
-			code: "valid-code",
+			name:          "nonce mismatch returns ErrAuthentication not ErrUpstream",
+			code:          "valid-code",
+			expectedNonce: "test-nonce",
 			setupMock: func(m *mocks.MockHydraClient) {
 				m.EXPECT().
-					ExchangeCode(gomock.Any(), "valid-code").
+					ExchangeCode(gomock.Any(), "valid-code", "test-nonce").
+					Return(nil, &domain.ErrAuthentication{Reason: "id token nonce mismatch"})
+			},
+			wantErr: true,
+			errType: &domain.ErrAuthentication{},
+		},
+		{
+			name:          "partial claims handled gracefully",
+			code:          "valid-code",
+			expectedNonce: "test-nonce",
+			setupMock: func(m *mocks.MockHydraClient) {
+				m.EXPECT().
+					ExchangeCode(gomock.Any(), "valid-code", "test-nonce").
 					Return(&domain.IDToken{
 						Subject: "user-456",
 						Claims: map[string]interface{}{
@@ -147,11 +166,12 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 			},
 		},
 		{
-			name: "non-string email is ignored",
-			code: "valid-code",
+			name:          "non-string email is ignored",
+			code:          "valid-code",
+			expectedNonce: "test-nonce",
 			setupMock: func(m *mocks.MockHydraClient) {
 				m.EXPECT().
-					ExchangeCode(gomock.Any(), "valid-code").
+					ExchangeCode(gomock.Any(), "valid-code", "test-nonce").
 					Return(&domain.IDToken{
 						Subject: "user-789",
 						Claims: map[string]interface{}{
@@ -168,11 +188,12 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 			},
 		},
 		{
-			name: "groups with mixed types filters non-strings",
-			code: "valid-code",
+			name:          "groups with mixed types filters non-strings",
+			code:          "valid-code",
+			expectedNonce: "test-nonce",
 			setupMock: func(m *mocks.MockHydraClient) {
 				m.EXPECT().
-					ExchangeCode(gomock.Any(), "valid-code").
+					ExchangeCode(gomock.Any(), "valid-code", "test-nonce").
 					Return(&domain.IDToken{
 						Subject: "user-mix",
 						Claims: map[string]interface{}{
@@ -189,11 +210,12 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 			},
 		},
 		{
-			name: "upstream error wraps original error",
-			code: "err-code",
+			name:          "upstream error wraps original error",
+			code:          "err-code",
+			expectedNonce: "test-nonce",
 			setupMock: func(m *mocks.MockHydraClient) {
 				m.EXPECT().
-					ExchangeCode(gomock.Any(), "err-code").
+					ExchangeCode(gomock.Any(), "err-code", "test-nonce").
 					Return(nil, errors.New("timeout"))
 			},
 			wantErr: true,
@@ -213,7 +235,7 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 			tt.setupMock(hydra)
 
 			svc := service.NewOIDCService(hydra, logging.NewNopLogger(), tracing.NewNoopTracer())
-			claims, err := svc.ExchangeCode(context.Background(), tt.code)
+			claims, err := svc.ExchangeCode(context.Background(), tt.code, tt.expectedNonce)
 
 			if tt.wantErr {
 				if err == nil {
@@ -228,6 +250,11 @@ func TestOIDCService_ExchangeCode(t *testing.T) {
 						}
 						if !strings.Contains(upstreamErr.Service, "hydra") {
 							t.Errorf("ErrUpstream.Service = %q, want 'hydra'", upstreamErr.Service)
+						}
+					case *domain.ErrAuthentication:
+						var authErr *domain.ErrAuthentication
+						if !errors.As(err, &authErr) {
+							t.Errorf("expected *domain.ErrAuthentication, got %T: %v", err, err)
 						}
 					}
 				}

@@ -39,21 +39,25 @@ func TestClient_AuthCodeURL(t *testing.T) {
 	tests := []struct {
 		name    string
 		state   string
+		nonce   string
 		authURL string
 		wantSub []string // substrings the URL must contain
 	}{
 		{
-			name:    "includes auth endpoint and state",
+			name:    "includes auth endpoint, state, and nonce",
 			state:   "test-state-123",
+			nonce:   "test-nonce-456",
 			authURL: "https://hydra.example.com/oauth2/auth",
 			wantSub: []string{
 				"hydra.example.com/oauth2/auth",
 				"state=test-state-123",
+				"nonce=test-nonce-456",
 			},
 		},
 		{
-			name:    "empty state",
+			name:    "empty state and nonce",
 			state:   "",
+			nonce:   "",
 			authURL: "https://hydra.example.com/oauth2/auth",
 			wantSub: []string{
 				"hydra.example.com/oauth2/auth",
@@ -73,7 +77,7 @@ func TestClient_AuthCodeURL(t *testing.T) {
 				nil, nil,
 			)
 
-			got := c.AuthCodeURL(tt.state)
+			got := c.AuthCodeURL(tt.state, tt.nonce)
 			if got == "" {
 				t.Fatal("AuthCodeURL returned empty string")
 			}
@@ -133,7 +137,7 @@ func TestClient_ExchangeCode(t *testing.T) {
 				nil, nil,
 			)
 
-			_, err := c.ExchangeCode(context.Background(), "test-code")
+			_, err := c.ExchangeCode(context.Background(), "test-code", "test-nonce")
 			if !tt.wantErr {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

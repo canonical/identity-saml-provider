@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"golang.org/x/oauth2"
 
+	"github.com/canonical/identity-saml-provider/internal/crypto"
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 )
@@ -95,15 +96,17 @@ func NewClient(
 }
 
 // AuthCodeURL returns the URL to redirect the user to for OIDC
-// authentication.
-func (c *Client) AuthCodeURL(state string) string {
-	return c.oauth2Config.AuthCodeURL(state)
+// authentication. The nonce is included as an OIDC authorization
+// parameter so that Hydra stamps it into the ID token.
+func (c *Client) AuthCodeURL(state, nonce string) string {
+	return c.oauth2Config.AuthCodeURL(state,
+		oauth2.SetAuthURLParam("nonce", nonce))
 }
 
 // ExchangeCode exchanges an authorization code for an OAuth2 token,
-// verifies the embedded ID token, and returns a domain IDToken with
-// structured metadata and raw claims.
-func (c *Client) ExchangeCode(ctx context.Context, code string) (*domain.IDToken, error) {
+// verifies the embedded ID token (including nonce claim), and returns
+// a domain IDToken with structured metadata and raw claims.
+func (c *Client) ExchangeCode(ctx context.Context, code, expectedNonce string) (*domain.IDToken, error) {
 	// Inject the same httpClient used for discovery so that TLS
 	// trust is consistent across all outbound calls.
 	if c.httpClient != nil {
@@ -123,6 +126,12 @@ func (c *Client) ExchangeCode(ctx context.Context, code string) (*domain.IDToken
 	idToken, err := c.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
 		return nil, fmt.Errorf("id token verification: %w", err)
+	}
+
+	if !crypto.NonceEqual(idToken.Nonce, expectedNonce) {
+		return nil, &domain.ErrAuthentication{
+			Reason: "id token nonce mismatch",
+		}
 	}
 
 	var claims map[string]interface{}

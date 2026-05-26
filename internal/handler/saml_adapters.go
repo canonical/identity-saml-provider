@@ -11,6 +11,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/canonical/identity-saml-provider/internal/crypto"
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
@@ -138,15 +139,43 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 			}
 		}
 
-		// Build state with request ID and optional relay state
-		state := req.Request.ID
+		// Generate independent state and nonce values for CSRF
+		// protection and ID token replay prevention.
+		stateValue, err := crypto.GenerateNonce()
+		if err != nil {
+			span.RecordError(err)
+			logger.Errorw("Failed to generate state value", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return nil
+		}
+		nonceValue, err := crypto.GenerateNonce()
+		if err != nil {
+			span.RecordError(err)
+			logger.Errorw("Failed to generate nonce value", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return nil
+		}
+
+		// Store both values in a single cookie.
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oauth_nonce",
+			Value:    crypto.EncodeCookieValue(stateValue, nonceValue),
+			Path:     "/saml/callback",
+			MaxAge:   600,
+			HttpOnly: true,
+			Secure:   !a.Config.DevMode,
+			SameSite: http.SameSiteLaxMode,
+		})
+
+		// Build state: "<stateValue>:<requestID>:<relayState>"
+		state := stateValue + ":" + req.Request.ID
 		if req.RelayState != "" {
 			state += ":" + req.RelayState
 		}
 
 		span.AddEvent("oidc_redirect_initiated")
 		logger.Debugw("No valid session found, redirecting to OIDC provider")
-		http.Redirect(w, r, a.OIDC.AuthCodeURL(state), http.StatusFound)
+		http.Redirect(w, r, a.OIDC.AuthCodeURL(state, nonceValue), http.StatusFound)
 		return nil
 	}
 
