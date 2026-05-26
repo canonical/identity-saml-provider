@@ -3,3 +3,4 @@ copilot:
 
   collections:
     - core
+    - common-go
