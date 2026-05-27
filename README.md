@@ -169,15 +169,26 @@ which can all be set via environment variables.
 
 ### Custom CA Certificates
 
-If Hydra uses a custom or private CA certificate chain,
-install the CA certificate into the container's system trust
-store rather than configuring it in the application. For
-example, in a Dockerfile:
+If Hydra uses a custom or private CA certificate,
+set `SAML_PROVIDER_HYDRA_CA_CERT_PATH` to the path of a
+PEM file containing the CA certificate(s). The application
+will trust only the certificates in that file for Hydra
+connections — the system certificate pool is not consulted.
 
-```Dockerfile
-COPY hydra-ca.pem /usr/local/share/ca-certificates/hydra-ca.crt
-RUN update-ca-certificates
-```
+If the variable is not set, the application uses Go's
+default system certificate pool.
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `SAML_PROVIDER_HYDRA_CA_CERT_PATH` | (empty) | Path to CA PEM file for Hydra HTTPS |
+
+**Deployment examples:**
+
+- **Kubernetes**: Mount a Secret or ConfigMap containing
+  `ca.pem` as a volume; set the env var to the mount path.
+- **Docker**: Bind mount the CA file; set the env var.
+- **Juju**: Write relation-provided CA to an app-owned path;
+  set the env var.
 
 For local development, Hydra runs on plain HTTP
 (`http://hydra:4444`) and no TLS configuration is needed.

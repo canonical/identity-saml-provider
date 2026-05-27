@@ -5,8 +5,12 @@ package hydra
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
+	"net/url"
+	"os"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -27,6 +31,13 @@ type Config struct {
 	// local development where the issuer URL seen by the provider
 	// may differ from the publicly-facing URL.
 	DevMode bool
+
+	// CACertPath is the path to a PEM file containing the CA
+	// certificate(s) to trust for Hydra HTTPS connections. When
+	// set and the IssuerURL uses https://, an isolated certificate
+	// pool is created containing only these certificates. When
+	// empty, Go's default system certificate pool is used.
+	CACertPath string
 }
 
 // OIDCConfig holds the OIDC client credentials and redirect settings.
@@ -46,6 +57,75 @@ type Client struct {
 	logger       logging.Logger
 }
 
+// loadCertPool reads a PEM file and returns an isolated
+// x509.CertPool containing only the certificates from that file.
+func loadCertPool(path string) (*x509.CertPool, error) {
+	pemData, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read CA certificate %q: %w", path, err)
+	}
+
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM(pemData) {
+		return nil, fmt.Errorf("CA certificate file %q contains no valid PEM blocks", path)
+	}
+
+	return pool, nil
+}
+
+// buildTransport returns an *http.Transport configured for the given
+// issuer URL and optional CA certificate.
+func buildTransport(issuerURL, caCertPath string, logger logging.Logger) (*http.Transport, error) {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("unexpected default transport type %T", http.DefaultTransport)
+	}
+	transport := base.Clone()
+
+	u, err := url.Parse(issuerURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Hydra issuer URL %q: %w", issuerURL, err)
+	}
+
+	switch u.Scheme {
+	case "https":
+		// handled below
+	case "http":
+		if caCertPath != "" {
+			logger.Warnw("CACertPath is set but issuer URL uses plain HTTP; CA certificate will not be used",
+				"issuer_url", issuerURL,
+				"ca_cert_path", caCertPath,
+			)
+		}
+		logger.Infow("hydra transport: plain HTTP (no TLS)", "issuer_url", issuerURL)
+		return transport, nil
+	default:
+		return nil, fmt.Errorf("unsupported Hydra issuer URL scheme %q", u.Scheme)
+	}
+
+	if caCertPath == "" {
+		logger.Infow("hydra TLS: system certificate pool", "issuer_url", issuerURL)
+		return transport, nil
+	}
+
+	pool, err := loadCertPool(caCertPath)
+	if err != nil {
+		return nil, err
+	}
+
+	transport.TLSClientConfig = &tls.Config{
+		RootCAs:    pool,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	logger.Infow("hydra TLS: custom CA (isolated pool)",
+		"issuer_url", issuerURL,
+		"ca_cert_path", caCertPath,
+	)
+
+	return transport, nil
+}
+
 // NewClient performs OIDC discovery against the Hydra issuer URL and
 // returns a fully initialised Client.
 func NewClient(
@@ -54,9 +134,14 @@ func NewClient(
 	oidcCfg OIDCConfig,
 	logger logging.Logger,
 ) (*Client, error) {
+	transport, err := buildTransport(cfg.IssuerURL, cfg.CACertPath, logger)
+	if err != nil {
+		return nil, err
+	}
+
 	httpClient := &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Transport: otelhttp.NewTransport(transport),
 	}
 
 	// Inject httpClient into context for OIDC discovery.

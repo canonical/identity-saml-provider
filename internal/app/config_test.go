@@ -180,23 +180,23 @@ func TestConfig_PoolConfig(t *testing.T) {
 
 func TestConfig_HydraConfig(t *testing.T) {
 	tests := []struct {
-		name        string
-		hydraURL    string
-		devMode     bool
-		wantIssuer  string
-		wantDevMode bool
+		name           string
+		hydraURL       string
+		caCertPath     string
+		devMode        bool
+		wantIssuer     string
+		wantCACertPath string
+		wantDevMode    bool
 	}{
 		{
-			name:        "default URL",
-			hydraURL:    "http://localhost:4444",
-			wantIssuer:  "http://localhost:4444",
-			wantDevMode: false,
+			name:       "default URL",
+			hydraURL:   "http://localhost:4444",
+			wantIssuer: "http://localhost:4444",
 		},
 		{
-			name:        "custom URL",
-			hydraURL:    "https://hydra.example.com",
-			wantIssuer:  "https://hydra.example.com",
-			wantDevMode: false,
+			name:       "custom URL",
+			hydraURL:   "https://hydra.example.com",
+			wantIssuer: "https://hydra.example.com",
 		},
 		{
 			name:        "dev mode enabled",
@@ -205,15 +205,35 @@ func TestConfig_HydraConfig(t *testing.T) {
 			wantIssuer:  "http://localhost:4444",
 			wantDevMode: true,
 		},
+		{
+			name:           "with CA cert path",
+			hydraURL:       "https://hydra.example.com",
+			caCertPath:     "/etc/ssl/hydra/ca.pem",
+			wantIssuer:     "https://hydra.example.com",
+			wantCACertPath: "/etc/ssl/hydra/ca.pem",
+		},
+		{
+			name:       "empty CA cert path",
+			hydraURL:   "https://hydra.example.com",
+			caCertPath: "",
+			wantIssuer: "https://hydra.example.com",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := app.Config{HydraPublicURL: tc.hydraURL, DevMode: tc.devMode}
+			cfg := app.Config{
+				HydraPublicURL:  tc.hydraURL,
+				HydraCACertPath: tc.caCertPath,
+				DevMode:         tc.devMode,
+			}
 			hc := cfg.HydraConfig()
 
 			if hc.IssuerURL != tc.wantIssuer {
 				t.Errorf("HydraConfig().IssuerURL = %q, want %q", hc.IssuerURL, tc.wantIssuer)
+			}
+			if hc.CACertPath != tc.wantCACertPath {
+				t.Errorf("HydraConfig().CACertPath = %q, want %q", hc.CACertPath, tc.wantCACertPath)
 			}
 			if hc.DevMode != tc.wantDevMode {
 				t.Errorf("HydraConfig().DevMode = %v, want %v", hc.DevMode, tc.wantDevMode)
@@ -355,6 +375,9 @@ func TestConfig_EnvconfigProcess(t *testing.T) {
 	if cfg.ClientID != "service-bridge-client" {
 		t.Errorf("ClientID = %q, want %q", cfg.ClientID, "service-bridge-client")
 	}
+	if cfg.HydraCACertPath != "" {
+		t.Errorf("HydraCACertPath = %q, want %q", cfg.HydraCACertPath, "")
+	}
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
 	}
@@ -394,6 +417,11 @@ func TestConfig_Validate(t *testing.T) {
 			name:    "empty HydraPublicURL",
 			modify:  func(c *app.Config) { c.HydraPublicURL = "" },
 			wantErr: "SAML_PROVIDER_HYDRA_PUBLIC_URL must not be empty",
+		},
+		{
+			name:    "unsupported HydraPublicURL scheme",
+			modify:  func(c *app.Config) { c.HydraPublicURL = "ftp://hydra:4444" },
+			wantErr: "SAML_PROVIDER_HYDRA_PUBLIC_URL scheme must be http or https",
 		},
 		{
 			name:    "empty ClientID",

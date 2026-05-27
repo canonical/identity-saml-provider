@@ -105,6 +105,12 @@ be unnecessary in the service package.
 
 ### 1. Remove application-level CA certificate handling
 
+> **Note**: This decision is partially superseded by
+> [ADR 010](010-hydra-custom-ca-certificate.md), which
+> reintroduces application-level custom CA support using
+> an isolated certificate pool. `InsecureSkipVerify`
+> remains removed.
+
 Remove the `CACertPath` and `InsecureSkipTLSVerify`
 configuration fields and all associated TLS code from the
 `hydra` package. The application will rely on Go's default
