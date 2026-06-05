@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.6](https://github.com/canonical/identity-saml-provider/compare/v0.1.5...v0.1.6) (2026-06-05)
+
+
+### Bug Fixes
+
+* pin dependencies ([c4213a4](https://github.com/canonical/identity-saml-provider/commit/c4213a405ec7f62c8123ad7667f91e2062dbba54))
+
 ## [0.1.5](https://github.com/canonical/identity-saml-provider/compare/v0.1.4...v0.1.5) (2026-06-05)
 
 
