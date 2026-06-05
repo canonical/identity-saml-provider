@@ -12,13 +12,17 @@ on:
     branches:
       - "*"
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   pre-commit:
     if: ${{ github.event_name == 'pull_request' }}
     uses: ./.github/workflows/pre-commit.yaml
 
   build:
-    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@6b27807be4ec7c25045d52ef09ac780d684f65a2 # v1.10.0
+    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@v1.11.3
 
   unit-test:
     uses: ./.github/workflows/unittest.yaml
@@ -26,6 +30,6 @@ jobs:
   gh-publish:
     if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
     needs: [ build, unit-test ]
-    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@6b27807be4ec7c25045d52ef09ac780d684f65a2 # v1.10.0
+    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@v1.11.3
     with:
       rock: ${{ needs.build.outputs.rock }}
