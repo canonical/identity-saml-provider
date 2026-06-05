@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.1.5](https://github.com/canonical/identity-saml-provider/compare/v0.1.4...v0.1.5) (2026-06-05)
+
+
+### Bug Fixes
+
+* add healthiness and readiness endpoints ([e4cfd70](https://github.com/canonical/identity-saml-provider/commit/e4cfd703e48ac68cd93180fff01c3e132ee532ec))
+* align the error paths using the custom json helper ([fb5244e](https://github.com/canonical/identity-saml-provider/commit/fb5244ece4832a58ddaeaad84176b817e0e2a5b6))
+* application graceful shutdown ([cc6e783](https://github.com/canonical/identity-saml-provider/commit/cc6e78369be1f8f4a501b56c6b94c448dcaef435))
+* fix and improve the Makefiles ([3ef59d5](https://github.com/canonical/identity-saml-provider/commit/3ef59d55444fd962d7b50e3f34fd7ae3f5d3a01e))
+* fix the id token claims type ([b8a7f68](https://github.com/canonical/identity-saml-provider/commit/b8a7f68140877613e854237600248b1b7d7c8778))
+* fix the oauth2 csrf vulnerability and id token replay ([777a60e](https://github.com/canonical/identity-saml-provider/commit/777a60e356fa775a345512b412f2badb460010e2))
+* fix the permission issues for the copilot update workflow ([61198de](https://github.com/canonical/identity-saml-provider/commit/61198def294ce752409d181a9371cb5409f49883))
+* fix the pre-commit workflow ([4d6a610](https://github.com/canonical/identity-saml-provider/commit/4d6a61006d92667ac68169c2adfb277367870af8))
+* fix the pre-commit workflow ([#96](https://github.com/canonical/identity-saml-provider/issues/96)) ([63ef566](https://github.com/canonical/identity-saml-provider/commit/63ef566647977274a1b1f68855400893c1af4155))
+* fix the README.md ([c954fab](https://github.com/canonical/identity-saml-provider/commit/c954fab8d22a8df4813bd274081cc7af5eaea0c1))
+* improve application configurations ([dbf2de1](https://github.com/canonical/identity-saml-provider/commit/dbf2de1fee0efcad7853880d99d78f64ef0cf711))
+* introduce dev flag ([853a894](https://github.com/canonical/identity-saml-provider/commit/853a894b7a8d18fba160e01f4d28ebf8de6774de))
+* logging enhancement ([eec2773](https://github.com/canonical/identity-saml-provider/commit/eec277384d169e3468d3c85b375abffb85fb6b9b))
+* merge the service provider admin cli ([3701e8a](https://github.com/canonical/identity-saml-provider/commit/3701e8abb2288842bed7d8b9c67c4261297c404e))
+* metrics enhancement ([e1db759](https://github.com/canonical/identity-saml-provider/commit/e1db75908ec02c3f93797fd30842447fffb084b9))
+* redesign the hydra oidc client for TLS support ([b8fb27a](https://github.com/canonical/identity-saml-provider/commit/b8fb27a7a55c16754361c95e95696ee05bd0d364))
+* remove the redundant child span in the handler layer ([257149d](https://github.com/canonical/identity-saml-provider/commit/257149ddf09c881ca03ff141e695a80b9fe2c3f4))
+* remove the unnecessary utility functions in unit tests ([1e925c7](https://github.com/canonical/identity-saml-provider/commit/1e925c7c466aa4f6b23ad949f690384951553db5))
+* secure the session id generation ([8c6a530](https://github.com/canonical/identity-saml-provider/commit/8c6a530c545904fefbd4c0ba148fbf2fd75eb01e))
+* tracing enhancement ([9aba131](https://github.com/canonical/identity-saml-provider/commit/9aba1318865e52f4c9297700d6b353b9105d1900))
+
 ## [0.1.4](https://github.com/canonical/identity-saml-provider/compare/v0.1.3...v0.1.4) (2026-05-01)
 
 
