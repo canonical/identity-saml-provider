@@ -12,6 +12,10 @@ on:
     branches:
       - "*"
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   pre-commit:
     if: ${{ github.event_name == 'pull_request' }}
