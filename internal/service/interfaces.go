@@ -41,8 +41,8 @@ type MappingService interface {
 
 // OIDCService handles OIDC authentication flows with the identity provider.
 type OIDCService interface {
-	AuthCodeURL(state string) string
-	ExchangeCode(ctx context.Context, code string) (*OIDCClaims, error)
+	AuthCodeURL(state, nonce string) string
+	ExchangeCode(ctx context.Context, code, expectedNonce string) (*OIDCClaims, error)
 }
 
 // PendingRequestService manages in-flight SAML AuthnRequests awaiting
@@ -55,8 +55,8 @@ type PendingRequestService interface {
 // HydraClient abstracts the Hydra OIDC infrastructure for auth URL
 // generation and token exchange.
 type HydraClient interface {
-	AuthCodeURL(state string) string
-	ExchangeCode(ctx context.Context, code string) (*domain.IDToken, error)
+	AuthCodeURL(state, nonce string) string
+	ExchangeCode(ctx context.Context, code, expectedNonce string) (*domain.IDToken, error)
 }
 
 // OIDCClaims represents user claims extracted from an OIDC ID token.

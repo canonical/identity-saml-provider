@@ -21,6 +21,12 @@ type Config struct {
 	BridgeBasePort int    `envconfig:"SAML_PROVIDER_BRIDGE_BASE_PORT" default:"8082"`
 	BridgeBaseURL  string `envconfig:"SAML_PROVIDER_BRIDGE_BASE_URL"  default:"http://localhost:8082"`
 
+	// DevMode relaxes security settings for local development.
+	// When true: session cookies omit the Secure attribute, OIDC
+	// issuer URL validation is relaxed, and the logger uses
+	// human-readable output. Must not be enabled in production.
+	DevMode bool `envconfig:"SAML_PROVIDER_DEV_MODE" default:"false"`
+
 	// ServiceName is set programmatically (not from env).
 	ServiceName string `envconfig:"-"`
 
@@ -32,9 +38,10 @@ type Config struct {
 	OtelSamplerRatio float64 `envconfig:"SAML_PROVIDER_OTEL_SAMPLER_RATIO" default:"0.1"`
 
 	// Ory Hydra Configuration
-	HydraPublicURL string `envconfig:"SAML_PROVIDER_HYDRA_PUBLIC_URL" default:"http://localhost:4444"`
-	ClientID       string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_ID" default:"service-bridge-client"`
-	ClientSecret   string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_SECRET" default:"secret"`
+	HydraPublicURL  string `envconfig:"SAML_PROVIDER_HYDRA_PUBLIC_URL" default:"http://localhost:4444"`
+	HydraCACertPath string `envconfig:"SAML_PROVIDER_HYDRA_CA_CERT_PATH" default:""`
+	ClientID        string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_ID" default:"service-bridge-client"`
+	ClientSecret    string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_SECRET" default:"secret"`
 
 	// Database Configuration
 	DBHost     string `envconfig:"SAML_PROVIDER_DB_HOST" default:"localhost"`
@@ -95,8 +102,12 @@ func (c *Config) Validate() error {
 	if c.HydraPublicURL == "" {
 		return fmt.Errorf("SAML_PROVIDER_HYDRA_PUBLIC_URL must not be empty")
 	}
-	if _, err := url.ParseRequestURI(c.HydraPublicURL); err != nil {
+	hydraURL, err := url.ParseRequestURI(c.HydraPublicURL)
+	if err != nil {
 		return fmt.Errorf("invalid SAML_PROVIDER_HYDRA_PUBLIC_URL %q: %w", c.HydraPublicURL, err)
+	}
+	if hydraURL.Scheme != "http" && hydraURL.Scheme != "https" {
+		return fmt.Errorf("SAML_PROVIDER_HYDRA_PUBLIC_URL scheme must be http or https, got %q", hydraURL.Scheme)
 	}
 
 	if c.ClientID == "" {
@@ -124,6 +135,13 @@ func (c *Config) Validate() error {
 	}
 	if c.SAMLKeyPath == "" {
 		return fmt.Errorf("SAML_PROVIDER_KEY_PATH must not be empty")
+	}
+
+	if c.DevMode {
+		fmt.Println("WARNING: SAML_PROVIDER_DEV_MODE is enabled." +
+			" Secure cookie attribute is disabled and" +
+			" OIDC issuer validation is relaxed." +
+			" Do not use in production.")
 	}
 
 	return nil
@@ -155,7 +173,9 @@ func (c *Config) DatabaseDSN() string {
 // HydraConfig returns the subset of config needed by the Hydra OIDC client.
 func (c *Config) HydraConfig() hydra.Config {
 	return hydra.Config{
-		IssuerURL: c.HydraPublicURL,
+		IssuerURL:  c.HydraPublicURL,
+		DevMode:    c.DevMode,
+		CACertPath: c.HydraCACertPath,
 	}
 }
 

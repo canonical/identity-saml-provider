@@ -13,6 +13,11 @@ import (
 // HandlerConfig holds handler-layer configuration.
 type HandlerConfig struct {
 	BridgeBaseURL string
+
+	// DevMode controls cookie security attributes. When true, the
+	// Secure attribute is omitted from session cookies to allow
+	// HTTP-only local development.
+	DevMode bool
 }
 
 // Handlers groups all HTTP handler functions for the SAML-OIDC bridge.

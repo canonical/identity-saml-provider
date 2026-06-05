@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"path"
@@ -14,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/canonical/identity-saml-provider/internal/crypto"
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 )
@@ -40,8 +42,50 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Exchange authorization code for OIDC claims
-	claims, err := h.oidc.ExchangeCode(ctx, code)
+	// 2. Read oauth_nonce cookie
+	nonceCookie, err := r.Cookie("oauth_nonce")
+	if err != nil {
+		span.SetStatus(codes.Error, "missing oauth_nonce cookie")
+		WriteJSON(w, http.StatusForbidden, APIError{Status: http.StatusForbidden, Message: "missing oauth_nonce cookie"})
+		return
+	}
+
+	// 3. Clear cookie immediately
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_nonce",
+		Value:    "",
+		Path:     "/saml/callback",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   !h.config.DevMode,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	// 4. Decode cookie into state and nonce components
+	cookieState, cookieNonce, err := crypto.DecodeCookieValue(nonceCookie.Value)
+	if err != nil {
+		span.SetStatus(codes.Error, "malformed oauth_nonce cookie")
+		WriteJSON(w, http.StatusForbidden, APIError{Status: http.StatusForbidden, Message: "malformed oauth_nonce cookie"})
+		return
+	}
+
+	// 5. Parse state: "<stateValue>:<requestID>:<relayState>"
+	stateValue, requestID, relayState, err := parseState(state)
+	if err != nil {
+		span.SetStatus(codes.Error, "malformed state parameter")
+		WriteJSON(w, http.StatusForbidden, APIError{Status: http.StatusForbidden, Message: "malformed state parameter"})
+		return
+	}
+
+	// 6. Compare cookie state vs state parameter (constant-time)
+	if !crypto.NonceEqual(cookieState, stateValue) {
+		span.SetStatus(codes.Error, "state mismatch")
+		WriteJSON(w, http.StatusForbidden, APIError{Status: http.StatusForbidden, Message: "state validation failed"})
+		return
+	}
+
+	// 7. Exchange authorization code for OIDC claims (nonce verified inside)
+	claims, err := h.oidc.ExchangeCode(ctx, code, cookieNonce)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "oidc code exchange failed")
@@ -75,11 +119,9 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		Path:     "/",
 		MaxAge:   int(time.Until(session.ExpireTime).Seconds()),
 		HttpOnly: true,
+		Secure:   !h.config.DevMode,
 		SameSite: http.SameSiteLaxMode,
 	})
-
-	// 5. Parse state → request ID + optional RelayState
-	requestID, relayState := parseState(state)
 
 	if requestID != "" {
 		logger.Debugw("OIDC callback for SAML request", "requestID", requestID)
@@ -124,18 +166,23 @@ func (h *Handlers) HandleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
-// parseState splits the OAuth2 state parameter into request ID and relay state.
-// Format: "requestID" or "requestID:relayState".
-func parseState(state string) (requestID, relayState string) {
+// parseState splits the OAuth2 state parameter into state value, request ID, and relay state.
+// Format: "stateValue:requestID" or "stateValue:requestID:relayState".
+// Returns an error if the state is missing or has fewer than two parts.
+func parseState(state string) (stateValue, requestID, relayState string, err error) {
 	if state == "" {
-		return "", ""
+		return "", "", "", errors.New("empty state")
 	}
-	parts := strings.SplitN(state, ":", 2)
-	requestID = parts[0]
-	if len(parts) > 1 {
-		relayState = parts[1]
+	parts := strings.SplitN(state, ":", 3)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", "", errors.New("malformed state")
 	}
-	return requestID, relayState
+	stateValue = parts[0]
+	requestID = parts[1]
+	if len(parts) > 2 {
+		relayState = parts[2]
+	}
+	return stateValue, requestID, relayState, nil
 }
 
 // domainSessionToSAML converts a domain.Session to a *saml.Session.

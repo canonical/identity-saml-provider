@@ -6,6 +6,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
@@ -107,6 +108,31 @@ func TestSessionService_CreateFromOIDC(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "session ID is cryptographically random",
+			claims: &service.OIDCClaims{
+				Sub:   "user-sub-456",
+				Email: "random@example.com",
+			},
+			setupMock: func(repo *mocks.MockSessionRepository) {
+				repo.EXPECT().Save(gomock.Any(), gomock.Any()).Return(nil)
+			},
+			checkResult: func(t *testing.T, s *domain.Session) {
+				t.Helper()
+				// Must start with underscore (SAML xs:NCName compliance)
+				if !strings.HasPrefix(s.ID, "_") {
+					t.Errorf("ID %q should start with '_'", s.ID)
+				}
+				// base64url(32 bytes) = 43 chars + 1 prefix = 44
+				if len(s.ID) != 44 {
+					t.Errorf("ID length = %d, want 44", len(s.ID))
+				}
+				// ID and Index must match
+				if s.ID != s.Index {
+					t.Errorf("ID %q != Index %q", s.ID, s.Index)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -207,6 +233,35 @@ func TestSessionService_GetByID(t *testing.T) {
 				t.Errorf("result.ID = %q, want %q", result.ID, tt.id)
 			}
 		})
+	}
+}
+
+func TestSessionService_CreateFromOIDC_UniqueIDs(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockRepo := mocks.NewMockSessionRepository(ctrl)
+	mockRepo.EXPECT().Save(gomock.Any(), gomock.Any()).Return(nil).Times(2)
+
+	svc := service.NewSessionService(mockRepo, logging.NewNopLogger(), tracing.NewNoopTracer())
+
+	claims := &service.OIDCClaims{
+		Sub:   "user-sub",
+		Email: "test@example.com",
+	}
+
+	s1, err := svc.CreateFromOIDC(context.Background(), claims)
+	if err != nil {
+		t.Fatalf("first CreateFromOIDC: %v", err)
+	}
+
+	s2, err := svc.CreateFromOIDC(context.Background(), claims)
+	if err != nil {
+		t.Fatalf("second CreateFromOIDC: %v", err)
+	}
+
+	if s1.ID == s2.ID {
+		t.Errorf("expected unique IDs, both are %q", s1.ID)
 	}
 }
 

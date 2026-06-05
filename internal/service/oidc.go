@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.opentelemetry.io/otel/codes"
@@ -29,21 +30,29 @@ func NewOIDCService(hydra HydraClient, logger logging.Logger, tracer tracing.Tra
 	}
 }
 
-func (s *oidcService) AuthCodeURL(state string) string {
-	return s.hydra.AuthCodeURL(state)
+func (s *oidcService) AuthCodeURL(state, nonce string) string {
+	return s.hydra.AuthCodeURL(state, nonce)
 }
 
-func (s *oidcService) ExchangeCode(ctx context.Context, code string) (*OIDCClaims, error) {
+func (s *oidcService) ExchangeCode(ctx context.Context, code, expectedNonce string) (*OIDCClaims, error) {
 	ctx, span := s.tracer.Start(ctx, "service.oidc.exchange_code")
 	defer span.End()
 
 	logger := logging.FromContext(ctx, s.logger)
 
-	idToken, err := s.hydra.ExchangeCode(ctx, code)
+	idToken, err := s.hydra.ExchangeCode(ctx, code, expectedNonce)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		logger.Errorw("Token exchange failed", "error", err)
+
+		// Preserve ErrAuthentication (e.g. nonce mismatch) so the
+		// handler maps it to 403, not 502.
+		var authErr *domain.ErrAuthentication
+		if errors.As(err, &authErr) {
+			return nil, err
+		}
+
 		return nil, &domain.ErrUpstream{
 			Service: "hydra",
 			Err:     fmt.Errorf("token exchange: %w", err),
