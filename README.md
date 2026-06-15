@@ -281,14 +281,25 @@ mapping.
 ```json
 {
   "nameid_format": "persistent",
-  "saml_attributes": {
-    "subject": "uid",
-    "email": "mail",
-    "name": "cn",
-    "groups": "memberOf",
-    "username": "preferredUsername"
+  "saml_attribute_mappings": {
+    "subject": {
+      "name": "uid"
+    },
+    "email": {
+      "name": "urn:oid:0.9.2342.19200300.100.1.3",
+      "friendly_name": "mail"
+    },
+    "name": {
+      "name": "cn"
+    },
+    "groups": {
+      "name": "memberOf"
+    },
+    "username": {
+      "name": "preferredUsername"
+    }
   },
-  "oidc_claims": {
+  "oidc_claim_mappings": {
     "sub": "subject",
     "email": "email",
     "name": "name",
@@ -306,15 +317,17 @@ mapping.
 | Field | Description |
 | ----- | ----------- |
 | `nameid_format` | SAML NameID format. Accepted values: `persistent`, `transient`, `emailAddress`, `unspecified`, or a full URN. Defaults to `transient`. |
-| `oidc_claims` | Maps OIDC claim names (from the ID token) to internal field names. Any claim present in the OIDC ID token can be mapped. |
-| `saml_attributes` | Maps internal field names to SAML attribute names sent to the service provider. |
+| `oidc_claim_mappings` | Maps OIDC claim names (from the ID token) to internal field names. Any claim present in the OIDC ID token can be mapped. |
+| `saml_attribute_mappings` | Maps internal field names to SAML attribute definitions. Each value is an object with `name` (required), `friendly_name` (optional), and `name_format` (optional, defaults to `urn:oasis:names:tc:SAML:2.0:attrname-format:uri`). |
 | `options.lowercase_email` | When `true`, lowercases the email attribute value before mapping. |
 
 The mapping works in two stages:
 
-1. **OIDC → Internal**: `oidc_claims` maps token claim names to internal field names
-2. **Internal → SAML**: `saml_attributes` maps internal
-   field names to SAML attribute names
+1. **OIDC → Internal**: `oidc_claim_mappings` maps token claim names
+   to internal field names.
+2. **Internal → SAML**: `saml_attribute_mappings` maps internal
+   field names to SAML attribute definitions (Name, FriendlyName,
+   NameFormat).
 
 **Example usage:**
 

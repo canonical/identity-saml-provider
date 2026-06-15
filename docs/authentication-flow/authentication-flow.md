@@ -258,8 +258,8 @@ Each SP can optionally define:
 | Field | Type | Purpose |
 | ----- | ---- | ------- |
 | `nameid_format` | string | SAML NameID format: `persistent`, `transient`, `emailAddress`/`email`, `unspecified`, or a full URN |
-| `saml_attributes` | map[string]string | Maps internal field names → SAML attribute names (e.g., `{"subject": "uid", "email": "mail"}`) |
-| `oidc_claims` | map[string]string | Maps OIDC claim names → internal field names (e.g., `{"sub": "subject", "email": "email"}`) |
+| `saml_attribute_mappings` | map[string]SAMLAttributeDef | Maps internal field names → SAML attribute definitions. Each value carries `name` (required), `friendly_name` (optional), and `name_format` (optional, defaults to `urn:oasis:names:tc:SAML:2.0:attrname-format:uri`). Example: `{"email": {"name": "urn:oid:0.9.2342.19200300.100.1.3", "friendly_name": "mail"}}` |
+| `oidc_claim_mappings` | map[string]string | Maps OIDC claim names → internal field names. Example: `{"sub": "subject", "email": "email"}` |
 | `options.lowercase_email` | bool | Lowercase the email value before mapping |
 
 ### Mapping Flow
