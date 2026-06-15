@@ -22,7 +22,7 @@ jobs:
     uses: ./.github/workflows/pre-commit.yaml
 
   build:
-    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@356ff61bd885e4147cc22c6eea64e4d806c889da # v1.11.3
+    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@5830f3e6723de07cb5b7ccb6c84031d8b2964c62 # v1.11.4
 
   unit-test:
     uses: ./.github/workflows/unittest.yaml
@@ -30,6 +30,6 @@ jobs:
   gh-publish:
     if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
     needs: [ build, unit-test ]
-    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@356ff61bd885e4147cc22c6eea64e4d806c889da # v1.11.3
+    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@5830f3e6723de07cb5b7ccb6c84031d8b2964c62 # v1.11.4
     with:
       rock: ${{ needs.build.outputs.rock }}
