@@ -50,6 +50,7 @@ return fmt.Errorf("Cannot connect plugs.") // Starts with capital, has punctuati
 return fmt.Errorf("Error") // Not descriptive enough
 ```
 
+
 ---
 
 **Error specificity**
@@ -77,6 +78,7 @@ if _, err := os.Stat(path); err != nil {
 ```
 
 **Rationale**: Specific errors enable proper error handling and debugging. Avoid generic "internal error" wrappers unless implementation details must be hidden.
+
 
 ---
 
@@ -118,6 +120,7 @@ if err := cmd.Execute(); err != nil {
 
 **Rationale**: Consistent error handling improves code readability and maintainability.
 
+
 ---
 
 **Explicit error checking**
@@ -143,6 +146,7 @@ file.Close() // Unchecked error
 ```
 
 **Rationale**: The errcheck linter is enabled for new code to catch unhandled errors. Note that errcheck ignores certain common cases like `file.Close()` and a few others. Explicit `_` assignment shows intentional discard for other cases.
+
 
 ---
 
@@ -185,6 +189,7 @@ func maybeSdkInstallation(key string, device map[string]string) (*environment.Sd
 
 **Rationale**: The "maybe" prefix is an established pattern in the codebase indicating conditional behavior, optional operations, or operations that may not apply in all cases.
 
+
 ---
 
 **Descriptive variable names**
@@ -213,6 +218,7 @@ criteria := []string{...}    // Too generic; criteria for what?
 
 **Rationale**: Improves code clarity and communicates intent. Use names that describe what the variable represents, not what it enables.
 
+
 ---
 
 **Test constant naming**
@@ -239,6 +245,7 @@ const (
 ```
 
 **Rationale**: Improves test readability and maintainability. In tests, variable names can be more relaxed, but global, reusable test constants should still be descriptive.
+
 
 ---
 
@@ -280,6 +287,7 @@ if err := validatePath(target); err != nil {
 
 **Rationale**: Improves code clarity by maintaining logical grouping of operations. Related code stays together.
 
+
 ---
 
 **Extract common logic into reusable functions**
@@ -314,6 +322,7 @@ cmd := &cobra.Command{
 
 **Rationale**: Reduces duplication, avoids adding long inline functions into Cobra Command structure initialization, improves maintainability.
 
+
 ---
 
 **Prefer existing attributes over re-iterating**
@@ -345,6 +354,7 @@ for _, plug := range plugs {
 ```
 
 **Rationale**: Improves readability and reduces unnecessary iterations when data is already present in objects.
+
 
 ---
 
@@ -421,6 +431,7 @@ func validateName(name string) error { ... }
 
 **Rationale**: Proper comment formatting improves readability and maintains professional documentation standards.
 
+
 ---
 
 **Godoc conventions**
@@ -448,6 +459,7 @@ func Launch(cfg *Config) (*Environment, error) { ... }
 ```
 
 **Rationale**: Following Godoc conventions ensures documentation is generated correctly and consistently.
+
 
 ---
 
@@ -502,6 +514,7 @@ default:
 }
 ```
 
+
 ---
 
 **Avoid generics when concrete types are consistent**
@@ -528,6 +541,7 @@ func filterByStatus[T any](items []T, status string) []T {
 
 **Rationale**: Simplifies code when type variation doesn't exist in practice.
 
+
 ---
 
 ## Testing patterns
@@ -546,7 +560,7 @@ func (s *connectSuite) TestConnect(c *check.C) {
             Plugs: []Plug{{Name: "test"}},
         })
     })
-
+    
     err := cmdConnect.Run(cmdConnect.Command(), []string{"test"})
     c.Assert(err, check.IsNil)
 }
@@ -566,6 +580,7 @@ func (c *CmdConnect) SetClient(cli Client) {
 ```
 
 **Rationale**: Keeps interface definitions in appropriate packages (client library) and maintains architectural boundaries. Command packages should focus on CLI logic, not define their own client interfaces.
+
 
 ---
 
@@ -597,6 +612,7 @@ testEnvironment := Environment{
 
 **Rationale**: Real data catches edge cases and integration issues that simplified fakes miss.
 
+
 ---
 
 **Minimize duplication in test setup**
@@ -625,6 +641,7 @@ const sharedStatus = "Ready" // Used for both success and error cases
 
 **Rationale**: Balance between DRY and test clarity. Some duplication is acceptable in tests to keep them self-contained and understandable.
 
+
 ---
 
 ## Architecture and separation of concerns
@@ -647,7 +664,7 @@ func (c *CmdChanges) Run(cmd *cobra.Command, args []string) error {
     if err != nil {
         return err
     }
-
+    
     // Sort for presentation
     slices.SortFunc(changes, func(a, b Change) int {
         return cmp.Compare(b.ID, a.ID)
@@ -670,6 +687,7 @@ func (c *Client) Changes() ([]Change, error) {
 
 **Rationale**: Separates data access from presentation concerns, making the client library reusable for different presentation needs.
 
+
 ---
 
 **CLI command patterns**
@@ -685,24 +703,24 @@ import "github.com/org/project/internal/revert"
 func setupEnvironment(name string) error {
     r := revert.New()
     defer r.Fail()
-
+    
     // Create container
     if err := createContainer(name); err != nil {
         return err
     }
     r.Add(func() { removeContainer(name) })
-
+    
     // Install components
     if err := installcomponents(name); err != nil {
         return err // Automatically reverts container creation
     }
     r.Add(func() { uninstallcomponents(name) })
-
+    
     // Start environment
     if err := startEnvironment(name); err != nil {
         return err // Automatically reverts everything
     }
-
+    
     r.Success() // Mark as successful, skip revert
     return nil
 }
@@ -718,15 +736,15 @@ func setupMount(path string) (err error) {
             unmount(path)
         }
     }()
-
+    
     if err := mount(path); err != nil {
         return err
     }
-
+    
     if err := configure(path); err != nil {
         return err // defer will unmount
     }
-
+    
     return nil
 }
 ```
@@ -758,7 +776,7 @@ func (c *CmdList) Run(cmd *cobra.Command, args []string) error {
     if err != nil {
         return err
     }
-
+    
     w := tabWriter()
     fmt.Fprintf(w, "Name\tStatus\tBase\n")
     for _, ws := range environments {
@@ -769,6 +787,7 @@ func (c *CmdList) Run(cmd *cobra.Command, args []string) error {
 ```
 
 **Rationale**: Transactional commands prevent partial failures from leaving the system in an inconsistent state. Consistent formatting and output improves user experience.
+
 
 ---
 
@@ -808,6 +827,7 @@ for _, environment := range environments {
 
 **Rationale**: Makes the "accept all" intent explicit and improves readability.
 
+
 ---
 
 ## Code quality principles
@@ -843,6 +863,7 @@ func process() error {
 
 **Rationale**: Improves code structure and makes it easier to understand different logical sections.
 
+
 ---
 
 **Avoid nested conditions**
@@ -856,15 +877,15 @@ func validate(environment *Environment) error {
     if environment == nil {
         return fmt.Errorf("environment is nil")
     }
-
+    
     if environment.Name == "" {
         return fmt.Errorf("name required")
     }
-
+    
     if !isValidBase(environment.Base) {
         return fmt.Errorf("invalid base")
     }
-
+    
     return nil
 }
 ```
@@ -891,6 +912,7 @@ func validate(environment *Environment) error {
 
 **Rationale**: Reduces cognitive load, improves readability, and makes the happy path clearer. Use early returns or guard clauses to keep code flat and readable.
 
+
 ---
 
 **Delete dead code and redundant comments**
@@ -905,7 +927,7 @@ func process() error {
     if input == "" {
         return nil
     }
-
+    
     return transform(input)
 }
 ```
@@ -917,7 +939,7 @@ func process() error {
     // TODO: implement this later
     // Legacy code from old implementation
     // input := getOldInput()
-
+    
     // Get input
     input := getInput()
     // Check if empty
@@ -925,13 +947,14 @@ func process() error {
         // Return nil
         return nil
     }
-
+    
     // Transform the input
     return transform(input)
 }
 ```
 
 **Rationale**: Keeps codebase clean and maintainable. Redundant comments add noise without value.
+
 
 ---
 
@@ -976,6 +999,7 @@ if validatecomponents(sdks) != nil {
 
 **Rationale**: Consistency improves maintainability and reduces cognitive load when reading code. When the same operation appears in multiple places, it should be handled identically.
 
+
 ---
 
 ## Project-specific patterns
@@ -989,13 +1013,13 @@ if validatecomponents(sdks) != nil {
 ```go
 func newCmdConnect() *cobra.Command {
     c := &CmdConnect{}
-
+    
     cmd := &cobra.Command{
         Use:               "connect",
         RunE:              c.Run,
         ValidArgsFunction: c.complete,
     }
-
+    
     return cmd
 }
 
@@ -1021,12 +1045,13 @@ func newCmdConnect() *cobra.Command {
             // 30 lines of inline completion logic
         },
     }
-
+    
     return cmd
 }
 ```
 
 **Rationale**: Keeps command initialization clean and functions testable.
+
 
 ---
 
@@ -1042,11 +1067,11 @@ func newCmdConnect() *cobra.Command {
 func (s *IntegrationSuite) TestLaunchEnvironment(c *check.C) {
     // Use c.Mkdir for automatic cleanup
     tmpDir := c.Mkdir()
-
+    
     // Test the behavior
     err := s.cli.Launch("dev")
     c.Assert(err, check.IsNil)
-
+    
     // Verify observable outcome
     environments, err := s.cli.List()
     c.Assert(err, check.IsNil)
@@ -1074,6 +1099,7 @@ func (s *IntegrationSuite) TestLaunchEnvironment(c *check.C) {
 
 **Rationale**: Tests focused on behavior are more maintainable and less brittle when implementation changes.
 
+
 ---
 
 **Unit test patterns**
@@ -1093,7 +1119,7 @@ func (s *ValidatorSuite) TestValidateName(c *check.C) {
         {"empty name", "", "name cannot be empty"},
         {"invalid chars", "dev@environment", "invalid character"},
     }
-
+    
     for _, tt := range tests {
         c.Logf("Testing: %s", tt.name)
         err := validateName(tt.input)
@@ -1107,13 +1133,13 @@ func (s *ValidatorSuite) TestValidateName(c *check.C) {
 ```
 
 **Best practices**:
-
 - Use gocheck for unit tests
 - Parameterize tests to cover edge cases (different URL formats, empty inputs, boundary conditions)
 - Avoid unnecessary mocks; prefer real lightweight implementations or fakes where feasible
 - Use real test data that matches actual API responses
 
 **Rationale**: Parameterized tests improve coverage, real data catches edge cases, and minimal mocking keeps tests maintainable.
+
 
 ---
 
@@ -1157,6 +1183,7 @@ func ValidateState(s *EnvironmentState) error { ... }
 
 **Rationale**: Reduces API surface area, makes refactoring easier, and prevents unintended coupling between packages.
 
+
 ---
 
 **State management**
@@ -1197,7 +1224,7 @@ func getStore(st *state.State) (*Store, error) {
     if cached != nil {
         return cached.(*Store), nil
     }
-
+    
     store := newStore()
     st.Cache(cachedStoreKey{}, store)
     return store, nil
@@ -1215,13 +1242,13 @@ func saveState(path string, data interface{}) error {
 ```
 
 **Important considerations**:
-
 - `Get()`/`Set()` persist across restarts, serialized to JSON
 - `Cache()` is for session-only data, cleared on restart
 - Maps retrieved from state are references; modifications affect the original
 - Always lock state before Get/Set/Cache operations
 
 **Rationale**: State management APIs provide proper locking, change tracking, and persistence. Using them correctly avoids race conditions and ensures data consistency.
+
 
 ---
 
@@ -1241,7 +1268,7 @@ func generateSetupScript(userInput string) (string, error) {
     if err := validateScriptInput(userInput); err != nil {
         return "", err
     }
-
+    
     // Use proper escaping for mount paths
     escaped := osutil.Escape(userInput)
     script := fmt.Sprintf("#!/bin/bash\nmount %s\n", escaped)
@@ -1258,7 +1285,6 @@ func validateScriptInput(input string) error {
 ```
 
 **Available escaping utilities**:
-
 - `osutil.Escape()` - Escapes paths for mount entries
 - `osutil.Unescape()` - Unescapes mount entry paths
 - Input validation before any script generation
@@ -1273,6 +1299,7 @@ func generateSetupScript(userInput string) string {
 ```
 
 **Rationale**: Prevents script injection attacks when generating executable content from user input. Always validate and escape.
+
 
 ---
 
@@ -1325,6 +1352,7 @@ if err := os.WriteFile(path, data, 420); err != nil { // Decimal for 0644
 
 **Rationale**: Explicit permissions ensure proper security boundaries and make intent clear.
 
+
 ---
 
 ## Common pitfalls and edge cases
@@ -1360,6 +1388,7 @@ func addEnvironment(r *Registry, w *Environment) {
 ```
 
 **Rationale**: Prevents runtime panics from nil map writes.
+
 
 ---
 
@@ -1411,7 +1440,7 @@ func processFile(filename string) error {
         return err
     }
     defer f.Close() // Executes when processFile returns
-
+    
     // Process file...
     return nil
 }
@@ -1428,7 +1457,7 @@ func processFiles(files []string) error {
         }
         defer f.Close() // Won't execute until processFiles returns!
                         // May accumulate many open files
-
+        
         // Process file...
     }
     return nil
@@ -1436,6 +1465,7 @@ func processFiles(files []string) error {
 ```
 
 **Rationale**: Defers in loops can cause resource leaks. Extract loop body into a function for proper cleanup.
+
 
 ---
 
