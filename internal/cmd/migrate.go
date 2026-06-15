@@ -55,7 +55,7 @@ func openMigrateDB(cmd *cobra.Command) (*sql.DB, error) {
 	}
 
 	if err := db.PingContext(cmd.Context()); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
@@ -78,7 +78,7 @@ var migrateUpCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		provider, err := newGooseProvider(db, formatter)
 		if err != nil {
@@ -111,7 +111,7 @@ var migrateDownCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		provider, err := newGooseProvider(db, formatter)
 		if err != nil {
@@ -157,7 +157,7 @@ var migrateStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		provider, err := newGooseProvider(db, formatter)
 		if err != nil {
@@ -189,7 +189,7 @@ var migrateCheckCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer db.Close()
+		defer func() { _ = db.Close() }()
 
 		provider, err := newGooseProvider(db, formatter)
 		if err != nil {

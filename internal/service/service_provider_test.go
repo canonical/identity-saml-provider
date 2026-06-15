@@ -45,9 +45,9 @@ func TestServiceProviderService_Register(t *testing.T) {
 				ACSBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
 				AttributeMapping: &domain.AttributeMapping{
 					NameIDFormat: "persistent",
-					SAMLAttributes: map[string]string{
-						"subject": "uid",
-						"email":   "mail",
+					SAMLAttributeMappings: map[string]domain.SAMLAttributeDef{
+						"subject": {Name: "uid"},
+						"email":   {Name: "mail"},
 					},
 				},
 			},
