@@ -3,3 +3,6 @@ CHANGELOG.md
 .github/instructions/instructions.instructions.md
 .github/agents/go-reviewer.agent.md
 .github/agents/go-style-guide.md
+.github/prompts/opsx*.md
+.github/skills/openspec*/
+openspec/
