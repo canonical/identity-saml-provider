@@ -1,0 +1,33 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Go (1.25), PostgreSQL, Docker, Kubernetes, OpenTelemetry, Prometheus, Zap
+  SAML library: github.com/crewjam/saml
+  CLI framework: github.com/spf13/cobra
+  We follow the Go coding style and best practices as outlined in Effective Go and the style guide in .github/go-style-guide.md
+
+  Product language:
+  - Write OpenSpec proposals and specs in user-facing product behavior language
+  - Requirements should describe the experience, observable behavior, and product contract
+  - Put internal mechanisms in design.md or tasks.md unless the mechanism is itself part of the user-facing contract
+  - Avoid technical jargon in proposals and specs when possible
+
+rules:
+  proposal:
+    - Include a "Non-goals" section to clarify what is out of scope for the proposal
+    - Include a "Success Metrics" section defining how we will measure the impact of this feature
+  specs:
+    - Include a "Purpose" section for each spec to explain the rationale behind the spec
+    - Cover happy path, validation errors, and edge cases in the spec
+    - Explicitly state any breaking changes or backward compatibility requirements
+  design:
+    - All design decisions should be justified with trade-offs and alternatives considered
+    - Include database schema modifications (e.g., tables, indexes, migrations) explicitly when applicable
+    - Include diagrams (Mermaid) or visual aids when describing complex designs
+    - Include security, performance, observability, scalability, migration considerations as applicable to the design
+  tasks:
+    - Every task must be independently completable (no implicit ordering within a group)
+    - Explicitly list unit, integration, or e2e testing requirements for each task
+    - Include a verification suite section
+    - Include a documentation & rollout section covering any necessary documentation updates and rollout steps
+    - Record deviations from the plan in an "Implementation Notes" section at the end

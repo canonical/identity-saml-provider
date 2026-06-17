@@ -47,3 +47,7 @@ dist/
 
 *.rock
 k8s/secrets
+
+# OpenSpec
+.github/prompts/opsx*.md
+.github/skills/openspec*/

@@ -29,9 +29,9 @@ type ServiceProviderService interface {
 	GetByEntityID(ctx context.Context, entityID string) (*domain.ServiceProvider, error)
 }
 
-// MappingService handles per-SP attribute mapping logic.
-// This encapsulates the current applyAttributeMapping / buildInternalModel
-// functions from provider/mapping.go into a testable service.
+// MappingService applies per-SP attribute mapping to a session,
+// translating OIDC claims into the SAML NameID and assertion
+// attributes the configured service provider expects.
 type MappingService interface {
 	// ApplyMapping applies per-SP attribute mapping to a session.
 	// If the SP has no mapping configured, the session is returned unmodified.

@@ -41,19 +41,17 @@ func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Sessi
 
 	logger.Debugw("Applying per-SP attribute mapping", "entityID", entityID)
 
-	// Build internal user model from session fields and raw OIDC claims
-	internalModel := buildInternalModel(session, mapping.OIDCClaims, session.RawOIDCClaims)
+	// Build the typed internal user model from session fields and raw OIDC claims.
+	attrs := BuildUserAttributes(session, mapping.OIDCClaimMappings, session.RawOIDCClaims)
 
-	// Apply transforms
+	// Apply transforms.
 	if mapping.Options.LowercaseEmail {
-		if v, ok := internalModel["email"]; ok {
-			internalModel["email"] = strings.ToLower(v)
-		}
+		attrs.Email = strings.ToLower(attrs.Email)
 	}
 
-	// Create a mapped copy of the session
+	// Create a mapped copy of the session.
 	mapped := *session
-	// Deep copy slice fields to avoid shared references
+	// Deep copy slice fields to avoid shared references.
 	if len(session.Groups) > 0 {
 		mapped.Groups = make([]string, len(session.Groups))
 		copy(mapped.Groups, session.Groups)
@@ -63,15 +61,15 @@ func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Sessi
 		copy(mapped.CustomAttributes, session.CustomAttributes)
 	}
 
-	// Set NameID based on format
+	// Set NameID based on the configured format.
 	if mapping.NameIDFormat != "" {
 		mapped.NameIDFormat = nameIDFormatToURN(mapping.NameIDFormat)
-		mapped.NameID = getNameIDValue(internalModel, mapping.NameIDFormat)
+		mapped.NameID = getNameIDValue(attrs, mapping.NameIDFormat)
 	}
 
-	// If SAML attributes are configured, use custom attributes instead of built-in fields
-	if len(mapping.SAMLAttributes) > 0 {
-		// Clear built-in fields to prevent default attribute generation by the library
+	// When SAML attribute mappings are configured, suppress the SAML
+	// library's default attribute emission and append the custom ones.
+	if len(mapping.SAMLAttributeMappings) > 0 {
 		mapped.UserEmail = ""
 		mapped.UserCommonName = ""
 		mapped.UserName = ""
@@ -80,48 +78,7 @@ func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Sessi
 		mapped.UserScopedAffiliation = ""
 		mapped.Groups = nil
 
-		// Build custom SAML attributes from the mapping
-		var customAttrs []domain.Attribute
-		for internalField, samlAttrName := range mapping.SAMLAttributes {
-			value, ok := internalModel[internalField]
-			if !ok || value == "" {
-				continue
-			}
-
-			// Check if this is a multi-valued field (stored as null-separated)
-			if strings.Contains(value, "\x00") {
-				values := strings.Split(value, "\x00")
-				var attrValues []domain.AttributeValue
-				for _, g := range values {
-					if g != "" {
-						attrValues = append(attrValues, domain.AttributeValue{
-							Type:  "xs:string",
-							Value: g,
-						})
-					}
-				}
-				if len(attrValues) > 0 {
-					customAttrs = append(customAttrs, domain.Attribute{
-						FriendlyName: samlAttrName,
-						Name:         samlAttrName,
-						NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
-						Values:       attrValues,
-					})
-				}
-				continue
-			}
-
-			customAttrs = append(customAttrs, domain.Attribute{
-				FriendlyName: samlAttrName,
-				Name:         samlAttrName,
-				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
-				Values: []domain.AttributeValue{
-					{Type: "xs:string", Value: value},
-				},
-			})
-		}
-
-		// Preserve any existing custom attributes and append the mapped ones
+		customAttrs := buildSAMLAttributes(attrs, mapping.SAMLAttributeMappings, logger, entityID)
 		mapped.CustomAttributes = append(mapped.CustomAttributes, customAttrs...)
 	}
 
@@ -147,94 +104,194 @@ func nameIDFormatToURN(format string) string {
 	}
 }
 
-// buildInternalModel constructs a map of internal field names to values
-// from the session and raw OIDC claims, using the OIDC claims mapping if provided.
-func buildInternalModel(session *domain.Session, oidcClaims map[string]string, rawClaims map[string]interface{}) map[string]string {
-	// Default OIDC-to-internal mapping
+// BuildUserAttributes constructs a typed UserAttributes value from the
+// session fields and raw OIDC claims using the SP's OIDCClaimMappings.
+// When oidcClaimMappings is empty, the default mapping
+// {"sub":"subject","email":"email","name":"name","groups":"groups"} is
+// applied. Single-valued claims populate the matching well-known field
+// (Subject, Email, Name) or the Custom map when the internal field is
+// not well-known. The "groups" internal field is populated as []string
+// from a multi-valued OIDC claim. Claims missing from the raw OIDC
+// token fall back to the equivalent session field when one exists.
+func BuildUserAttributes(session *domain.Session, oidcClaimMappings map[string]string, rawClaims map[string]interface{}) *domain.UserAttributes {
+	// Default OIDC-to-internal mapping.
 	oidcToInternal := map[string]string{
 		"sub":    "subject",
 		"email":  "email",
 		"name":   "name",
 		"groups": "groups",
 	}
-
-	// Override with custom mapping if provided
-	if len(oidcClaims) > 0 {
-		oidcToInternal = oidcClaims
+	if len(oidcClaimMappings) > 0 {
+		oidcToInternal = oidcClaimMappings
 	}
 
-	// Build OIDC values from session fields, falling back where available.
-	oidcValues := map[string]string{
-		"sub":   session.UserName,
-		"email": session.UserEmail,
-		"name":  session.UserCommonName,
-	}
+	attrs := &domain.UserAttributes{Custom: make(map[string]string)}
 
-	// Groups are multi-valued, encode as null-separated string
-	if len(session.Groups) > 0 {
-		oidcValues["groups"] = strings.Join(session.Groups, "\x00")
-	}
+	for oidcClaim, internalField := range oidcToInternal {
+		if internalField == "groups" {
+			attrs.Groups = extractGroups(rawClaims, oidcClaim, session)
+			continue
+		}
 
-	// If raw claims are available, overlay with values from the OIDC token.
-	if len(rawClaims) > 0 {
-		for oidcClaim := range oidcToInternal {
-			if rawVal, ok := rawClaims[oidcClaim]; ok {
-				switch v := rawVal.(type) {
-				case string:
-					oidcValues[oidcClaim] = v
-				case []interface{}:
-					// Multi-valued claim (e.g., groups)
-					var parts []string
-					for _, item := range v {
-						if s, ok := item.(string); ok {
-							parts = append(parts, s)
-						}
-					}
-					if len(parts) > 0 {
-						oidcValues[oidcClaim] = strings.Join(parts, "\x00")
-					}
-				}
+		value := extractStringClaim(rawClaims, oidcClaim)
+		if value == "" {
+			value = sessionFieldFallback(session, internalField)
+		}
+
+		switch internalField {
+		case "subject":
+			attrs.Subject = value
+		case "email":
+			attrs.Email = value
+		case "name":
+			attrs.Name = value
+		default:
+			if value != "" {
+				attrs.Custom[internalField] = value
 			}
 		}
 	}
 
-	// Build internal model
-	model := make(map[string]string)
-	for oidcClaim, internalField := range oidcToInternal {
-		if value, ok := oidcValues[oidcClaim]; ok {
-			model[internalField] = value
-		}
-	}
-
-	return model
+	return attrs
 }
 
-// getNameIDValue returns the NameID value based on the configured format
-// and the internal user model.
-func getNameIDValue(model map[string]string, format string) string {
+// extractStringClaim returns the string value of the given OIDC claim
+// from rawClaims, or empty string if the claim is absent or not a
+// string.
+func extractStringClaim(rawClaims map[string]interface{}, claim string) string {
+	if rawClaims == nil {
+		return ""
+	}
+	if v, ok := rawClaims[claim]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// extractGroups returns the value of a multi-valued OIDC claim (a JSON
+// array of strings) as a []string. Falls back to session.Groups when
+// the claim is absent in rawClaims.
+func extractGroups(rawClaims map[string]interface{}, claim string, session *domain.Session) []string {
+	if rawClaims != nil {
+		if v, ok := rawClaims[claim]; ok {
+			if arr, ok := v.([]interface{}); ok {
+				result := make([]string, 0, len(arr))
+				for _, item := range arr {
+					if s, ok := item.(string); ok {
+						result = append(result, s)
+					}
+				}
+				if len(result) > 0 {
+					return result
+				}
+			}
+		}
+	}
+	if session != nil && len(session.Groups) > 0 {
+		out := make([]string, len(session.Groups))
+		copy(out, session.Groups)
+		return out
+	}
+	return nil
+}
+
+// sessionFieldFallback returns the canonical session field value for a
+// well-known internal field, used when the configured OIDC claim is
+// absent from the raw token. Custom (non-well-known) internal fields
+// have no session-level equivalent and return the empty string.
+func sessionFieldFallback(session *domain.Session, internalField string) string {
+	if session == nil {
+		return ""
+	}
+	switch internalField {
+	case "subject":
+		return session.UserName
+	case "email":
+		return session.UserEmail
+	case "name":
+		return session.UserCommonName
+	}
+	return ""
+}
+
+// buildSAMLAttributes converts UserAttributes into SAML Attribute
+// values per the SP's SAMLAttributeMappings. Empty source values cause
+// the corresponding attribute to be omitted from the assertion, with a
+// DEBUG log capturing the omission.
+func buildSAMLAttributes(attrs *domain.UserAttributes, samlMappings map[string]domain.SAMLAttributeDef, logger logging.Logger, entityID string) []domain.Attribute {
+	if len(samlMappings) == 0 {
+		return nil
+	}
+
+	result := make([]domain.Attribute, 0, len(samlMappings))
+
+	for internalField, def := range samlMappings {
+		if internalField == "groups" {
+			if len(attrs.Groups) == 0 {
+				logger.Debugw("Mapped SAML attribute omitted: no groups available",
+					"entityID", entityID,
+					"internalField", internalField,
+					"samlAttrName", def.Name,
+				)
+				continue
+			}
+			values := make([]domain.AttributeValue, 0, len(attrs.Groups))
+			for _, g := range attrs.Groups {
+				values = append(values, domain.AttributeValue{Type: "xs:string", Value: g})
+			}
+			result = append(result, domain.Attribute{
+				Name:         def.Name,
+				FriendlyName: def.FriendlyName,
+				NameFormat:   def.EffectiveNameFormat(),
+				Values:       values,
+			})
+			continue
+		}
+
+		value := attrs.GetField(internalField)
+		if value == "" {
+			logger.Debugw("Mapped SAML attribute omitted: claim value empty",
+				"entityID", entityID,
+				"internalField", internalField,
+				"samlAttrName", def.Name,
+			)
+			continue
+		}
+
+		result = append(result, domain.Attribute{
+			Name:         def.Name,
+			FriendlyName: def.FriendlyName,
+			NameFormat:   def.EffectiveNameFormat(),
+			Values:       []domain.AttributeValue{{Type: "xs:string", Value: value}},
+		})
+	}
+
+	logger.Debugw("Built SAML attributes",
+		"entityID", entityID,
+		"mappedCount", len(result),
+		"totalConfigured", len(samlMappings),
+	)
+
+	return result
+}
+
+// getNameIDValue returns the NameID value based on the configured
+// format and the typed user model.
+func getNameIDValue(attrs *domain.UserAttributes, format string) string {
 	switch strings.ToLower(format) {
 	case "persistent":
-		if v, ok := model["subject"]; ok && v != "" {
-			return v
+		if attrs.Subject != "" {
+			return attrs.Subject
 		}
-		// Fall back to email for persistent if no subject
-		if v, ok := model["email"]; ok && v != "" {
-			return v
-		}
-		return ""
+		return attrs.Email
 	case "emailaddress", "email":
-		if v, ok := model["email"]; ok && v != "" {
-			return v
-		}
-		return ""
+		return attrs.Email
 	default:
-		// For transient/unspecified/unknown formats, use email then subject
-		if v, ok := model["email"]; ok && v != "" {
-			return v
+		if attrs.Email != "" {
+			return attrs.Email
 		}
-		if v, ok := model["subject"]; ok && v != "" {
-			return v
-		}
-		return ""
+		return attrs.Subject
 	}
 }

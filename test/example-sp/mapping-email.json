@@ -1,14 +1,14 @@
 {
   "nameid_format": "emailAddress",
-  "oidc_claims": {
+  "oidc_claim_mappings": {
     "sub": "subject",
     "email": "email",
     "name": "name"
   },
-  "saml_attributes": {
-    "subject": "uid",
-    "email": "mail",
-    "name": "displayName"
+  "saml_attribute_mappings": {
+    "subject": { "name": "uid" },
+    "email": { "name": "mail", "friendly_name": "mail" },
+    "name": { "name": "displayName", "friendly_name": "displayName" }
   },
   "options": {
     "lowercase_email": true
