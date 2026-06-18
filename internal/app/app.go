@@ -86,6 +86,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	// --- Repositories ---
 	sessionRepo := postgres.NewSessionRepo(pool, tracer)
 	spRepo := postgres.NewServiceProviderRepo(pool, tracer)
+	persistentIDRepo := postgres.NewPersistentNameIDRepo(pool, tracer)
 	pendingRepo := memory.NewPendingRequestRepo(tracer)
 
 	// --- Infrastructure ---
@@ -104,7 +105,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	// --- Services ---
 	sessionSvc := service.NewSessionService(sessionRepo, logger, tracer)
 	spSvc := service.NewServiceProviderService(spRepo, logger, tracer)
-	mappingSvc := service.NewMappingService(spRepo, logger, tracer)
+	mappingSvc := service.NewMappingService(spRepo, persistentIDRepo, logger, tracer)
 	oidcSvc := service.NewOIDCService(hydraClient, logger, tracer)
 	pendingSvc := service.NewPendingRequestService(pendingRepo, logger, tracer)
 

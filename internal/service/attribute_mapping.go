@@ -7,6 +7,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/repository"
@@ -14,14 +16,25 @@ import (
 )
 
 type mappingService struct {
-	spRepo repository.ServiceProviderRepository
-	logger logging.Logger
-	tracer tracing.TracingInterface
+	spRepo        repository.ServiceProviderRepository
+	persistentIDs repository.PersistentNameIDRepository
+	logger        logging.Logger
+	tracer        tracing.TracingInterface
 }
 
 // NewMappingService creates a new MappingService.
-func NewMappingService(spRepo repository.ServiceProviderRepository, logger logging.Logger, tracer tracing.TracingInterface) MappingService {
-	return &mappingService{spRepo: spRepo, logger: logger, tracer: tracer}
+func NewMappingService(
+	spRepo repository.ServiceProviderRepository,
+	persistentIDs repository.PersistentNameIDRepository,
+	logger logging.Logger,
+	tracer tracing.TracingInterface,
+) MappingService {
+	return &mappingService{
+		spRepo:        spRepo,
+		persistentIDs: persistentIDs,
+		logger:        logger,
+		tracer:        tracer,
+	}
 }
 
 func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Session, entityID string) (*domain.Session, error) {
@@ -63,8 +76,12 @@ func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Sessi
 
 	// Set NameID based on the configured format.
 	if mapping.NameIDFormat != "" {
-		mapped.NameIDFormat = nameIDFormatToURN(mapping.NameIDFormat)
-		mapped.NameID = getNameIDValue(attrs, mapping.NameIDFormat)
+		value, formatURN, resolveErr := s.resolveNameID(ctx, session, attrs, mapping.NameIDFormat, entityID)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		mapped.NameIDFormat = formatURN
+		mapped.NameID = value
 	}
 
 	// When SAML attribute mappings are configured, suppress the SAML
@@ -85,22 +102,59 @@ func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Sessi
 	return &mapped, nil
 }
 
-// nameIDFormatToURN converts a short NameID format name to its full SAML URN.
+// nameIDFormatToURN converts a NameID format identifier to its full
+// SAML URN. Accepts both the short names ("persistent", "transient",
+// "emailAddress"/"email", "unspecified") and full SAML URNs (returned
+// unchanged). Unknown values fall back to the transient URN to
+// preserve pre-change permissive behavior at the assertion boundary.
 func nameIDFormatToURN(format string) string {
-	switch strings.ToLower(format) {
-	case "persistent":
+	switch normalizeNameIDFormat(format) {
+	case nameIDFormatPersistent:
 		return "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
-	case "transient":
+	case nameIDFormatTransient:
 		return "urn:oasis:names:tc:SAML:2.0:nameid-format:transient"
-	case "emailaddress", "email":
+	case nameIDFormatEmail:
 		return "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
-	case "unspecified":
+	case nameIDFormatUnspecified:
 		return "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
 	default:
 		if strings.HasPrefix(format, "urn:") {
 			return format
 		}
 		return "urn:oasis:names:tc:SAML:2.0:nameid-format:transient"
+	}
+}
+
+// Canonical short-name identifiers used for NameID format dispatch.
+// resolveNameID and nameIDFormatToURN both switch on these values
+// after running the configured format through normalizeNameIDFormat.
+const (
+	nameIDFormatPersistent  = "persistent"
+	nameIDFormatTransient   = "transient"
+	nameIDFormatEmail       = "emailAddress"
+	nameIDFormatUnspecified = "unspecified"
+)
+
+// normalizeNameIDFormat collapses both the short names and the full
+// SAML URN spellings of each supported NameID format to a single
+// canonical short name. Unrecognized values are returned unchanged so
+// callers can decide whether to fall through to permissive handling.
+func normalizeNameIDFormat(format string) string {
+	switch strings.ToLower(format) {
+	case "persistent",
+		"urn:oasis:names:tc:saml:2.0:nameid-format:persistent":
+		return nameIDFormatPersistent
+	case "transient",
+		"urn:oasis:names:tc:saml:2.0:nameid-format:transient":
+		return nameIDFormatTransient
+	case "emailaddress", "email",
+		"urn:oasis:names:tc:saml:1.1:nameid-format:emailaddress":
+		return nameIDFormatEmail
+	case "unspecified",
+		"urn:oasis:names:tc:saml:1.1:nameid-format:unspecified":
+		return nameIDFormatUnspecified
+	default:
+		return format
 	}
 }
 
@@ -277,21 +331,89 @@ func buildSAMLAttributes(attrs *domain.UserAttributes, samlMappings map[string]d
 	return result
 }
 
-// getNameIDValue returns the NameID value based on the configured
-// format and the typed user model.
-func getNameIDValue(attrs *domain.UserAttributes, format string) string {
-	switch strings.ToLower(format) {
-	case "persistent":
-		if attrs.Subject != "" {
-			return attrs.Subject
+// resolveNameID returns the NameID value and full format URN for the
+// configured nameid_format. The persistent and emailAddress branches
+// fail closed on missing input rather than emit a non-conforming
+// NameID. The canonical OIDC `sub` claim is extracted from session
+// only on the persistent branch, where it is the stable lookup key.
+func (s *mappingService) resolveNameID(
+	ctx context.Context,
+	session *domain.Session,
+	attrs *domain.UserAttributes,
+	nameIDFormat string,
+	entityID string,
+) (value string, formatURN string, err error) {
+	logger := logging.FromContext(ctx, s.logger)
+	formatURN = nameIDFormatToURN(nameIDFormat)
+
+	logger.Debugw("Resolving NameID",
+		"entityID", entityID,
+		"format", nameIDFormat,
+	)
+
+	switch normalizeNameIDFormat(nameIDFormat) {
+	case nameIDFormatPersistent:
+		// Persistent NameIDs are keyed on the canonical OIDC sub,
+		// never the mapped attrs.Subject (admins can remap that).
+		canonicalSubject, ok := session.CanonicalSubject()
+		if !ok {
+			resErr := &domain.ErrNameIDResolution{
+				EntityID: entityID,
+				Format:   nameIDFormat,
+				Reason:   "missing or empty OIDC sub claim in session",
+			}
+			logger.Errorw("Persistent NameID resolution failed",
+				"entityID", entityID,
+				"canonicalSubject", "",
+				"error", resErr,
+			)
+			return "", formatURN, resErr
 		}
-		return attrs.Email
-	case "emailaddress", "email":
-		return attrs.Email
+		persistentID, repoErr := s.persistentIDs.GetOrCreate(ctx, entityID, canonicalSubject)
+		if repoErr != nil {
+			resErr := &domain.ErrNameIDResolution{
+				EntityID: entityID,
+				Format:   nameIDFormat,
+				Reason:   "persistent NameID storage call failed",
+				Err:      repoErr,
+			}
+			logger.Errorw("Persistent NameID resolution failed",
+				"entityID", entityID,
+				"canonicalSubject", canonicalSubject,
+				"error", resErr,
+			)
+			return "", formatURN, resErr
+		}
+		logger.Infow("Resolved persistent NameID",
+			"entityID", entityID,
+			"canonicalSubject", canonicalSubject,
+		)
+		return persistentID, formatURN, nil
+
+	case nameIDFormatTransient:
+		return uuid.New().String(), formatURN, nil
+
+	case nameIDFormatEmail:
+		if attrs.Email == "" {
+			resErr := &domain.ErrNameIDResolution{
+				EntityID: entityID,
+				Format:   nameIDFormat,
+				Reason:   "emailAddress NameID requested but user email is empty",
+			}
+			logger.Errorw("Email NameID resolution failed",
+				"entityID", entityID,
+				"error", resErr,
+			)
+			return "", formatURN, resErr
+		}
+		return attrs.Email, formatURN, nil
+
 	default:
+		// Legacy permissive behavior for unspecified / unknown URN /
+		// empty: email preferred, subject fallback.
 		if attrs.Email != "" {
-			return attrs.Email
+			return attrs.Email, formatURN, nil
 		}
-		return attrs.Subject
+		return attrs.Subject, formatURN, nil
 	}
 }

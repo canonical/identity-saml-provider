@@ -225,6 +225,42 @@ func TestSAMLSessionAdapter_GetSession(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "ApplyMapping failure aborts assertion with 500 — fail closed",
+			cookies: []*http.Cookie{
+				{Name: "saml_session", Value: "session-fc"},
+			},
+			authnReq: &saml.IdpAuthnRequest{
+				Request: saml.AuthnRequest{
+					ID: "req-fc",
+					Issuer: &saml.Issuer{
+						Value: "https://sp.example.com",
+					},
+				},
+			},
+			setup: func(deps *testSessionAdapterDeps) {
+				session := &domain.Session{
+					ID:         "session-fc",
+					ExpireTime: time.Now().Add(10 * time.Minute),
+				}
+				deps.sessions.EXPECT().GetByID(gomock.Any(), "session-fc").Return(session, nil)
+				deps.mapping.EXPECT().
+					ApplyMapping(gomock.Any(), session, "https://sp.example.com").
+					Return(nil, &domain.ErrNameIDResolution{
+						EntityID: "https://sp.example.com",
+						Format:   "persistent",
+						Reason:   "missing or empty OIDC sub claim in session",
+					})
+			},
+			wantNil:      true,
+			wantRedirect: false,
+			checkResult: func(t *testing.T, _ *saml.Session, rec *httptest.ResponseRecorder) {
+				t.Helper()
+				if rec.Code != http.StatusInternalServerError {
+					t.Errorf("status = %d, want 500", rec.Code)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

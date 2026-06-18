@@ -60,3 +60,28 @@ func (e *ErrUpstream) Error() string {
 func (e *ErrUpstream) Unwrap() error {
 	return e.Err
 }
+
+// ErrNameIDResolution indicates the bridge cannot produce a SAML
+// NameID for the given service provider. Callers must not emit a
+// SAML response when this error surfaces.
+type ErrNameIDResolution struct {
+	EntityID string
+	Format   string
+	Reason   string
+	Err      error
+}
+
+func (e *ErrNameIDResolution) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("nameid resolution failed for SP %s (format=%s): %s: %v",
+			e.EntityID, e.Format, e.Reason, e.Err)
+	}
+	return fmt.Sprintf("nameid resolution failed for SP %s (format=%s): %s",
+		e.EntityID, e.Format, e.Reason)
+}
+
+// Unwrap returns the underlying error, supporting errors.Is and
+// errors.As through the error chain.
+func (e *ErrNameIDResolution) Unwrap() error {
+	return e.Err
+}

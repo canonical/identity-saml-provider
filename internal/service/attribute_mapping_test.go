@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/service"
@@ -44,6 +46,7 @@ func TestMappingService_ApplyMapping_NoMapping(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
@@ -57,7 +60,7 @@ func TestMappingService_ApplyMapping_NoMapping(t *testing.T) {
 
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "https://sp.example.com").Return(nil, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "https://sp.example.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -72,13 +75,14 @@ func TestMappingService_ApplyMapping_ErrorRetrieving(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{UserEmail: "user@example.com"}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").
 		Return(nil, errors.New("db error"))
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -91,17 +95,25 @@ func TestMappingService_ApplyMapping_ErrorRetrieving(t *testing.T) {
 func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 	t.Parallel()
 
+	// Sentinel for the persistent format's expected NameID.
+	const persistentSentinel = "fixed-persistent-uuid-abc-123"
+
 	tests := []struct {
 		name           string
 		format         string
 		expectedFormat string
+		// expectedNameID is the exact value expected. Empty string means
+		// "don't check exact value — the assertion below applies extra
+		// constraints" (used for transient which returns a fresh UUID).
 		expectedNameID string
+		mockPersistent bool
 	}{
 		{
-			name:           "persistent format uses subject",
+			name:           "persistent format calls persistent repo",
 			format:         "persistent",
 			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
-			expectedNameID: "user-sub-id",
+			expectedNameID: persistentSentinel,
+			mockPersistent: true,
 		},
 		{
 			name:           "emailAddress format uses email",
@@ -110,10 +122,10 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 			expectedNameID: "user@example.com",
 		},
 		{
-			name:           "transient format uses email as default",
+			name:           "transient format generates fresh UUID",
 			format:         "transient",
 			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
-			expectedNameID: "user@example.com",
+			// expectedNameID intentionally empty — see assertion below.
 		},
 		{
 			name:           "email shorthand uses email",
@@ -134,6 +146,7 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 			t.Parallel()
 			ctrl := gomock.NewController(t)
 			mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+			mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 			logger := logging.NewNopLogger()
 
 			session := &domain.Session{
@@ -142,11 +155,19 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 				UserCommonName: "User Name",
 				UserName:       "user-sub-id",
 				Groups:         []string{"group1"},
+				RawOIDCClaims: map[string]interface{}{
+					"sub": "alice-oidc-sub",
+				},
 			}
 			mapping := &domain.AttributeMapping{NameIDFormat: tt.format}
 			mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
+			if tt.mockPersistent {
+				mockPID.EXPECT().
+					GetOrCreate(gomock.Any(), "sp1", "alice-oidc-sub").
+					Return(persistentSentinel, nil)
+			}
 
-			svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+			svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 			result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -154,8 +175,18 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 			if result.NameIDFormat != tt.expectedFormat {
 				t.Errorf("NameIDFormat = %q, want %q", result.NameIDFormat, tt.expectedFormat)
 			}
-			if result.NameID != tt.expectedNameID {
-				t.Errorf("NameID = %q, want %q", result.NameID, tt.expectedNameID)
+			if tt.expectedNameID != "" {
+				if result.NameID != tt.expectedNameID {
+					t.Errorf("NameID = %q, want %q", result.NameID, tt.expectedNameID)
+				}
+				return
+			}
+			// transient: assert it parses as a UUID and is not the email.
+			if _, err := uuid.Parse(result.NameID); err != nil {
+				t.Errorf("NameID = %q, want valid UUID: %v", result.NameID, err)
+			}
+			if result.NameID == "user@example.com" {
+				t.Error("transient NameID must not equal user email")
 			}
 		})
 	}
@@ -165,6 +196,7 @@ func TestMappingService_ApplyMapping_SAMLAttributes_AllFields(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
@@ -191,7 +223,7 @@ func TestMappingService_ApplyMapping_SAMLAttributes_AllFields(t *testing.T) {
 	}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -226,6 +258,7 @@ func TestMappingService_ApplyMapping_SAMLAttributeDef_Honoured(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
@@ -244,7 +277,7 @@ func TestMappingService_ApplyMapping_SAMLAttributeDef_Honoured(t *testing.T) {
 	}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -278,6 +311,7 @@ func TestMappingService_ApplyMapping_GroupsMultiValued(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
@@ -292,7 +326,7 @@ func TestMappingService_ApplyMapping_GroupsMultiValued(t *testing.T) {
 	}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -316,6 +350,7 @@ func TestMappingService_ApplyMapping_EmptySourceOmits(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{UserEmail: "alice@example.com"}
@@ -327,7 +362,7 @@ func TestMappingService_ApplyMapping_EmptySourceOmits(t *testing.T) {
 	}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -345,6 +380,7 @@ func TestMappingService_ApplyMapping_LowercaseEmail_OnlyEmail(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
@@ -363,7 +399,7 @@ func TestMappingService_ApplyMapping_LowercaseEmail_OnlyEmail(t *testing.T) {
 	}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -388,6 +424,7 @@ func TestMappingService_ApplyMapping_FieldClearing_ActiveWhenMapped(t *testing.T
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
@@ -406,7 +443,7 @@ func TestMappingService_ApplyMapping_FieldClearing_ActiveWhenMapped(t *testing.T
 	}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -434,6 +471,7 @@ func TestMappingService_ApplyMapping_FieldClearing_PreservedWhenOnlyNameID(t *te
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
@@ -445,7 +483,7 @@ func TestMappingService_ApplyMapping_FieldClearing_PreservedWhenOnlyNameID(t *te
 	mapping := &domain.AttributeMapping{NameIDFormat: "transient"}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -463,6 +501,7 @@ func TestMappingService_ApplyMapping_DoesNotModifyOriginal(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{
@@ -471,6 +510,7 @@ func TestMappingService_ApplyMapping_DoesNotModifyOriginal(t *testing.T) {
 		UserCommonName: "User Name",
 		UserName:       "user-sub-id",
 		Groups:         []string{"group1"},
+		RawOIDCClaims:  map[string]interface{}{"sub": "user-sub-id"},
 	}
 	mapping := &domain.AttributeMapping{
 		NameIDFormat: "persistent",
@@ -479,8 +519,11 @@ func TestMappingService_ApplyMapping_DoesNotModifyOriginal(t *testing.T) {
 		},
 	}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
+	mockPID.EXPECT().
+		GetOrCreate(gomock.Any(), "sp1", "user-sub-id").
+		Return("opaque-persistent-id", nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	if _, err := svc.ApplyMapping(context.Background(), session, "sp1"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -496,13 +539,14 @@ func TestMappingService_ApplyMapping_EmptyMapping(t *testing.T) {
 	t.Parallel()
 	ctrl := gomock.NewController(t)
 	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
 	logger := logging.NewNopLogger()
 
 	session := &domain.Session{UserEmail: "user@example.com"}
 	mapping := &domain.AttributeMapping{} // all zero
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
-	svc := service.NewMappingService(mockRepo, logger, tracing.NewNoopTracer())
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
 	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -630,5 +674,274 @@ func TestBuildUserAttributes_CustomClaimFallsBackByInternalField(t *testing.T) {
 	}
 	if attrs.Name != "Alice" {
 		t.Errorf("Name = %q, want fallback to UserCommonName", attrs.Name)
+	}
+}
+
+func TestMappingService_ApplyMapping_Persistent_FailsClosed_MissingSub(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
+	logger := logging.NewNopLogger()
+
+	// Session has RawOIDCClaims but no "sub" key — must fail closed and
+	// must NOT call the persistent repo.
+	session := &domain.Session{
+		UserEmail:     "alice@example.com",
+		UserName:      "alice-sub",
+		RawOIDCClaims: map[string]interface{}{"email": "alice@example.com"},
+	}
+	mapping := &domain.AttributeMapping{NameIDFormat: "persistent"}
+	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
+	// Explicit: mockPID receives no calls.
+	mockPID.EXPECT().GetOrCreate(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
+	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if result != nil {
+		t.Errorf("expected nil session on fail-closed, got %+v", result)
+	}
+	var resErr *domain.ErrNameIDResolution
+	if !errors.As(err, &resErr) {
+		t.Fatalf("expected *domain.ErrNameIDResolution, got %T (%v)", err, err)
+	}
+	if resErr.EntityID != "sp1" {
+		t.Errorf("EntityID = %q, want %q", resErr.EntityID, "sp1")
+	}
+	if resErr.Format != "persistent" {
+		t.Errorf("Format = %q, want %q", resErr.Format, "persistent")
+	}
+	if !strings.Contains(resErr.Reason, "sub") {
+		t.Errorf("Reason = %q, want it to mention the missing sub claim", resErr.Reason)
+	}
+}
+
+func TestMappingService_ApplyMapping_Persistent_FailsClosed_RepoError(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
+	logger := logging.NewNopLogger()
+
+	session := &domain.Session{
+		UserEmail:     "alice@example.com",
+		UserName:      "alice-sub",
+		RawOIDCClaims: map[string]interface{}{"sub": "alice-oidc-sub"},
+	}
+	mapping := &domain.AttributeMapping{NameIDFormat: "persistent"}
+	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
+
+	repoErr := errors.New("database unreachable")
+	mockPID.EXPECT().
+		GetOrCreate(gomock.Any(), "sp1", "alice-oidc-sub").
+		Return("", repoErr)
+
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
+	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if result != nil {
+		t.Errorf("expected nil session on fail-closed, got %+v", result)
+	}
+	// Wrapped repo error must be reachable via errors.Is.
+	if !errors.Is(err, repoErr) {
+		t.Errorf("expected wrapped repo error to be reachable via errors.Is, got %v", err)
+	}
+	// Must be a typed nameid resolution error.
+	var resErr *domain.ErrNameIDResolution
+	if !errors.As(err, &resErr) {
+		t.Fatalf("expected *domain.ErrNameIDResolution, got %T", err)
+	}
+	if resErr.Err == nil {
+		t.Error("expected wrapped Err field to be set")
+	}
+}
+
+func TestMappingService_ApplyMapping_Persistent_UsesCanonicalNotMappedSubject(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
+	logger := logging.NewNopLogger()
+
+	// Admin has remapped: email → subject. The mapped attrs.Subject will
+	// therefore equal the email value. The persistent NameID lookup MUST
+	// still key on the raw OIDC "sub" claim, not the mapped subject.
+	session := &domain.Session{
+		UserEmail: "alice@example.com",
+		UserName:  "ignored",
+		RawOIDCClaims: map[string]interface{}{
+			"sub":   "stable-oidc-sub-key",
+			"email": "alice@example.com",
+		},
+	}
+	mapping := &domain.AttributeMapping{
+		NameIDFormat: "persistent",
+		OIDCClaimMappings: map[string]string{
+			"email": "subject", // re-route: subject is now sourced from email
+		},
+	}
+	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
+
+	// The assertion: GetOrCreate must be called with the raw OIDC sub,
+	// NOT "alice@example.com" (which would be attrs.Subject).
+	mockPID.EXPECT().
+		GetOrCreate(gomock.Any(), "sp1", "stable-oidc-sub-key").
+		Return("persistent-uuid", nil)
+
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
+	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.NameID != "persistent-uuid" {
+		t.Errorf("NameID = %q, want %q", result.NameID, "persistent-uuid")
+	}
+}
+
+func TestMappingService_ApplyMapping_Transient_GeneratesUniqueUUIDs(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
+	logger := logging.NewNopLogger()
+
+	session := &domain.Session{
+		UserEmail: "alice@example.com",
+		UserName:  "alice-sub",
+	}
+	mapping := &domain.AttributeMapping{NameIDFormat: "transient"}
+	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil).Times(2)
+
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
+
+	r1, err := svc.ApplyMapping(context.Background(), session, "sp1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	r2, err := svc.ApplyMapping(context.Background(), session, "sp1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := uuid.Parse(r1.NameID); err != nil {
+		t.Errorf("transient NameID #1 not a UUID: %v", err)
+	}
+	if _, err := uuid.Parse(r2.NameID); err != nil {
+		t.Errorf("transient NameID #2 not a UUID: %v", err)
+	}
+	if r1.NameID == r2.NameID {
+		t.Errorf("transient NameIDs must differ across authentications, both were %q", r1.NameID)
+	}
+}
+
+func TestMappingService_ApplyMapping_EmailAddress_FailsClosed_EmptyEmail(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
+	logger := logging.NewNopLogger()
+
+	session := &domain.Session{
+		// No UserEmail, no email in raw claims — attrs.Email will be empty.
+		UserName: "alice-sub",
+	}
+	mapping := &domain.AttributeMapping{NameIDFormat: "emailAddress"}
+	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
+
+	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
+	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if result != nil {
+		t.Errorf("expected nil session, got %+v", result)
+	}
+	var resErr *domain.ErrNameIDResolution
+	if !errors.As(err, &resErr) {
+		t.Fatalf("expected *domain.ErrNameIDResolution, got %T", err)
+	}
+	if resErr.EntityID != "sp1" {
+		t.Errorf("EntityID = %q, want %q", resErr.EntityID, "sp1")
+	}
+}
+
+func TestMappingService_ApplyMapping_FullURNFormats(t *testing.T) {
+	t.Parallel()
+
+	const persistentSentinel = "fixed-persistent-uuid-urn"
+
+	tests := []struct {
+		name           string
+		format         string
+		expectedFormat string
+		expectedNameID string
+		mockPersistent bool
+	}{
+		{
+			name:           "persistent full URN dispatches to persistent branch",
+			format:         "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+			expectedNameID: persistentSentinel,
+			mockPersistent: true,
+		},
+		{
+			name:           "emailAddress full URN dispatches to email branch",
+			format:         "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+			expectedFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+			expectedNameID: "user@example.com",
+		},
+		{
+			name:           "transient full URN dispatches to transient branch",
+			format:         "urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
+			// expectedNameID empty — UUID asserted below.
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+			mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+			mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
+			logger := logging.NewNopLogger()
+
+			session := &domain.Session{
+				UserEmail: "user@example.com",
+				UserName:  "user-sub-id",
+				RawOIDCClaims: map[string]interface{}{
+					"sub": "alice-oidc-sub",
+				},
+			}
+			mapping := &domain.AttributeMapping{NameIDFormat: tt.format}
+			mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
+			if tt.mockPersistent {
+				mockPID.EXPECT().
+					GetOrCreate(gomock.Any(), "sp1", "alice-oidc-sub").
+					Return(persistentSentinel, nil)
+			}
+
+			svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
+			result, err := svc.ApplyMapping(context.Background(), session, "sp1")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.NameIDFormat != tt.expectedFormat {
+				t.Errorf("NameIDFormat = %q, want %q", result.NameIDFormat, tt.expectedFormat)
+			}
+			if tt.expectedNameID != "" {
+				if result.NameID != tt.expectedNameID {
+					t.Errorf("NameID = %q, want %q", result.NameID, tt.expectedNameID)
+				}
+				return
+			}
+			if _, err := uuid.Parse(result.NameID); err != nil {
+				t.Errorf("NameID = %q, want UUID: %v", result.NameID, err)
+			}
+		})
 	}
 }

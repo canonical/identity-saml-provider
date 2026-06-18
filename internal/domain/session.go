@@ -53,3 +53,20 @@ func (s *Session) DisplayName() string {
 	}
 	return s.UserEmail
 }
+
+// CanonicalSubject returns the OIDC `sub` claim from RawOIDCClaims as
+// a string, together with `true` when the claim is present, is a
+// string, and is non-empty. It returns `"", false` when the claim is
+// missing, nil, non-string, or an empty string. Callers MUST treat
+// the bool as the authoritative presence signal and SHALL NOT
+// substitute any other session field on `false`.
+func (s *Session) CanonicalSubject() (string, bool) {
+	if s == nil || s.RawOIDCClaims == nil {
+		return "", false
+	}
+	str, ok := s.RawOIDCClaims["sub"].(string)
+	if !ok || str == "" {
+		return "", false
+	}
+	return str, true
+}
