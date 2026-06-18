@@ -272,12 +272,54 @@ Each SP can optionally define:
    `name→name`, `groups→groups`)
 3. Transforms are applied (e.g., lowercase email)
 4. The session's `NameID` and `NameIDFormat` are set
-   based on the configured format
+   based on the configured format. **Persistent**
+   format triggers an opaque per-`(SP, OIDC sub)` UUID
+   lookup (see below); **transient** generates a fresh
+   UUID per request; **emailAddress** returns the
+   mapped email; **unspecified** preserves the legacy
+   permissive behavior.
 5. If SAML attributes are configured, built-in session
    fields are cleared and **custom SAML attributes** are
    generated from the internal model
 6. If no mapping is configured for the SP, default
    attributes (email, groups, etc.) are used unchanged
+
+### Persistent NameID Resolution
+
+When an SP is configured with `nameid_format: persistent` (or the
+equivalent SAML URN), the bridge issues an opaque, pairwise, stable
+identifier instead of any user-attribute value:
+
+- **Opaque**: a randomly generated RFC 4122 UUID, never
+  derived from the user's `sub`, `email`, `name`, or any
+  custom claim.
+- **Pairwise**: two distinct SPs authenticating the same
+  upstream user receive distinct NameIDs.
+- **Stable**: every authentication for the same
+  `(SP entity ID, OIDC sub)` pair returns the same
+  NameID, including across bridge restarts.
+- **Durable**: the NameID is persisted in the
+  `persistent_nameids` table before being emitted.
+
+The lookup is keyed on the **raw OIDC `sub` claim**
+extracted from the session, never the mapped
+`UserAttributes.Subject`. Admins can remap
+`oidc_claim_mappings` without breaking NameID
+stability, because the persistent ID is insulated from
+configuration changes.
+
+If the OIDC `sub` claim is missing/empty or the
+storage backend returns an error, `ApplyMapping` **fails
+closed**: it returns a typed `ErrNameIDResolution`
+domain error, the SAML adapter responds with HTTP 500,
+and no SAML response is emitted. There is no fallback to
+`Email` or `Subject`, because either would expose a
+non-opaque value or introduce instability across
+requests.
+
+When a service provider record is deleted, all
+`persistent_nameids` rows for that SP are cascade-
+removed by the database foreign key.
 
 ---
 
