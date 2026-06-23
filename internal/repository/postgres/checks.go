@@ -16,6 +16,7 @@ var _ DBTX = (*pgxpool.Pool)(nil)
 
 // Compile-time checks: repository implementations satisfy their interfaces.
 var (
-	_ repository.SessionRepository         = (*SessionRepo)(nil)
-	_ repository.ServiceProviderRepository = (*ServiceProviderRepo)(nil)
+	_ repository.SessionRepository          = (*SessionRepo)(nil)
+	_ repository.ServiceProviderRepository  = (*ServiceProviderRepo)(nil)
+	_ repository.PersistentNameIDRepository = (*PersistentNameIDRepo)(nil)
 )

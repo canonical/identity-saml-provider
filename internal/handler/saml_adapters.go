@@ -181,7 +181,19 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 
 	// 3. Apply per-SP attribute mapping if configured
 	if req.Request.Issuer != nil && req.Request.Issuer.Value != "" {
-		domainSession, _ = a.Mapping.ApplyMapping(ctx, domainSession, req.Request.Issuer.Value)
+		mapped, mapErr := a.Mapping.ApplyMapping(ctx, domainSession, req.Request.Issuer.Value)
+		if mapErr != nil {
+			// Returning nil aborts the SAML flow per the
+			// crewjam/saml SessionProvider contract.
+			span.RecordError(mapErr)
+			logger.Errorw("Attribute mapping failed; aborting SAML response",
+				"entityID", req.Request.Issuer.Value,
+				"error", mapErr,
+			)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return nil
+		}
+		domainSession = mapped
 		span.AddEvent("attribute_mapping_applied")
 	}
 

@@ -12,6 +12,7 @@ import (
 //go:generate mockgen -destination=../../mocks/mock_session_repository.go -package=mocks . SessionRepository
 //go:generate mockgen -destination=../../mocks/mock_service_provider_repository.go -package=mocks . ServiceProviderRepository
 //go:generate mockgen -destination=../../mocks/mock_pending_request_repository.go -package=mocks . PendingRequestRepository
+//go:generate mockgen -destination=../../mocks/mock_persistent_nameid_repository.go -package=mocks . PersistentNameIDRepository
 
 // SessionRepository manages session persistence.
 type SessionRepository interface {
@@ -33,4 +34,10 @@ type PendingRequestRepository interface {
 	Save(ctx context.Context, req *domain.PendingAuthnRequest) error
 	GetAndDelete(ctx context.Context, requestID string) (*domain.PendingAuthnRequest, error)
 	DeleteExpired(ctx context.Context) (int64, error)
+}
+
+// PersistentNameIDRepository stores opaque, stable per-(SP, user)
+// SAML NameIDs. userSubject is the upstream OIDC `sub` claim.
+type PersistentNameIDRepository interface {
+	GetOrCreate(ctx context.Context, entityID, userSubject string) (string, error)
 }
