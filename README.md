@@ -345,6 +345,56 @@ identity-saml-provider sp add \
   --nameid-format persistent
 ```
 
+### Admin HTTP API
+
+HTTP endpoints for managing registered service providers.
+`entity_id` is passed as a percent-encoded query parameter.
+
+| Method   | Path                                            | Purpose                                                          |
+| -------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| `POST`   | `/admin/service-providers`                      | Register a new SP (body = SP record).                            |
+| `GET`    | `/admin/service-providers`                      | Return the SP record. `attribute_mapping` is omitted when unset. |
+| `PUT`    | `/admin/service-providers/attribute-mapping`    | Replace the SP's `attribute_mapping`.                            |
+| `DELETE` | `/admin/service-providers/attribute-mapping`    | Clear the SP's `attribute_mapping`.                              |
+
+#### Examples
+
+```bash
+ENTITY_ID=$(printf 'https://myapp.example.com' | jq -sRr @uri)
+BASE="http://localhost:8082/admin/service-providers"
+
+# GET
+curl "${BASE}?entity_id=${ENTITY_ID}"
+
+# PUT (replace mapping from a file)
+curl -X PUT -H "Content-Type: application/json" \
+  "${BASE}/attribute-mapping?entity_id=${ENTITY_ID}" \
+  --data-binary @mapping.json
+
+# DELETE (clear mapping)
+curl -X DELETE "${BASE}/attribute-mapping?entity_id=${ENTITY_ID}"
+```
+
+#### `PUT {}` vs `DELETE`
+
+They write **different** persisted states:
+
+| Operation       | Persisted state                                | `GET` response                              |
+| --------------- | ---------------------------------------------- | ------------------------------------------- |
+| `PUT` with `{}` | A configured mapping with zero-value fields    | `attribute_mapping` present with value `{}` |
+| `DELETE`        | No mapping at all (column is NULL)             | `attribute_mapping` omitted                 |
+
+Use `DELETE` to revert an SP to "as if registered without a
+mapping". Use `PUT {}` only when you want an explicit empty
+mapping (e.g., as a base for subsequent `PUT`s).
+
+```bash
+# PUT {} (install an explicit empty mapping)
+curl -X PUT -H "Content-Type: application/json" \
+  "${BASE}/attribute-mapping?entity_id=${ENTITY_ID}" \
+  --data-binary '{}'
+```
+
 ## License
 
 See the [LICENSE](LICENSE) file for details.

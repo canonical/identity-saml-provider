@@ -5,6 +5,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.opentelemetry.io/otel/codes"
@@ -63,4 +64,62 @@ func (s *serviceProviderService) GetByEntityID(ctx context.Context, entityID str
 		return nil, err // propagates *domain.ErrNotFound or infrastructure error
 	}
 	return sp, nil
+}
+
+func (s *serviceProviderService) UpdateAttributeMapping(ctx context.Context, entityID string, mapping *domain.AttributeMapping) error {
+	ctx, span := s.tracer.Start(ctx, "service.sp.update_attribute_mapping")
+	defer span.End()
+
+	logger := logging.FromContext(ctx, s.logger)
+
+	if mapping == nil {
+		err := &domain.ErrValidation{
+			Field:   "attribute_mapping",
+			Message: "mapping is required; use ClearAttributeMapping to remove a mapping",
+		}
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	if err := mapping.Validate(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
+	}
+
+	if err := s.repo.UpdateAttributeMapping(ctx, entityID, mapping); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+
+		var nf *domain.ErrNotFound
+		if !errors.As(err, &nf) {
+			logger.Errorw("Failed to update attribute mapping", "entityID", entityID, "error", err)
+		}
+		return err
+	}
+
+	logger.Infow("Attribute mapping updated", "entityID", entityID)
+	return nil
+}
+
+func (s *serviceProviderService) ClearAttributeMapping(ctx context.Context, entityID string) error {
+	ctx, span := s.tracer.Start(ctx, "service.sp.clear_attribute_mapping")
+	defer span.End()
+
+	logger := logging.FromContext(ctx, s.logger)
+
+	if err := s.repo.UpdateAttributeMapping(ctx, entityID, nil); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+
+		var nf *domain.ErrNotFound
+		if !errors.As(err, &nf) {
+			logger.Errorw("Failed to clear attribute mapping", "entityID", entityID, "error", err)
+		}
+		return err
+	}
+
+	logger.Infow("Attribute mapping cleared", "entityID", entityID)
+	return nil
 }

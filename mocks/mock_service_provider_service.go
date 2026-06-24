@@ -41,6 +41,20 @@ func (m *MockServiceProviderService) EXPECT() *MockServiceProviderServiceMockRec
 	return m.recorder
 }
 
+// ClearAttributeMapping mocks base method.
+func (m *MockServiceProviderService) ClearAttributeMapping(ctx context.Context, entityID string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ClearAttributeMapping", ctx, entityID)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ClearAttributeMapping indicates an expected call of ClearAttributeMapping.
+func (mr *MockServiceProviderServiceMockRecorder) ClearAttributeMapping(ctx, entityID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClearAttributeMapping", reflect.TypeOf((*MockServiceProviderService)(nil).ClearAttributeMapping), ctx, entityID)
+}
+
 // GetByEntityID mocks base method.
 func (m *MockServiceProviderService) GetByEntityID(ctx context.Context, entityID string) (*domain.ServiceProvider, error) {
 	m.ctrl.T.Helper()
@@ -68,4 +82,18 @@ func (m *MockServiceProviderService) Register(ctx context.Context, sp *domain.Se
 func (mr *MockServiceProviderServiceMockRecorder) Register(ctx, sp any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockServiceProviderService)(nil).Register), ctx, sp)
+}
+
+// UpdateAttributeMapping mocks base method.
+func (m *MockServiceProviderService) UpdateAttributeMapping(ctx context.Context, entityID string, mapping *domain.AttributeMapping) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateAttributeMapping", ctx, entityID, mapping)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateAttributeMapping indicates an expected call of UpdateAttributeMapping.
+func (mr *MockServiceProviderServiceMockRecorder) UpdateAttributeMapping(ctx, entityID, mapping any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAttributeMapping", reflect.TypeOf((*MockServiceProviderService)(nil).UpdateAttributeMapping), ctx, entityID, mapping)
 }

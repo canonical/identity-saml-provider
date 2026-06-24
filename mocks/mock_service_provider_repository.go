@@ -84,3 +84,17 @@ func (mr *MockServiceProviderRepositoryMockRecorder) Save(ctx, sp any) *gomock.C
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Save", reflect.TypeOf((*MockServiceProviderRepository)(nil).Save), ctx, sp)
 }
+
+// UpdateAttributeMapping mocks base method.
+func (m *MockServiceProviderRepository) UpdateAttributeMapping(ctx context.Context, entityID string, mapping *domain.AttributeMapping) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateAttributeMapping", ctx, entityID, mapping)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateAttributeMapping indicates an expected call of UpdateAttributeMapping.
+func (mr *MockServiceProviderRepositoryMockRecorder) UpdateAttributeMapping(ctx, entityID, mapping any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateAttributeMapping", reflect.TypeOf((*MockServiceProviderRepository)(nil).UpdateAttributeMapping), ctx, entityID, mapping)
+}

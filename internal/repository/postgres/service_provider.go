@@ -170,3 +170,49 @@ func (r *ServiceProviderRepo) GetAttributeMapping(ctx context.Context, entityID 
 	}
 	return &mapping, nil
 }
+
+// UpdateAttributeMapping replaces the attribute_mapping JSONB column
+// for the SP identified by entityID. A nil mapping clears the column
+// (sets it to SQL NULL). Returns *domain.ErrNotFound when no SP row
+// matches entityID.
+func (r *ServiceProviderRepo) UpdateAttributeMapping(ctx context.Context, entityID string, mapping *domain.AttributeMapping) error {
+	ctx, span := r.tracer.Start(ctx, "repo.postgres.update_attribute_mapping")
+	defer span.End()
+	span.SetAttributes(
+		attribute.String("db.system", "postgresql"),
+		attribute.String("entity_id", entityID),
+	)
+
+	var mappingJSON interface{}
+	if mapping != nil {
+		data, err := json.Marshal(mapping)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return fmt.Errorf("marshal attribute mapping for %q: %w", entityID, err)
+		}
+		mappingJSON = data
+	}
+
+	query, args, err := psql.
+		Update("service_providers").
+		Set("attribute_mapping", mappingJSON).
+		Where(sq.Eq{"entity_id": entityID}).
+		ToSql()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("build update attribute mapping query: %w", err)
+	}
+
+	tag, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return fmt.Errorf("update attribute mapping for %q: %w", entityID, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return &domain.ErrNotFound{Resource: "service_provider", ID: entityID}
+	}
+	return nil
+}
