@@ -23,7 +23,6 @@ var (
 	spACSURL               string
 	spACSBinding           string
 	spAttributeMappingFile string
-	spNameIDFormat         string
 )
 
 var spAddCmd = &cobra.Command{
@@ -101,10 +100,6 @@ func init() {
 		"attribute-mapping-file", "",
 		"Path to attribute mapping JSON file",
 	)
-	spAddCmd.Flags().StringVar(
-		&spNameIDFormat, "nameid-format", "",
-		"NameID format (persistent, transient, emailAddress)",
-	)
 
 	_ = spAddCmd.MarkFlagRequired("entity-id")
 	_ = spAddCmd.MarkFlagRequired("acs-url")
@@ -113,8 +108,9 @@ func init() {
 }
 
 // buildServiceProvider constructs a domain.ServiceProvider from CLI flags.
-// It reads the attribute mapping from file if provided, or creates a
-// minimal mapping from --nameid-format.
+// All attribute mapping configuration (including the NameID format) is
+// supplied through --attribute-mapping-file. When the flag is omitted,
+// the resulting service provider has no attribute mapping attached.
 func buildServiceProvider() (*domain.ServiceProvider, error) {
 	sp := &domain.ServiceProvider{
 		EntityID:   spEntityID,
@@ -132,12 +128,6 @@ func buildServiceProvider() (*domain.ServiceProvider, error) {
 			return nil, fmt.Errorf("parse attribute mapping JSON from %q: %w", spAttributeMappingFile, err)
 		}
 		sp.AttributeMapping = &mapping
-	} else if spNameIDFormat != "" {
-		// If only nameid-format is provided without a full mapping file,
-		// create a minimal attribute mapping.
-		sp.AttributeMapping = &domain.AttributeMapping{
-			NameIDFormat: spNameIDFormat,
-		}
 	}
 
 	// Validate the domain object.

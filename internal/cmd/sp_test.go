@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
@@ -54,51 +55,112 @@ func TestSPAddRequiresACSURL(t *testing.T) {
 
 func TestBuildServiceProvider(t *testing.T) {
 	tests := []struct {
-		name      string
-		args      []string
-		setupFile func(t *testing.T) string // returns temp file path
-		wantErr   bool
-		validate  func(t *testing.T, sp interface{})
+		name            string
+		args            []string
+		setupFile       func(t *testing.T) string // returns temp file path
+		wantErr         bool
+		wantErrContains string
+		validate        func(t *testing.T, sp *domain.ServiceProvider)
 	}{
 		{
 			name:    "basic entity ID and ACS URL",
 			args:    []string{"--entity-id", "http://example.com/metadata", "--acs-url", "http://example.com/acs"},
 			wantErr: false,
-		},
-		{
-			name: "with nameid-format",
-			args: []string{"--entity-id", "http://example.com/metadata", "--acs-url", "http://example.com/acs", "--nameid-format", "persistent"},
-			validate: func(t *testing.T, sp interface{}) {
-				// Validation handled by domain model
+			validate: func(t *testing.T, sp *domain.ServiceProvider) {
+				if sp.AttributeMapping != nil {
+					t.Errorf("expected AttributeMapping to be nil, got %+v", sp.AttributeMapping)
+				}
 			},
-			wantErr: false,
 		},
 		{
-			name: "with attribute mapping file",
+			name: "with attribute mapping file containing only nameid_format",
 			args: []string{"--entity-id", "http://example.com/metadata", "--acs-url", "http://example.com/acs"},
 			setupFile: func(t *testing.T) string {
 				dir := t.TempDir()
-				path := filepath.Join(dir, "mapping.json")
-				data := `{"nameid_format": "persistent", "saml_attributes": {"subject": "uid"}}`
-				if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+				path := filepath.Join(dir, "nameid.json")
+				if err := os.WriteFile(path, []byte(`{"nameid_format": "persistent"}`), 0o644); err != nil {
 					t.Fatal(err)
 				}
 				return path
 			},
 			wantErr: false,
+			validate: func(t *testing.T, sp *domain.ServiceProvider) {
+				if sp.AttributeMapping == nil {
+					t.Fatal("expected AttributeMapping, got nil")
+				}
+				if sp.AttributeMapping.NameIDFormat != "persistent" {
+					t.Errorf("expected NameIDFormat \"persistent\", got %q", sp.AttributeMapping.NameIDFormat)
+				}
+				if len(sp.AttributeMapping.SAMLAttributeMappings) != 0 {
+					t.Errorf("expected empty SAMLAttributeMappings, got %+v", sp.AttributeMapping.SAMLAttributeMappings)
+				}
+			},
 		},
 		{
-			name:    "invalid attribute mapping file path",
-			args:    []string{"--entity-id", "http://example.com/metadata", "--acs-url", "http://example.com/acs", "--attribute-mapping-file", "/nonexistent/mapping.json"},
-			wantErr: true,
+			name: "with full attribute mapping file",
+			args: []string{"--entity-id", "http://example.com/metadata", "--acs-url", "http://example.com/acs"},
+			setupFile: func(t *testing.T) string {
+				dir := t.TempDir()
+				path := filepath.Join(dir, "mapping.json")
+				data := `{
+					"nameid_format": "persistent",
+					"saml_attribute_mappings": {
+						"email": {"name": "mail", "friendly_name": "mail"}
+					},
+					"oidc_claim_mappings": {"sub": "subject", "email": "email"}
+				}`
+				if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+			wantErr: false,
+			validate: func(t *testing.T, sp *domain.ServiceProvider) {
+				if sp.AttributeMapping == nil {
+					t.Fatal("expected AttributeMapping, got nil")
+				}
+				if sp.AttributeMapping.NameIDFormat != "persistent" {
+					t.Errorf("expected NameIDFormat \"persistent\", got %q", sp.AttributeMapping.NameIDFormat)
+				}
+				def, ok := sp.AttributeMapping.SAMLAttributeMappings["email"]
+				if !ok {
+					t.Fatal("expected SAMLAttributeMappings[\"email\"]")
+				}
+				if def.Name != "mail" || def.FriendlyName != "mail" {
+					t.Errorf("unexpected SAMLAttributeDef: %+v", def)
+				}
+			},
+		},
+		{
+			name:            "non-existent attribute mapping file path",
+			args:            []string{"--entity-id", "http://example.com/metadata", "--acs-url", "http://example.com/acs", "--attribute-mapping-file", "/nonexistent/mapping.json"},
+			wantErr:         true,
+			wantErrContains: "/nonexistent/mapping.json",
 		},
 		{
 			name: "invalid JSON in attribute mapping file",
 			args: []string{"--entity-id", "http://example.com/metadata", "--acs-url", "http://example.com/acs"},
 			setupFile: func(t *testing.T) string {
 				dir := t.TempDir()
-				path := filepath.Join(dir, "mapping.json")
-				if err := os.WriteFile(path, []byte("not json"), 0644); err != nil {
+				path := filepath.Join(dir, "bad.json")
+				if err := os.WriteFile(path, []byte("not json"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				return path
+			},
+			wantErr:         true,
+			wantErrContains: "bad.json",
+		},
+		{
+			name: "attribute mapping file fails domain validation",
+			args: []string{"--entity-id", "http://example.com/metadata", "--acs-url", "http://example.com/acs"},
+			setupFile: func(t *testing.T) string {
+				dir := t.TempDir()
+				path := filepath.Join(dir, "invalid.json")
+				// SAML attribute definition with empty Name fails
+				// AttributeMapping.Validate() per FR-7 structural check.
+				data := `{"saml_attribute_mappings": {"email": {"name": ""}}}`
+				if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 					t.Fatal(err)
 				}
 				return path
@@ -109,6 +171,13 @@ func TestBuildServiceProvider(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Reset package-level flag state to avoid leakage between
+			// table cases.
+			spEntityID = ""
+			spACSURL = ""
+			spACSBinding = ""
+			spAttributeMappingFile = ""
+
 			args := make([]string, len(tt.args))
 			copy(args, tt.args)
 
@@ -125,7 +194,6 @@ func TestBuildServiceProvider(t *testing.T) {
 			cmd.Flags().StringVarP(&spACSBinding, "acs-binding", "b",
 				"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST", "")
 			cmd.Flags().StringVar(&spAttributeMappingFile, "attribute-mapping-file", "", "")
-			cmd.Flags().StringVar(&spNameIDFormat, "nameid-format", "", "")
 
 			if err := cmd.ParseFlags(args); err != nil {
 				if !tt.wantErr {
@@ -137,7 +205,10 @@ func TestBuildServiceProvider(t *testing.T) {
 			sp, err := buildServiceProvider()
 			if tt.wantErr {
 				if err == nil {
-					t.Error("expected error but got nil")
+					t.Fatal("expected error but got nil")
+				}
+				if tt.wantErrContains != "" && !strings.Contains(err.Error(), tt.wantErrContains) {
+					t.Errorf("expected error to contain %q, got %q", tt.wantErrContains, err.Error())
 				}
 				return
 			}
@@ -161,7 +232,6 @@ func TestSPAddHasExpectedFlags(t *testing.T) {
 		"acs-url",
 		"acs-binding",
 		"attribute-mapping-file",
-		"nameid-format",
 	}
 
 	for _, name := range expectedFlags {
