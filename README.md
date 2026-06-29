@@ -251,7 +251,6 @@ identity-saml-provider sp add \
   --acs-url <acs-url> \
   [--acs-binding <binding>] \
   [--attribute-mapping-file <path-to-json>] \
-  [--nameid-format <format>] \
   [--format text|json]
 ```
 
@@ -261,7 +260,6 @@ identity-saml-provider sp add \
 | `--acs-url`, `-a` | Assertion Consumer Service URL (required, must be a valid URL) | — |
 | `--acs-binding`, `-b` | ACS binding type | `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST` |
 | `--attribute-mapping-file` | Path to a JSON file containing the attribute mapping configuration | — |
-| `--nameid-format` | NameID format (e.g., `persistent`, `transient`, `emailAddress`) | — |
 | `--format`, `-f` | Output format: `text` or `json` | `text` |
 
 The command connects directly to the database using
@@ -338,11 +336,12 @@ identity-saml-provider sp add \
   --acs-url https://myapp.example.com/saml/acs \
   --attribute-mapping-file mapping.json
 
-# Register with only a NameID format override
+# Register with only a NameID format override — supply a minimal
+# mapping file. nameid-only.json contains: {"nameid_format": "persistent"}
 identity-saml-provider sp add \
   --entity-id https://myapp.example.com \
   --acs-url https://myapp.example.com/saml/acs \
-  --nameid-format persistent
+  --attribute-mapping-file nameid-only.json
 ```
 
 ### Admin HTTP API
