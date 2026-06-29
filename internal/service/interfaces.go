@@ -27,6 +27,17 @@ type SessionService interface {
 type ServiceProviderService interface {
 	Register(ctx context.Context, sp *domain.ServiceProvider) error
 	GetByEntityID(ctx context.Context, entityID string) (*domain.ServiceProvider, error)
+
+	// UpdateAttributeMapping replaces the SP's attribute mapping with
+	// the validated mapping argument. A nil mapping is rejected with
+	// *domain.ErrValidation; use ClearAttributeMapping to remove a
+	// mapping. *domain.ErrNotFound is returned if the SP is unknown.
+	UpdateAttributeMapping(ctx context.Context, entityID string, mapping *domain.AttributeMapping) error
+
+	// ClearAttributeMapping removes the SP's attribute mapping,
+	// reverting the SP to default (unmapped) assertion behaviour.
+	// *domain.ErrNotFound is returned if the SP is unknown.
+	ClearAttributeMapping(ctx context.Context, entityID string) error
 }
 
 // MappingService applies per-SP attribute mapping to a session,

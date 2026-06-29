@@ -18,4 +18,7 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 
 	// Admin API
 	r.Post("/admin/service-providers", h.HandleRegisterServiceProvider)
+	r.Get("/admin/service-providers", h.HandleGetServiceProvider)
+	r.Put("/admin/service-providers/attribute-mapping", h.HandleUpdateAttributeMapping)
+	r.Delete("/admin/service-providers/attribute-mapping", h.HandleDeleteAttributeMapping)
 }

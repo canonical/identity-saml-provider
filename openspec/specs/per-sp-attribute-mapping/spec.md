@@ -87,10 +87,17 @@ Validation SHALL be invoked at service-provider registration time;
 invalid configurations SHALL be rejected with an actionable error
 message identifying the offending field path.
 
-Semantic cross-map validation (every `saml_attribute_mappings` key must
-resolve to a well-known field or an `oidc_claim_mappings` target) is
-out of scope for this capability version and is delivered by a later
-change.
+Validation SHALL NOT inspect or require the presence of any
+persistent NameID storage row; runtime-resolution preconditions
+(such as the OIDC `sub` claim being present in the session) are
+checked at assertion time, not at registration time, because the
+session's claims are not available when the configuration is
+written.
+
+Semantic cross-map validation (every `saml_attribute_mappings` key
+must resolve to a well-known field or an `oidc_claim_mappings`
+target) is out of scope for this capability version and is
+delivered by a later change.
 
 #### Scenario: Reject empty SAML attribute name
 - **WHEN** an admin submits a mapping containing
@@ -112,6 +119,267 @@ change.
 #### Scenario: Nil mapping is valid
 - **WHEN** `Validate` is invoked on a nil `*AttributeMapping`
 - **THEN** it SHALL return no error
+
+#### Scenario: Persistent format is accepted at registration regardless of session
+- **WHEN** an admin submits a mapping with
+  `nameid_format: "persistent"` and no other fields
+- **THEN** `Validate` SHALL return no error, even though no session
+  is available to verify that an upstream OIDC `sub` claim will be
+  present at authentication time
+
+### Requirement: Persistent NameID resolution
+
+The mapping service SHALL emit an opaque, pairwise, stable NameID
+for every `(service-provider, upstream-user)` pair whose mapping
+configures `nameid_format: persistent` (or the equivalent
+`urn:oasis:names:tc:SAML:2.0:nameid-format:persistent` URN).
+
+The NameID value SHALL satisfy all of the following:
+
+- **Opaque**: the value SHALL be a randomly generated UUID
+  (RFC 4122 v4) and SHALL NOT be derived from, equal to, or contain
+  any user-attribute value (`Subject`, `Email`, `Name`, raw OIDC
+  `sub`, or any custom claim).
+- **Pairwise**: two distinct service providers authenticating the
+  same upstream user SHALL receive distinct NameID values.
+- **Stable**: every authentication for the same
+  `(service-provider, upstream-user)` pair SHALL receive the same
+  NameID value, including across bridge restarts and database
+  failovers.
+- **Durable**: the NameID SHALL be persisted before being emitted
+  in an assertion, so that a subsequent authentication can recover
+  the same value.
+
+The pair SHALL be keyed by `(service-provider EntityID,
+RawOIDCClaims["sub"])`. The bridge SHALL NOT use the mapped
+`UserAttributes.Subject` for this lookup, because operators can
+remap `subject` via `oidc_claim_mappings`; doing so would break
+stability and orphan previously-issued NameIDs.
+
+The NameID format URI emitted in the SAML assertion SHALL be
+`urn:oasis:names:tc:SAML:2.0:nameid-format:persistent`.
+
+#### Scenario: Same SP and same user receive the same NameID
+
+- **WHEN** an upstream user authenticates twice in succession to a
+  service provider configured with `nameid_format: persistent`,
+  with the same OIDC `sub` claim on both authentications
+- **THEN** both assertions SHALL carry the same `<saml:NameID>`
+  value
+- **AND** the value SHALL parse as an RFC 4122 UUID
+
+#### Scenario: Different SPs for the same user receive different NameIDs
+
+- **WHEN** the same upstream user authenticates to two distinct
+  service providers, both configured with `nameid_format:
+  persistent`
+- **THEN** the two assertions SHALL carry distinct `<saml:NameID>`
+  values
+
+#### Scenario: NameID survives bridge restart
+
+- **WHEN** a user has authenticated once to a persistent-format SP,
+  and the bridge process is then restarted, and the user
+  authenticates again
+- **THEN** the second assertion SHALL carry the same
+  `<saml:NameID>` value as the first
+
+#### Scenario: NameID is independent of mapped subject
+
+- **WHEN** a service provider's `oidc_claim_mappings` is changed
+  from `{"sub": "subject"}` to `{"email": "subject"}` between two
+  authentications for the same upstream user
+- **THEN** the persistent NameID emitted on the second
+  authentication SHALL equal the one emitted on the first, because
+  the lookup key is the OIDC `sub` claim and not the mapped
+  `Subject`
+
+#### Scenario: NameID does not contain user attribute values
+
+- **WHEN** a persistent NameID is generated for a user whose OIDC
+  `sub`, `email`, and `name` claims are known
+- **THEN** the emitted `<saml:NameID>` value SHALL NOT contain any
+  of those claim values as a substring
+
+### Requirement: Persistent NameID fails closed on missing inputs or storage errors
+
+The mapping service SHALL refuse to issue a persistent NameID — and
+therefore refuse to build the SAML assertion — when it cannot
+satisfy the opaque/pairwise/stable contract. Specifically,
+`ApplyMapping` SHALL return a typed domain error (and emit no
+SAML response) in each of these cases:
+
+- The session's `RawOIDCClaims["sub"]` is absent, empty, or not a
+  string.
+- The persistent-NameID storage backend returns any error from the
+  get-or-create operation.
+
+The service SHALL NOT fall back to `UserAttributes.Email`,
+`UserAttributes.Subject`, the raw OIDC `sub`, a freshly generated
+UUID, or any other surrogate. Falling back would either expose a
+non-opaque value or introduce a NameID that changes across requests,
+both of which break the SAML 2.0 contract for persistent
+identifiers.
+
+#### Scenario: Missing OIDC sub aborts the assertion
+
+- **WHEN** an SP configured with `nameid_format: persistent`
+  presents a session whose `RawOIDCClaims` contains no `sub` claim
+- **THEN** `ApplyMapping` SHALL return a typed domain error
+  identifying the SP entity ID and the missing canonical subject
+- **AND** the bridge SHALL NOT emit a SAML response for that
+  request
+
+#### Scenario: Storage backend error aborts the assertion
+
+- **WHEN** the persistent-NameID storage backend returns any error
+  from the get-or-create call
+- **THEN** `ApplyMapping` SHALL return a typed domain error wrapping
+  that storage error
+- **AND** the bridge SHALL NOT emit a SAML response for that
+  request
+- **AND** subsequent authentications SHALL re-attempt resolution
+  rather than caching a fallback value
+
+### Requirement: Persistent NameID storage durability
+
+The system SHALL persist each generated persistent NameID before it
+is returned to the caller, so that the same NameID is recoverable on
+subsequent authentications.
+
+The storage SHALL guarantee at-most-one persistent NameID per
+`(service-provider EntityID, upstream user OIDC sub)` pair, even
+under concurrent first-time-authentication requests for the same
+pair. The first writer's value SHALL be returned to all concurrent
+callers; no caller SHALL receive a value that is not also persisted
+for future reads.
+
+When a service provider record is removed from the bridge, all
+persistent NameID rows associated with that service provider SHALL
+be removed automatically.
+
+The system SHALL NOT remove persistent NameID rows for upstream
+users that disappear from the OIDC provider; user-lifecycle cleanup
+is explicitly out of scope for this capability version.
+
+#### Scenario: First and second resolution return the same persisted value
+
+- **WHEN** `GetOrCreate` is invoked for a `(SP, user)` pair that has
+  no existing row, and is then invoked again for the same pair
+- **THEN** the first call SHALL return a freshly generated UUID and
+  persist it
+- **AND** the second call SHALL return the exact same UUID without
+  generating a new one
+
+#### Scenario: Concurrent first-time resolution converges on one value
+
+- **WHEN** two concurrent requests invoke `GetOrCreate` for the same
+  `(SP, user)` pair that has no existing row
+- **THEN** both calls SHALL return the same UUID value
+- **AND** exactly one row SHALL exist in the persistent NameID
+  storage for that pair
+
+#### Scenario: Service provider removal cascades to NameIDs
+
+- **WHEN** an operator removes a service provider record from the
+  bridge while persistent NameID rows exist for that service
+  provider
+- **THEN** every persistent NameID row whose `entity_id` matches
+  the removed service provider SHALL be removed in the same
+  operation
+
+#### Scenario: Upstream user removal does not cascade
+
+- **WHEN** an upstream user is deleted from the OIDC provider
+- **THEN** the bridge SHALL NOT remove any persistent NameID rows
+  associated with that user
+- **AND** the bridge SHALL surface no error from this condition; the
+  rows SHALL remain inert until cleanup is addressed by a later
+  capability version
+
+### Requirement: Transient NameID resolution
+
+The mapping service SHALL emit a freshly generated RFC 4122 v4 UUID
+as the NameID value on every authentication when a service
+provider's mapping configures `nameid_format: transient` (or the
+equivalent SAML URN). The value SHALL NOT be persisted, and the
+format URI in the assertion SHALL be
+`urn:oasis:names:tc:SAML:2.0:nameid-format:transient`.
+
+#### Scenario: Transient NameID changes per authentication
+
+- **WHEN** the same upstream user authenticates twice to a
+  service provider configured with `nameid_format: transient`
+- **THEN** the two assertions SHALL carry distinct `<saml:NameID>`
+  values
+- **AND** each value SHALL parse as an RFC 4122 UUID
+
+### Requirement: Email-address NameID resolution
+
+The mapping service SHALL emit `UserAttributes.Email` as the NameID
+value when a service provider's mapping configures
+`nameid_format: emailAddress` (or `email`, or the equivalent SAML
+URN), after any `Options.LowercaseEmail` transform has been
+applied. The format URI in the assertion SHALL be
+`urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress`.
+
+When `UserAttributes.Email` is empty for an SP configured with this
+format, the mapping service SHALL return a typed domain error and
+the bridge SHALL NOT emit a SAML response — silently emitting an
+empty NameID would violate the SAML 2.0 NameID schema.
+
+#### Scenario: Email NameID uses lowercased address
+
+- **WHEN** an SP with `nameid_format: emailAddress` and
+  `options.lowercase_email: true` authenticates a user whose
+  `UserAttributes.Email` was extracted as `"Alice@Example.com"`
+- **THEN** the assertion SHALL carry
+  `<saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:
+  emailAddress">alice@example.com</saml:NameID>`
+
+#### Scenario: Missing email aborts the assertion
+
+- **WHEN** an SP with `nameid_format: emailAddress` authenticates a
+  user whose `UserAttributes.Email` is empty
+- **THEN** `ApplyMapping` SHALL return a typed domain error
+  identifying the SP entity ID
+- **AND** the bridge SHALL NOT emit a SAML response
+
+### Requirement: Persistent NameID observability
+
+For every persistent-NameID resolution, the bridge SHALL emit a
+structured log record at INFO level identifying the service provider
+entity ID and the canonical OIDC subject used as the lookup key.
+For every storage call, the bridge SHALL open a tracing span named
+`repo.persistent_nameid.get_or_create` whose attributes include the
+service provider entity ID.
+
+Failure paths (missing canonical subject, storage error) SHALL be
+logged at ERROR level with the same key fields plus the underlying
+error.
+
+These signals exist so that operators can audit persistent NameID
+issuance, correlate NameIDs back to the originating authentication,
+and diagnose stability regressions without inspecting database
+contents.
+
+#### Scenario: Successful resolution emits INFO log and span
+
+- **WHEN** a persistent NameID is successfully resolved for an
+  authentication
+- **THEN** the bridge SHALL emit one INFO log record with at least
+  the keys `entityID` and `canonicalSubject`
+- **AND** a `repo.persistent_nameid.get_or_create` span SHALL be
+  recorded for the storage call with at least the
+  `entityID` attribute
+
+#### Scenario: Failure emits ERROR log
+
+- **WHEN** persistent NameID resolution fails because the storage
+  backend returned an error
+- **THEN** the bridge SHALL emit one ERROR log record carrying the
+  service provider entity ID, canonical subject, and the wrapped
+  underlying error
 
 ### Requirement: Structured internal user model
 
@@ -284,3 +552,302 @@ persisted under the Phase 1 layout.
   under the Phase 1 layout
 - **THEN** loading that service provider SHALL return an error and the
   service provider SHALL NOT be served from cache as if valid
+
+### Requirement: Admin endpoint to retrieve a service provider's configuration
+
+The bridge SHALL expose `GET /admin/service-providers` that returns
+the persisted configuration of a single service provider, addressed
+by an `entity_id` query parameter.
+
+The endpoint SHALL accept the EntityID as a query parameter rather
+than a path parameter, because SAML EntityIDs are typically URLs
+containing `/`, `:`, and `?` that are unsafe to embed in a URL path.
+Standard percent-encoding applies to the query value.
+
+A successful response SHALL be `200 OK` with a JSON body containing,
+at minimum, the SP's `entity_id`, `acs_url`, `acs_binding`, and the
+current `attribute_mapping`. When the SP has no attribute mapping
+configured (the JSONB column is `NULL`), the response SHALL omit the
+`attribute_mapping` field rather than emit `null`, so the wire shape
+clearly conveys "no mapping configured".
+
+When the `attribute_mapping` is present, its JSON shape SHALL match
+exactly the shape accepted by `POST /admin/service-providers` and by
+`PUT /admin/service-providers/attribute-mapping`, so callers can
+round-trip the document without re-shaping it.
+
+The endpoint SHALL NOT require authentication in this capability
+version; it inherits the same posture as the existing
+`POST /admin/service-providers` endpoint. A subsequent capability
+will introduce authentication for the entire `/admin/` surface.
+
+#### Scenario: GET returns full configuration for a mapped SP
+
+- **WHEN** an operator issues `GET /admin/service-providers?entity_id=<id>`
+  for a service provider that was registered with a non-null
+  `attribute_mapping`
+- **THEN** the response status SHALL be `200 OK`
+- **AND** the response body SHALL contain `entity_id`, `acs_url`,
+  `acs_binding`, and `attribute_mapping` whose JSON shape matches
+  what was persisted
+
+#### Scenario: GET omits attribute_mapping when none is configured
+
+- **WHEN** an operator issues `GET /admin/service-providers?entity_id=<id>`
+  for a service provider registered without an attribute mapping
+- **THEN** the response status SHALL be `200 OK`
+- **AND** the response body SHALL contain `entity_id`, `acs_url`,
+  and `acs_binding`
+- **AND** the response body SHALL NOT contain an `attribute_mapping`
+  field (the field SHALL be omitted, not emitted as `null`)
+
+#### Scenario: GET returns 400 when entity_id is missing
+
+- **WHEN** an operator issues `GET /admin/service-providers` with no
+  `entity_id` query parameter, or with an empty value
+- **THEN** the response status SHALL be `400 Bad Request`
+- **AND** the response body SHALL identify the missing
+  `entity_id` query parameter
+
+#### Scenario: GET returns 404 for an unknown service provider
+
+- **WHEN** an operator issues `GET /admin/service-providers?entity_id=<id>`
+  for an `entity_id` that has never been registered
+- **THEN** the response status SHALL be `404 Not Found`
+
+### Requirement: Admin endpoint to replace a service provider's attribute mapping
+
+The bridge SHALL expose `PUT /admin/service-providers/attribute-mapping`,
+addressed by an `entity_id` query parameter, that fully replaces the
+addressed SP's `attribute_mapping` document with the JSON body
+provided in the request.
+
+`PUT` SHALL behave as a full replacement of the `attribute_mapping`
+field only. It SHALL NOT change `entity_id`, `acs_url`, `acs_binding`,
+or any other field on the SP; those fields are immutable through
+this endpoint.
+
+The request body SHALL be a JSON object conforming to the same
+`AttributeMapping` shape accepted by `POST /admin/service-providers`.
+The same validation rules SHALL be applied to the body before any
+write occurs; an invalid mapping SHALL be rejected with `400 Bad
+Request` and an actionable error message identifying the offending
+field path, and the persisted mapping SHALL be left unchanged.
+
+A successful update SHALL persist the new mapping atomically and
+return `200 OK` with a brief success envelope identifying that the
+attribute mapping was updated.
+
+A subsequent `GET /admin/service-providers?entity_id=<id>` SHALL
+return an `attribute_mapping` that is byte-equivalent — after
+canonical JSON key ordering — to the body of the preceding successful
+`PUT`. This round-trip property is the operator's contract for "what
+I sent is what is stored".
+
+The endpoint SHALL distinguish between an absent mapping and a
+present-but-empty mapping (see the dedicated requirement below). A
+`PUT` with body `{}` SHALL be accepted as a configured-empty mapping
+and SHALL NOT be silently coerced into a clear operation.
+
+#### Scenario: PUT replaces an existing mapping and round-trips through GET
+
+- **WHEN** an operator issues `PUT /admin/service-providers/attribute-mapping?entity_id=<id>`
+  with a valid non-empty `AttributeMapping` body on a service
+  provider that already has a mapping
+- **THEN** the response status SHALL be `200 OK`
+- **AND** a subsequent `GET /admin/service-providers?entity_id=<id>`
+  SHALL return an `attribute_mapping` whose JSON content matches the
+  PUT body after canonical key ordering
+
+#### Scenario: PUT installs a mapping on a previously unmapped SP
+
+- **WHEN** an operator issues `PUT /admin/service-providers/attribute-mapping?entity_id=<id>`
+  with a valid `AttributeMapping` body on a service provider that
+  has no mapping configured
+- **THEN** the response status SHALL be `200 OK`
+- **AND** the SP's `attribute_mapping` column SHALL no longer be
+  `NULL`
+- **AND** the subsequent `GET` response SHALL contain the new
+  `attribute_mapping`
+
+#### Scenario: PUT rejects an invalid mapping with 400 and preserves prior state
+
+- **WHEN** an operator issues `PUT /admin/service-providers/attribute-mapping?entity_id=<id>`
+  with a body that fails `AttributeMapping` validation (for example,
+  `nameid_format: "foobar"`, or a `SAMLAttributeDef` with empty
+  `name`)
+- **THEN** the response status SHALL be `400 Bad Request`
+- **AND** the response body SHALL identify the offending field path
+- **AND** the SP's persisted `attribute_mapping` SHALL be unchanged
+  from before the request
+
+#### Scenario: PUT rejects an invalid JSON body with 400
+
+- **WHEN** an operator issues `PUT /admin/service-providers/attribute-mapping?entity_id=<id>`
+  with a body that is not valid JSON
+- **THEN** the response status SHALL be `400 Bad Request`
+- **AND** the SP's persisted `attribute_mapping` SHALL be unchanged
+
+#### Scenario: PUT returns 400 when entity_id is missing
+
+- **WHEN** an operator issues `PUT /admin/service-providers/attribute-mapping`
+  with no `entity_id` query parameter, or an empty value
+- **THEN** the response status SHALL be `400 Bad Request`
+- **AND** no SP state SHALL be modified
+
+#### Scenario: PUT returns 404 for an unknown service provider
+
+- **WHEN** an operator issues `PUT /admin/service-providers/attribute-mapping?entity_id=<id>`
+  with a valid body for an `entity_id` that has never been registered
+- **THEN** the response status SHALL be `404 Not Found`
+- **AND** no SP SHALL be created as a side effect
+
+### Requirement: Admin endpoint to clear a service provider's attribute mapping
+
+The bridge SHALL expose `DELETE /admin/service-providers/attribute-mapping`,
+addressed by an `entity_id` query parameter, that clears the
+addressed SP's attribute mapping and reverts the SP to default
+(unmapped) assertion behaviour.
+
+A successful clear SHALL set the SP's `attribute_mapping` to "no
+mapping configured" (the JSONB column SHALL become `NULL`) and SHALL
+NOT modify any other field on the SP. After a successful `DELETE`,
+the SP SHALL produce assertions indistinguishable from an SP that
+was registered without an `attribute_mapping`.
+
+A successful clear SHALL return `200 OK` with a brief success
+envelope identifying that the attribute mapping was cleared.
+
+Clearing a mapping SHALL NOT remove the SP, SHALL NOT affect the SP's
+persistent NameID rows (those continue to be owned by the SP record
+and are cascade-deleted only when the SP itself is deleted), and
+SHALL NOT touch any other configuration field.
+
+#### Scenario: DELETE clears an existing mapping
+
+- **WHEN** an operator issues `DELETE /admin/service-providers/attribute-mapping?entity_id=<id>`
+  on a service provider that has an attribute mapping configured
+- **THEN** the response status SHALL be `200 OK`
+- **AND** a subsequent `GET /admin/service-providers?entity_id=<id>`
+  SHALL NOT include an `attribute_mapping` field in its response
+- **AND** an authentication for that SP after the DELETE SHALL
+  produce the same assertion that would be produced for an SP
+  registered without an `attribute_mapping`
+
+#### Scenario: DELETE is idempotent on an unmapped SP
+
+- **WHEN** an operator issues `DELETE /admin/service-providers/attribute-mapping?entity_id=<id>`
+  on a service provider that has no attribute mapping configured
+- **THEN** the response status SHALL be `200 OK`
+- **AND** the SP's configuration SHALL be unchanged
+
+#### Scenario: DELETE preserves persistent NameID rows
+
+- **WHEN** an operator issues `DELETE /admin/service-providers/attribute-mapping?entity_id=<id>`
+  on a service provider that has existing persistent NameID rows
+- **THEN** every persistent NameID row associated with that SP
+  SHALL still exist after the DELETE completes
+
+#### Scenario: DELETE returns 400 when entity_id is missing
+
+- **WHEN** an operator issues `DELETE /admin/service-providers/attribute-mapping`
+  with no `entity_id` query parameter, or an empty value
+- **THEN** the response status SHALL be `400 Bad Request`
+- **AND** no SP state SHALL be modified
+
+#### Scenario: DELETE returns 404 for an unknown service provider
+
+- **WHEN** an operator issues `DELETE /admin/service-providers/attribute-mapping?entity_id=<id>`
+  for an `entity_id` that has never been registered
+- **THEN** the response status SHALL be `404 Not Found`
+
+### Requirement: PUT with an empty object is distinct from DELETE
+
+The admin attribute-mapping endpoints SHALL treat `PUT
+/admin/service-providers/attribute-mapping?entity_id=<id>` with body
+`{}` as a **configured-empty** mapping (a non-null `AttributeMapping`
+with all fields at their zero values), not as a clear operation.
+
+After such a `PUT`, the SP's persisted state SHALL be a non-null
+`AttributeMapping` document and a subsequent `GET` SHALL include an
+`attribute_mapping` field (whose JSON value is `{}`). After a
+`DELETE`, the SP's persisted state SHALL be the absence of any
+mapping document and a subsequent `GET` SHALL omit the
+`attribute_mapping` field entirely.
+
+This distinction is part of the public contract so that:
+
+- Operators have an unambiguous way to express both intents ("I want
+  an explicit, configured mapping that happens to be empty" vs "I
+  want this SP to behave as if it were never mapped").
+- Future fields added to `AttributeMapping` whose zero value is
+  meaningful do not silently collapse the two states.
+
+The runtime assertion behaviour of a configured-empty mapping SHALL
+remain governed by the existing `per-sp-attribute-mapping`
+requirements (notably "Suppress default attributes when mapping is
+active" — an empty `saml_attribute_mappings` does not suppress
+defaults, and an empty `nameid_format` falls through to the bridge's
+default NameID handling). The distinction enforced here is about
+**persisted state and wire shape**, not about which attributes appear
+in the SAML assertion today.
+
+#### Scenario: PUT empty object persists a configured-empty mapping
+
+- **WHEN** an operator issues `PUT /admin/service-providers/attribute-mapping?entity_id=<id>`
+  with body `{}`
+- **THEN** the response status SHALL be `200 OK`
+- **AND** a subsequent `GET /admin/service-providers?entity_id=<id>`
+  SHALL include an `attribute_mapping` field whose JSON value is
+  `{}`
+
+#### Scenario: DELETE persists the absence of a mapping
+
+- **WHEN** an operator issues `DELETE /admin/service-providers/attribute-mapping?entity_id=<id>`
+- **THEN** a subsequent `GET /admin/service-providers?entity_id=<id>`
+  SHALL NOT include an `attribute_mapping` field at all
+
+#### Scenario: PUT {} followed by DELETE yields the unmapped state
+
+- **WHEN** an operator issues `PUT /admin/service-providers/attribute-mapping?entity_id=<id>`
+  with body `{}`, then issues `DELETE` for the same SP
+- **THEN** after the `DELETE`, the SP SHALL be in the unmapped state
+- **AND** a subsequent `GET` SHALL omit the `attribute_mapping`
+  field
+
+### Requirement: Admin attribute-mapping endpoints use a consistent error envelope
+
+The bridge SHALL ensure all three admin attribute-mapping endpoints
+(`GET`, `PUT`, `DELETE`) return errors using the same JSON envelope
+already used by `POST /admin/service-providers`, so admin-API clients
+see one consistent error model across the surface.
+
+Error responses SHALL carry the appropriate HTTP status code (`400`
+for malformed input or validation failure, `404` for unknown SP,
+`500` for unexpected internal failure) and a JSON body containing,
+at minimum, the status code and a human-readable message. Validation
+errors from `AttributeMapping.Validate` SHALL surface the offending
+field path in the message so operators can self-correct.
+
+Success responses SHALL also be JSON. `GET` SHALL return the
+configuration body. `PUT` and `DELETE` SHALL return a brief envelope
+containing a `status` and a `message` field identifying the
+performed operation.
+
+#### Scenario: Validation error includes the offending field path
+
+- **WHEN** any admin attribute-mapping endpoint rejects a request
+  because `AttributeMapping.Validate` returned a field-scoped error
+- **THEN** the response body SHALL include the field path identified
+  by `Validate` (for example, `saml_attribute_mappings.email.name`
+  or `nameid_format`)
+
+#### Scenario: Unexpected internal failure surfaces as 500 without leaking internals
+
+- **WHEN** any admin attribute-mapping endpoint encounters an
+  unexpected internal error (for example, the database is
+  unavailable)
+- **THEN** the response status SHALL be `500 Internal Server Error`
+- **AND** the response body SHALL be a JSON error envelope
+- **AND** the response body SHALL NOT include raw database error
+  text, stack traces, or SQL fragments
