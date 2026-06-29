@@ -147,24 +147,24 @@
 - [x] 7.5 Run `make test` and confirm all packages pass, with the
   new handler / service / repo tests included.
 - [x] 7.6 Run `make build` and confirm a clean binary build.
-- [ ] 7.7 Manual smoke test against a local Postgres + bridge:
+- [x] 7.7 Manual smoke test against a local Postgres + bridge:
   register an SP via `POST`, `GET` it back, `PUT` a modified
   mapping, `GET` it back and confirm the body matches, `DELETE` it,
   `GET` it back and confirm `attribute_mapping` is absent.
 
 ## 8. Documentation & rollout
 
-- [ ] 8.1 Cut a single PR titled "Add admin GET/PUT/DELETE for SP
+- [x] 8.1 Cut a single PR titled "Add admin GET/PUT/DELETE for SP
   attribute mapping (Phase 2d)". Reference this OpenSpec change
   and the v2 design doc.
-- [ ] 8.2 Deployment: code-only change, no DB migration. Roll out
+- [x] 8.2 Deployment: code-only change, no DB migration. Roll out
   with the standard deploy. New endpoints become available
   immediately. Existing `POST /admin/service-providers` remains
   unchanged.
-- [ ] 8.3 Rollback: revert the PR. No persisted state is introduced
+- [x] 8.3 Rollback: revert the PR. No persisted state is introduced
   by this change; any `attribute_mapping` documents written via the
   new `PUT` remain valid for the previous binary.
-- [ ] 8.4 After merge, archive this OpenSpec change with
+- [x] 8.4 After merge, archive this OpenSpec change with
   `/opsx:archive admin-sp-attribute-mapping-api`; the sync step
   will fold the new requirements into
   `openspec/specs/per-sp-attribute-mapping/spec.md`.
