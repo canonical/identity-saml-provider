@@ -1,0 +1,25 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: apps
+requires:
+  - configs: [ory]
+    path: 10-ory.yaml
+  - configs: [saml-migrate]
+    path: 15-saml-migrate.yaml
+manifests:
+  kustomize:
+    paths:
+      - ../k8s/20-apps
+    buildArgs:
+      - --load-restrictor=LoadRestrictionsNone
+deploy:
+  statusCheckDeadlineSeconds: 600
+  tolerateFailuresUntilDeadline: true
+  kubectl:
+    hooks:
+      after:
+        - host:
+            command: ["sh", "-c", "kubectl rollout status deployment/identity-saml-provider --timeout=300s"]
+        - host:
+            command: ["sh", "-c", "kubectl rollout status deployment/login-ui --timeout=300s"]

@@ -1,0 +1,21 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: ory
+requires:
+  - configs: [postgres]
+    path: 00-postgres.yaml
+manifests:
+  kustomize:
+    paths:
+      - ../k8s/10-ory
+    buildArgs:
+      - --load-restrictor=LoadRestrictionsNone
+deploy:
+  kubectl:
+    hooks:
+      after:
+        - host:
+            command: ["sh", "-c", "kubectl rollout status deployment/hydra --timeout=300s"]
+        - host:
+            command: ["sh", "-c", "kubectl rollout status deployment/kratos --timeout=300s"]

@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: login-ui
+  labels:
+    app: login-ui
+spec:
+  ports:
+  - port: 4455
+    targetPort: 4455
+  selector:
+    app: login-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: login-ui
+  labels:
+    app: login-ui
+spec:
+  selector:
+    matchLabels:
+      app: login-ui
+  template:
+    metadata:
+      labels:
+        app: login-ui
+    spec:
+      containers:
+      - name: login-ui
+        image: ghcr.io/canonical/identity-platform-login-ui:latest
+        ports:
+        - containerPort: 4455
+        env:
+        - name: KRATOS_PUBLIC_URL
+          value: http://kratos:4433
+        - name: KRATOS_ADMIN_URL
+          value: http://kratos:4434
+        - name: HYDRA_ADMIN_URL
+          value: http://hydra:4445
+        - name: BASE_URL
+          value: http://localhost:8080
+        - name: COOKIES_ENCRYPTION_KEY
+          # Insecure development-only key. Do NOT use this in production.
+          # In production, override COOKIES_ENCRYPTION_KEY with a strong, random
+          # secret sourced from a secure store (for example, a Kubernetes Secret).
+          value: WrfOcYmVBwyduEbKYTUhO4X7XVaOQ1wF
+        - name: PORT
+          value: "4455"
+        - name: LOG_LEVEL
+          value: DEBUG
+        - name: TRACING_ENABLED
+          value: "FALSE"
+        - name: OPENFGA_API_SCHEME
+          value: http
+        - name: OPENFGA_API_HOST
+          value: openfga:8080
+        - name: OPENFGA_STORE_ID
+          value: 01GP1254CHWJC1MNGVB0WDG1T0
+        - name: IDENTIFIER_FIRST_ENABLED
+          value: "false"
+        - name: AUTHORIZATION_ENABLED
+          value: "false"
+        - name: OIDC_WEBAUTHN_SEQUENCING_ENABLED
+          value: "false"

@@ -1,0 +1,21 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: setup
+requires:
+  - configs: [ory]
+    path: 10-ory.yaml
+manifests:
+  kustomize:
+    paths:
+      - ../k8s/30-setup
+deploy:
+  kubectl:
+    hooks:
+      before:
+        # Jobs are immutable; delete prior runs so re-deploys don't fail with "already exists".
+        - host:
+            command: ["sh", "-c", "kubectl delete job hydra-setup kratos-setup --ignore-not-found=true"]
+      after:
+        - host:
+            command: ["sh", "-c", "kubectl wait --for=condition=complete --timeout=120s job/hydra-setup job/kratos-setup"]

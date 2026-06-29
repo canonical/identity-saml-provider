@@ -1,5 +1,28 @@
 apiVersion: skaffold/v4beta1
 kind: Config
+metadata:
+  name: identity-saml-provider
+
+# Tiered deploy: each module below requires its predecessor(s) and will only
+# render/apply after they finish (including their `after` readiness hooks).
+# Dependency DAG:
+#   postgres ─┬─► ory ─┬─► apps ─► traefik
+#             │        └─► setup
+#             └─► saml-migrate ─► apps
+requires:
+  - path: skaffold/00-postgres.yaml
+    configs: [postgres]
+  - path: skaffold/10-ory.yaml
+    configs: [ory]
+  - path: skaffold/15-saml-migrate.yaml
+    configs: [saml-migrate]
+  - path: skaffold/20-apps.yaml
+    configs: [apps]
+  - path: skaffold/30-setup.yaml
+    configs: [setup]
+  - path: skaffold/40-traefik.yaml
+    configs: [traefik]
+
 build:
   artifacts:
   - image: identity-saml-provider
@@ -9,19 +32,7 @@ build:
         paths:
           - rockcraft.yaml
     platforms: ["linux/amd64"]
-manifests:
-  kustomize:
-    paths:
-    - k8s
-deploy:
-  kubectl:
-    hooks:
-      before:
-        - host:
-            command: ["sh", "-c", "kubectl delete job saml-provider-migrate --ignore-not-found=true"]
-      after:
-        - host:
-            command: ["sh", "-c", "kubectl wait --for=condition=complete --timeout=60s job/saml-provider-migrate"]
+
 portForward:
   - resourceType: service
     resourceName: traefik

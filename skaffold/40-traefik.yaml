@@ -1,0 +1,17 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: traefik
+requires:
+  - configs: [apps]
+    path: 20-apps.yaml
+manifests:
+  kustomize:
+    paths:
+      - ../k8s/40-traefik
+deploy:
+  kubectl:
+    hooks:
+      after:
+        - host:
+            command: ["sh", "-c", "kubectl rollout status deployment/traefik --timeout=180s"]
