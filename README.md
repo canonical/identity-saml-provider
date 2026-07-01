@@ -316,7 +316,7 @@ mapping.
 | ----- | ----------- |
 | `nameid_format` | SAML NameID format. Accepted values: `persistent`, `transient`, `emailAddress`, `unspecified`, or a full URN. Defaults to `transient`. |
 | `oidc_claim_mappings` | Maps OIDC claim names (from the ID token) to internal field names. Any claim present in the OIDC ID token can be mapped. |
-| `saml_attribute_mappings` | Maps internal field names to SAML attribute definitions. Each value is an object with `name` (required), `friendly_name` (optional), and `name_format` (optional, defaults to `urn:oasis:names:tc:SAML:2.0:attrname-format:uri`). |
+| `saml_attribute_mappings` | Maps internal field names to SAML attribute definitions. Each value is an object with `name` (required), `friendly_name` (optional), and `name_format` (optional, defaults to `urn:oasis:names:tc:SAML:2.0:attrname-format:uri`). Each key must be a well-known internal field (`subject`, `email`, `name`, `groups`) or appear as a target value in `oidc_claim_mappings`; otherwise registration or update is rejected. |
 | `options.lowercase_email` | When `true`, lowercases the email attribute value before mapping. |
 
 The mapping works in two stages:
