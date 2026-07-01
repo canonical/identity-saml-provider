@@ -1,0 +1,16 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: postgres
+manifests:
+  kustomize:
+    paths:
+      - ../k8s/00-postgres
+    buildArgs:
+      - --load-restrictor=LoadRestrictionsNone
+deploy:
+  kubectl:
+    hooks:
+      after:
+        - host:
+            command: ["sh", "-c", "kubectl rollout status deployment/postgres --timeout=180s"]

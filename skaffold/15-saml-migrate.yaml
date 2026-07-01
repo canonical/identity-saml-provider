@@ -1,0 +1,21 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: saml-migrate
+requires:
+  - configs: [postgres]
+    path: 00-postgres.yaml
+manifests:
+  kustomize:
+    paths:
+      - ../k8s/15-saml-migrate
+deploy:
+  kubectl:
+    hooks:
+      before:
+        # Jobs are immutable; delete prior run so re-deploys don't fail with "already exists".
+        - host:
+            command: ["sh", "-c", "kubectl delete job saml-provider-migrate --ignore-not-found=true"]
+      after:
+        - host:
+            command: ["sh", "-c", "kubectl wait --for=condition=complete --timeout=120s job/saml-provider-migrate"]
