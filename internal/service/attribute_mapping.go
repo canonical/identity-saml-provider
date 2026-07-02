@@ -158,15 +158,14 @@ func normalizeNameIDFormat(format string) string {
 	}
 }
 
-// BuildUserAttributes constructs a typed UserAttributes value from the
-// session fields and raw OIDC claims using the SP's OIDCClaimMappings.
-// When oidcClaimMappings is empty, the default mapping
-// {"sub":"subject","email":"email","name":"name","groups":"groups"} is
-// applied. Single-valued claims populate the matching well-known field
-// (Subject, Email, Name) or the Custom map when the internal field is
-// not well-known. The "groups" internal field is populated as []string
-// from a multi-valued OIDC claim. Claims missing from the raw OIDC
-// token fall back to the equivalent session field when one exists.
+// BuildUserAttributes constructs a typed UserAttributes from session
+// fields and raw OIDC claims using the SP's OIDCClaimMappings. When
+// oidcClaimMappings is empty, the default mapping
+// {"sub":"subject","email":"email","name":"name","groups":"groups"}
+// is applied. Well-known internal fields dispatch through the
+// domain.WellKnownField registry (typed setter + session fallback);
+// unknown internal fields land in UserAttributes.Custom when the OIDC
+// value is non-empty.
 func BuildUserAttributes(session *domain.Session, oidcClaimMappings map[string]string, rawClaims map[string]interface{}) *domain.UserAttributes {
 	// Default OIDC-to-internal mapping.
 	oidcToInternal := map[string]string{
@@ -182,27 +181,28 @@ func BuildUserAttributes(session *domain.Session, oidcClaimMappings map[string]s
 	attrs := &domain.UserAttributes{Custom: make(map[string]string)}
 
 	for oidcClaim, internalField := range oidcToInternal {
-		if internalField == "groups" {
-			attrs.Groups = extractGroups(rawClaims, oidcClaim, session)
+		field, known := domain.LookupWellKnownField(internalField)
+
+		if known && field.Multi {
+			groups := extractGroupsFromClaims(rawClaims, oidcClaim)
+			if groups == nil && session != nil && field.SessionSliceFallback != nil {
+				groups = field.SessionSliceFallback(session)
+			}
+			field.SetSlice(attrs, groups)
 			continue
 		}
 
 		value := extractStringClaim(rawClaims, oidcClaim)
-		if value == "" {
-			value = sessionFieldFallback(session, internalField)
+		if value == "" && session != nil && known && field.SessionFallback != nil {
+			value = field.SessionFallback(session)
 		}
 
-		switch internalField {
-		case "subject":
-			attrs.Subject = value
-		case "email":
-			attrs.Email = value
-		case "name":
-			attrs.Name = value
-		default:
-			if value != "" {
-				attrs.Custom[internalField] = value
-			}
+		if known && field.SetString != nil {
+			field.SetString(attrs, value)
+			continue
+		}
+		if value != "" {
+			attrs.Custom[internalField] = value
 		}
 	}
 
@@ -224,50 +224,31 @@ func extractStringClaim(rawClaims map[string]interface{}, claim string) string {
 	return ""
 }
 
-// extractGroups returns the value of a multi-valued OIDC claim (a JSON
-// array of strings) as a []string. Falls back to session.Groups when
-// the claim is absent in rawClaims.
-func extractGroups(rawClaims map[string]interface{}, claim string, session *domain.Session) []string {
-	if rawClaims != nil {
-		if v, ok := rawClaims[claim]; ok {
-			if arr, ok := v.([]interface{}); ok {
-				result := make([]string, 0, len(arr))
-				for _, item := range arr {
-					if s, ok := item.(string); ok {
-						result = append(result, s)
-					}
-				}
-				if len(result) > 0 {
-					return result
-				}
-			}
+// extractGroupsFromClaims returns the OIDC claim value as a []string,
+// or nil when the claim is absent, not a JSON array, or contains no
+// string values. Session-level fallback is the caller's responsibility.
+func extractGroupsFromClaims(rawClaims map[string]interface{}, claim string) []string {
+	if rawClaims == nil {
+		return nil
+	}
+	v, ok := rawClaims[claim]
+	if !ok {
+		return nil
+	}
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(arr))
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
 		}
 	}
-	if session != nil && len(session.Groups) > 0 {
-		out := make([]string, len(session.Groups))
-		copy(out, session.Groups)
-		return out
+	if len(result) == 0 {
+		return nil
 	}
-	return nil
-}
-
-// sessionFieldFallback returns the canonical session field value for a
-// well-known internal field, used when the configured OIDC claim is
-// absent from the raw token. Custom (non-well-known) internal fields
-// have no session-level equivalent and return the empty string.
-func sessionFieldFallback(session *domain.Session, internalField string) string {
-	if session == nil {
-		return ""
-	}
-	switch internalField {
-	case "subject":
-		return session.UserName
-	case "email":
-		return session.UserEmail
-	case "name":
-		return session.UserCommonName
-	}
-	return ""
+	return result
 }
 
 // buildSAMLAttributes converts UserAttributes into SAML Attribute
@@ -282,24 +263,29 @@ func buildSAMLAttributes(attrs *domain.UserAttributes, samlMappings map[string]d
 	result := make([]domain.Attribute, 0, len(samlMappings))
 
 	for internalField, def := range samlMappings {
-		if internalField == "groups" {
-			if len(attrs.Groups) == 0 {
-				logger.Debugw("Mapped SAML attribute omitted: no groups available",
+		if f, known := domain.LookupWellKnownField(internalField); known && f.Multi {
+			// Multi-valued well-known fields dispatch through the
+			// registry so adding a new multi field does not require
+			// editing this function. The registry contract guarantees
+			// GetSlice is populated for Multi entries.
+			values := f.GetSlice(attrs)
+			if len(values) == 0 {
+				logger.Debugw("Mapped SAML attribute omitted: no values available",
 					"entityID", entityID,
 					"internalField", internalField,
 					"samlAttrName", def.Name,
 				)
 				continue
 			}
-			values := make([]domain.AttributeValue, 0, len(attrs.Groups))
-			for _, g := range attrs.Groups {
-				values = append(values, domain.AttributeValue{Type: "xs:string", Value: g})
+			attrValues := make([]domain.AttributeValue, 0, len(values))
+			for _, v := range values {
+				attrValues = append(attrValues, domain.AttributeValue{Type: "xs:string", Value: v})
 			}
 			result = append(result, domain.Attribute{
 				Name:         def.Name,
 				FriendlyName: def.FriendlyName,
 				NameFormat:   def.EffectiveNameFormat(),
-				Values:       values,
+				Values:       attrValues,
 			})
 			continue
 		}
