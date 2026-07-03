@@ -118,6 +118,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	)
 
 	// Wire SAML adapters (these need the services)
+	samlIDP.AssertionMaker = handler.NewSPAssertionMaker(spSvc, logger)
 	samlIDP.SessionProvider = &handler.SAMLSessionAdapter{
 		Sessions: sessionSvc,
 		Mapping:  mappingSvc,
