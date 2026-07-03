@@ -16,7 +16,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/canonical/identity-saml-provider/internal/crypto"
-	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/logging"
 )
 
@@ -183,26 +182,4 @@ func parseState(state string) (stateValue, requestID, relayState string, err err
 		relayState = parts[2]
 	}
 	return stateValue, requestID, relayState, nil
-}
-
-// domainSessionToSAML converts a domain.Session to a *saml.Session.
-// This function is used by the SAML adapters to bridge between domain types
-// and the crewjam/saml library types.
-func domainSessionToSAML(s *domain.Session) *samlSession {
-	return &samlSession{
-		ID:                    s.ID,
-		CreateTime:            s.CreateTime,
-		ExpireTime:            s.ExpireTime,
-		Index:                 s.Index,
-		NameID:                s.NameID,
-		NameIDFormat:          s.NameIDFormat,
-		UserEmail:             s.UserEmail,
-		UserCommonName:        s.UserCommonName,
-		UserName:              s.UserName,
-		UserSurname:           s.UserSurname,
-		UserGivenName:         s.UserGivenName,
-		UserScopedAffiliation: s.UserScopedAffiliation,
-		Groups:                s.Groups,
-		CustomAttributes:      s.CustomAttributes,
-	}
 }
