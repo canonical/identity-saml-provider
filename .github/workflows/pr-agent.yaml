@@ -19,10 +19,7 @@ jobs:
         uses: the-pr-agent/pr-agent@main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-          # Redirect OpenAI client natively to OpenRouter
-          OPENAI.API_BASE: "https://openrouter.ai/api/v1"
-          OPENAI_KEY: ${{ secrets.OPENROUTER_CI_KEY }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_CI_KEY }}
 
           # Model configuration
           config.model: "openrouter/moonshotai/kimi-k2.7-code"
