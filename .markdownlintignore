@@ -5,4 +5,6 @@ CHANGELOG.md
 .github/agents/go-style-guide.md
 .github/prompts/opsx*.md
 .github/skills/openspec*/
+.agent/skills/openspec*/
+.agent/workflows/openspec*/
 openspec/

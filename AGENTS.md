@@ -17,8 +17,11 @@ applyTo: '**'
   `context.Context` as the first parameter to
   service/repository methods. *Never* store context
   inside a struct field.
-- **Configuration:** All config must look for the
+- ⚠️ **Configuration:** All config must look for the
   environment variable prefix `SAML_PROVIDER_`.
+- 🚫 **No CHANGELOG.md Edits:** Agents must *NEVER*
+  edit the `CHANGELOG.md` file. It is managed
+  by Google's `release-please` automation.
 
 ### Verification Enforcement
 
@@ -84,112 +87,13 @@ details).*
 
 ---
 
-## 3. Coding Patterns (Correct vs. Incorrect)
+## 3. External References
 
-### Code Style Precedence
-
-1. Project-specific conventions defined in this file.
-1. Local Canonical Go Style Guide
-   (See: `.github/agents/go-style-guide.md`).
-1. Effective Go conventions.
-
-### Error Handling
-
-Services return typed domain errors; handlers map
-them to HTTP statuses. Do not wrap or obscure domain
-errors.
-
-- ✅ **CORRECT:**
-
-```go
-func (s *SessionService) Get(
-    ctx context.Context,
-    id string,
-) (*domain.Session, error) {
-    session, err := s.repo.Get(ctx, id)
-    if err != nil {
-        return nil, domain.ErrNotFound("session", id)
-    }
-    return session, nil
-}
-```
-
-- ❌ **INCORRECT:**
-
-```go
-func (s *SessionService) Get(
-    ctx context.Context,
-    id string,
-) (*domain.Session, error) {
-    session, err := s.repo.Get(ctx, id)
-    if err != nil {
-        return nil, fmt.Errorf(
-            "session not found: %w", err,
-        )
-    }
-}
-```
-
-### Logging & Context
-
-Use the structured `logging.Logger` interface.
-Extract request-scoped loggers from context.
-
-- ✅ **CORRECT:**
-
-```go
-logging.FromContext(r.Context()).Infow(
-    "processing OIDC callback",
-    "request_id", requestID,
-)
-```
-
-- ❌ **INCORRECT:**
-
-```go
-zap.L().Info("processing OIDC callback")
-```
-
-### Dependency Injection
-
-Use constructor injection of interfaces exclusively.
-Functions accept interfaces, return concrete structs.
-
-- ✅ **CORRECT:**
-
-```go
-type SessionService struct {
-    repo   repository.SessionRepository
-    logger logging.Logger
-}
-
-func NewSessionService(
-    repo repository.SessionRepository,
-    logger logging.Logger,
-) *SessionService {
-    return &SessionService{
-        repo:   repo,
-        logger: logger,
-    }
-}
-```
-
-- ❌ **INCORRECT:**
-
-```go
-type SessionService struct {
-    repo   *postgres.SessionRepo
-    logger *zap.SugaredLogger
-}
-```
-
-### Mocks
-
-- Generated via `go.uber.org/mock/mockgen`.
-- Add the `//go:generate` directive above interface
-  declarations.
-- Run `make generate` to recreate. Never edit files
-  in `mocks/` manually.
+| Need                           | File                                                                                |
+|:-------------------------------|:------------------------------------------------------------------------------------|
+| Go style & coding patterns     | [golang-coding-instructions.md](.github/instructions/golang-coding-instructions.md) |
+| Local Canonical Go style guide | [go-style-guide.md](.github/agents/go-style-guide.md)                               |
+| Authentication Flow            | [docs/authentication-flow/](docs/authentication-flow/)                              |
 
 ---
 
@@ -222,13 +126,13 @@ you must follow these steps in order:
 
 ### Verification Commands
 
-| Command | Purpose |
-| ------- | ------- |
-| `make build` | Build binary |
-| `make test` | Run table-driven unit tests |
-| `make lint` | Run golangci-lint |
-| `make fmt` | Format source code |
-| `make generate` | Regenerate Go mocks |
+| Command              | Purpose                      |
+|----------------------|------------------------------|
+| `make build`         | Build binary                 |
+| `make test`          | Run table-driven unit tests  |
+| `make lint`          | Run golangci-lint            |
+| `make fmt`           | Format source code           |
+| `make generate`      | Regenerate Go mocks          |
 | `make license-check` | Verify AGPL-3.0-only headers |
-| `make migrate-up` | Apply Goose DB migrations |
-| `make migrate-down` | Roll back last DB migration |
+| `make migrate-up`    | Apply Goose DB migrations    |
+| `make migrate-down`  | Roll back last DB migration  |
