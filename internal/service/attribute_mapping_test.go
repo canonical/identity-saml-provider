@@ -229,8 +229,8 @@ func TestMappingService_ApplyMapping_SAMLAttributes_AllFields(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.UserEmail != "" || result.UserCommonName != "" || result.UserName != "" || result.Groups != nil {
-		t.Errorf("expected built-in fields cleared, got %+v", result)
+	if result.UserEmail != session.UserEmail {
+		t.Errorf("expected built-in fields preserved, got %+v", result)
 	}
 
 	got := attrMap(result.CustomAttributes)
@@ -417,53 +417,7 @@ func TestMappingService_ApplyMapping_LowercaseEmail_OnlyEmail(t *testing.T) {
 	}
 	if result.NameID != "user@example.com" {
 		t.Errorf("NameID = %q, want lowercased", result.NameID)
-	}
-}
 
-func TestMappingService_ApplyMapping_FieldClearing_ActiveWhenMapped(t *testing.T) {
-	t.Parallel()
-	ctrl := gomock.NewController(t)
-	mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
-	mockPID := mocks.NewMockPersistentNameIDRepository(ctrl)
-	logger := logging.NewNopLogger()
-
-	session := &domain.Session{
-		UserEmail:             "u@e.com",
-		UserCommonName:        "cn",
-		UserName:              "sub",
-		UserSurname:           "sn",
-		UserGivenName:         "gn",
-		UserScopedAffiliation: "sa",
-		Groups:                []string{"g1"},
-	}
-	mapping := &domain.AttributeMapping{
-		SAMLAttributeMappings: map[string]domain.SAMLAttributeDef{
-			"email": {Name: "mail"},
-		},
-	}
-	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
-
-	svc := service.NewMappingService(mockRepo, mockPID, logger, tracing.NewNoopTracer())
-	result, err := svc.ApplyMapping(context.Background(), session, "sp1")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	cleared := map[string]string{
-		"UserEmail":             result.UserEmail,
-		"UserCommonName":        result.UserCommonName,
-		"UserName":              result.UserName,
-		"UserSurname":           result.UserSurname,
-		"UserGivenName":         result.UserGivenName,
-		"UserScopedAffiliation": result.UserScopedAffiliation,
-	}
-	for field, val := range cleared {
-		if val != "" {
-			t.Errorf("expected %s cleared, got %q", field, val)
-		}
-	}
-	if result.Groups != nil {
-		t.Errorf("expected Groups nil, got %v", result.Groups)
 	}
 }
 

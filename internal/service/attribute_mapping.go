@@ -84,17 +84,7 @@ func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Sessi
 		mapped.NameID = value
 	}
 
-	// When SAML attribute mappings are configured, suppress the SAML
-	// library's default attribute emission and append the custom ones.
 	if len(mapping.SAMLAttributeMappings) > 0 {
-		mapped.UserEmail = ""
-		mapped.UserCommonName = ""
-		mapped.UserName = ""
-		mapped.UserSurname = ""
-		mapped.UserGivenName = ""
-		mapped.UserScopedAffiliation = ""
-		mapped.Groups = nil
-
 		customAttrs := buildSAMLAttributes(attrs, mapping.SAMLAttributeMappings, logger, entityID)
 		mapped.CustomAttributes = append(mapped.CustomAttributes, customAttrs...)
 	}

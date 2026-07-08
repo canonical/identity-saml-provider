@@ -74,6 +74,26 @@ func (s *samlSession) toSAML() *saml.Session {
 	return ss
 }
 
+// domainSessionToSAML converts a domain.Session to an intermediate samlSession.
+func domainSessionToSAML(s *domain.Session) *samlSession {
+	return &samlSession{
+		ID:                    s.ID,
+		CreateTime:            s.CreateTime,
+		ExpireTime:            s.ExpireTime,
+		Index:                 s.Index,
+		NameID:                s.NameID,
+		NameIDFormat:          s.NameIDFormat,
+		UserEmail:             s.UserEmail,
+		UserCommonName:        s.UserCommonName,
+		UserName:              s.UserName,
+		UserSurname:           s.UserSurname,
+		UserGivenName:         s.UserGivenName,
+		UserScopedAffiliation: s.UserScopedAffiliation,
+		Groups:                s.Groups,
+		CustomAttributes:      s.CustomAttributes,
+	}
+}
+
 // -------------------------------------------------------------------------
 // SAML Session Provider Adapter
 // -------------------------------------------------------------------------
