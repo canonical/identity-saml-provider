@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.7](https://github.com/canonical/identity-saml-provider/compare/v0.1.6...v0.1.7) (2026-07-13)
+
+
+### Bug Fixes
+
+* Admin APIs for SP attribute mapping ([8c07899](https://github.com/canonical/identity-saml-provider/commit/8c07899bb8bca91b5950fd3a1ffb67aa6317cb66))
+* apply the deployment order in skaffold ([efd1657](https://github.com/canonical/identity-saml-provider/commit/efd1657f11982717d60d1e568b926c0c33bdd6c0))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.2 ([fb80926](https://github.com/canonical/identity-saml-provider/commit/fb8092645643c0adac0d69684d5b69efc1a58318))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.2 ([#133](https://github.com/canonical/identity-saml-provider/issues/133)) ([7bdc905](https://github.com/canonical/identity-saml-provider/commit/7bdc9051124f42632f12fe1ae56eaa02358709fe))
+* internal user model and rich saml attributes ([71c6ce0](https://github.com/canonical/identity-saml-provider/commit/71c6ce0c47f0ea83b2d40ff7b3de2536f6fa98f4))
+* persistent id ([9c07a4e](https://github.com/canonical/identity-saml-provider/commit/9c07a4e0981f3993c60bc89ef64eda2f800edffa))
+* relocate saml session conversion ([2097fa4](https://github.com/canonical/identity-saml-provider/commit/2097fa4402ba0aabd64f693069a5b9ec429fa7dd))
+* unify service provider registration cli option ([898b28e](https://github.com/canonical/identity-saml-provider/commit/898b28e848ed39e7bf99738bd1255c748e540549))
+* use custom assertion maker ([e2d22cd](https://github.com/canonical/identity-saml-provider/commit/e2d22cdd4f9f7497e7b3c40b3d7c818721d9dc62))
+* validate attribute mapping fields ([ef78fcd](https://github.com/canonical/identity-saml-provider/commit/ef78fcdb60fe43b8339c6927c6f6166c0f3c9aac))
+
 ## [0.1.6](https://github.com/canonical/identity-saml-provider/compare/v0.1.5...v0.1.6) (2026-06-05)
 
 
