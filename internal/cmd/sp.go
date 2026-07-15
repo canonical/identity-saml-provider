@@ -31,8 +31,8 @@ func init() {
 	rootCmd.AddCommand(spCmd)
 }
 
-// openSPDB opens a pgxpool connection using the application config.
-func openSPDB(ctx context.Context, cfg app.Config) (*pgxpool.Pool, error) {
+// openDB opens a pgxpool connection using the application config.
+func openDB(ctx context.Context, cfg app.Config) (*pgxpool.Pool, error) {
 	pool, err := postgres.NewPool(ctx, cfg.PoolConfig())
 	if err != nil {
 		return nil, fmt.Errorf("connect to database: %w", err)

@@ -34,6 +34,7 @@ func validConfig() app.Config {
 		DBMaxConnIdleTime: 5 * time.Minute,
 		SAMLCertPath:      ".local/certs/bridge.crt",
 		SAMLKeyPath:       ".local/certs/bridge.key",
+		PendingRequestTTL: 15 * time.Minute,
 	}
 }
 
@@ -464,6 +465,11 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name:   "dev mode is valid",
 			modify: func(c *app.Config) { c.DevMode = true },
+		},
+		{
+			name:    "invalid non-positive PendingRequestTTL",
+			modify:  func(c *app.Config) { c.PendingRequestTTL = 0 },
+			wantErr: "SAML_PROVIDER_PENDING_REQUEST_TTL must be positive",
 		},
 	}
 

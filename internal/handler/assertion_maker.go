@@ -17,9 +17,9 @@ import (
 // It assumes full control over assertion construction for SPs with custom attribute mappings,
 // while delegating to the saml.DefaultAssertionMaker for unmapped SPs.
 type SPAssertionMaker struct {
-	spService      service.ServiceProviderService
-	logger         logging.Logger
-	defaultMaker   saml.DefaultAssertionMaker
+	spService    service.ServiceProviderService
+	logger       logging.Logger
+	defaultMaker saml.DefaultAssertionMaker
 }
 
 // NewSPAssertionMaker creates a new SPAssertionMaker.
@@ -28,9 +28,9 @@ func NewSPAssertionMaker(
 	logger logging.Logger,
 ) *SPAssertionMaker {
 	return &SPAssertionMaker{
-		spService:      spService,
-		logger:         logger,
-		defaultMaker:   saml.DefaultAssertionMaker{},
+		spService:    spService,
+		logger:       logger,
+		defaultMaker: saml.DefaultAssertionMaker{},
 	}
 }
 

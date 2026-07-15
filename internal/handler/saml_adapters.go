@@ -4,8 +4,10 @@
 package handler
 
 import (
+	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/codes"
@@ -145,11 +147,20 @@ func (a *SAMLSessionAdapter) GetSession(w http.ResponseWriter, r *http.Request, 
 		samlRequest := r.FormValue("SAMLRequest")
 
 		if samlRequest != "" {
+			clientIP := getClientIP(r)
+			userAgent := r.UserAgent()
+
+			now := time.Now()
 			pendingReq := &domain.PendingAuthnRequest{
 				RequestID:   req.Request.ID,
 				SAMLRequest: samlRequest,
 				RelayState:  req.RelayState,
-				CreatedAt:   time.Now(),
+				ClientMetadata: map[string]string{
+					"client_ip":  clientIP,
+					"user_agent": userAgent,
+				},
+				CreatedAt: now,
+				ExpireAt:  now.Add(a.Config.PendingRequestTTL),
 			}
 			if storeErr := a.Pending.Store(ctx, pendingReq); storeErr != nil {
 				span.RecordError(storeErr)
@@ -259,4 +270,33 @@ func (a *SAMLSPAdapter) GetServiceProvider(r *http.Request, serviceProviderID st
 			},
 		},
 	}, nil
+}
+
+func getClientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if parts := strings.Split(xff, ","); len(parts) > 0 {
+			return strings.TrimSpace(parts[0])
+		}
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return strings.TrimSpace(xri)
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
+
+// HandleSSO intercepts the incoming SAML authentication request. If the SAMLRequest
+// parameter is missing or empty, it returns a 400 Bad Request JSON response,
+// avoiding a decompression failure in the underlying SAML library.
+func (h *Handlers) HandleSSO(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Query().Get("SAMLRequest") == "" {
+		WriteJSON(w, http.StatusBadRequest, APIError{
+			Status:  http.StatusBadRequest,
+			Message: "missing or expired SAMLRequest parameter",
+		})
+		return
+	}
+	h.samlIDP.ServeSSO(w, r)
 }

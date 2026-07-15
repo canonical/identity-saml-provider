@@ -55,7 +55,7 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 		}
 
 		// Open DB connection.
-		pool, err := openSPDB(ctx, cfg)
+		pool, err := openDB(ctx, cfg)
 		if err != nil {
 			return err
 		}

@@ -56,3 +56,23 @@ func (s *pendingRequestService) Retrieve(ctx context.Context, requestID string) 
 	logger.Debugw("Pending request retrieved", "requestID", requestID)
 	return req, nil
 }
+
+func (s *pendingRequestService) CleanupExpired(ctx context.Context, limit int) (int64, error) {
+	ctx, span := s.tracer.Start(ctx, "service.pending.cleanup_expired")
+	defer span.End()
+
+	logger := logging.FromContext(ctx, s.logger)
+
+	count, err := s.repo.DeleteExpired(ctx, limit)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		logger.Errorw("Failed to cleanup expired pending requests", "error", err)
+		return 0, err
+	}
+
+	if count > 0 {
+		logger.Infow("Cleaned up expired pending requests", "count", count)
+	}
+	return count, nil
+}
