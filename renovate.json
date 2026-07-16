@@ -12,6 +12,9 @@
     "helpers:pinGitHubActionDigests",
     ":enablePreCommit"
   ],
+  "docker-compose": {
+    "enabled": false
+  },
   "automergeType": "pr",
   "rebaseWhen": "behind-base-branch",
   "packageRules": [
