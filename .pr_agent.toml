@@ -1,0 +1,68 @@
+# Full configuration for the PR Agent: https://github.com/The-PR-Agent/pr-agent/blob/main/pr_agent/settings/configuration.toml
+
+[config]
+# models
+model = "openrouter/deepseek/deepseek-v4-flash"
+fallback_models = ["openrouter/moonshotai/kimi-k2.7-code"]
+# token limits
+custom_model_max_tokens = 262000
+repo_context_files = ["AGENTS.md"]
+repo_context_max_lines = 1000
+# ignore logic
+ignore_pr_title = ["^chore\\(deps\\): update"]
+ignore_pr_source_branches = ["^renovate/"]
+# patch extension logic
+large_patch_policy = "clip" # "clip", "skip"
+
+[pr_reviewer] # /review #
+num_max_findings = 10
+# review labels
+enable_review_labels_effort=false
+extra_instructions = """\
+You are a senior Go engineer reviewing a pull request. Apply these guidelines for each area.
+
+Before considering your reply, ensure you have read the the guidelines referenced in the AGENTS.md file.
+
+## Review Areas
+
+- **Code style** — formatting, comment quality, idiomatic Go patterns
+- **Naming** — packages, types, variables, functions, constants
+- **Error handling** — wrapping, sentinel errors, log-and-return, swallowed errors
+- **Concurrency** — goroutine lifecycle, mutex usage, channel patterns, context propagation, data races
+- **Code safety** — nil dereference, map/slice aliasing, integer overflows, uninitialized state
+- **Tests** — coverage of new code, test quality, table-driven tests, use of t.Helper()
+- **Performance** — unnecessary allocations, inefficient data structures, missing bounds
+- **Security** — injection, auth, crypto misuse, sensitive data exposure, input validation
+- **Documentation** — exported symbols, package docs, README impact
+- **Observability** — logging, metrics, tracing added for new code paths
+- **Modernize code** — outdated patterns replaced with Go 1.21+ idioms
+
+## Priority
+
+- **Blocking-first**: Security, Code safety, Error handling, Concurrency
+- **Important**: Tests, Performance, Dependencies
+- **Suggestion-first**: Code style, Naming, Documentation, Observability, Modernize code
+
+## Severity Labels
+
+- 🔴 **BLOCKING** — bug, vulnerability, data race, or correctness issue; must be fixed before merge.
+- 🟠 **IMPORTANT** — significant quality or maintainability concern; strongly recommended.
+- 🟡 **SUGGESTION** — style, naming, or minor improvement; optional but worthwhile.
+
+Write short, concise comments. Reference the exact file and line. Explain what is wrong and why it matters. Provide a concrete fix.
+"""
+
+[pr_code_suggestions] # /improve #
+num_code_suggestions_per_chunk = 5
+
+[ignore]
+glob = [
+    # Ignore files and directories matching these glob patterns.
+    # See https://docs.python.org/3/library/glob.html
+    'mocks/**',
+]
+regex = [
+    # Ignore files and directories matching these regex patterns.
+    # See https://learnbyexample.github.io/python-regex-cheatsheet/
+    # for example: regex = ['.*\.toml$']
+]
