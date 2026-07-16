@@ -21,14 +21,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_CI_KEY }}
 
-          # Model configuration
-          config.model: "openrouter/moonshotai/kimi-k2.7-code"
-          config.custom_model_max_tokens: "262000"
-
           # Control which tools trigger automatically on PR events
           github_action_config.auto_review: "true"
           github_action_config.auto_describe: "true"
           github_action_config.auto_improve: "false" # Kept false to protect budget; run manually via comment command
-
-          # Optimization for large pull requests to avoid token overflow
-          config.large_patch_policy: "clip"
