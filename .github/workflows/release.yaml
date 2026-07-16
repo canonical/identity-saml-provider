@@ -15,7 +15,7 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5
         id: release
         with:
           token: ${{ secrets.PAT_TOKEN }}
@@ -23,7 +23,7 @@ jobs:
           config-file: release-please-config.json
           # optional. customize path to .release-please-manifest.json
           manifest-file: .release-please-manifest.json
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         if: ${{ steps.release.outputs.pr != '' }}
       - name: Workaround for https://github.com/googleapis/release-please/issues/922
         if: ${{ steps.release.outputs.pr != '' }}
