@@ -7,6 +7,10 @@ on:
 jobs:
   ai_code_review:
     name: Agentic Code Review
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     if: >
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/review') &&
@@ -20,7 +24,7 @@ jobs:
           if [[ "$COMMENT" =~ model=([^ ]+) ]]; then
               echo "MODEL=${BASH_REMATCH[1]}" >> $GITHUB_ENV
           else
-              echo "MODEL=openai/gpt-4o" >> $GITHUB_ENV
+              echo "MODEL=openrouter/deepseek/deepseek-v4-flash" >> $GITHUB_ENV
           fi
 
       - name: Checkout Repository
