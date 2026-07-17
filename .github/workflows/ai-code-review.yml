@@ -1,0 +1,42 @@
+name: AI Code Review
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  ai_code_review:
+    name: Agentic Code Review
+    if: >
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/review') &&
+      (github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'COLLABORATOR')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse Model from Comment
+        id: parse_model
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          if [[ "$COMMENT" =~ model=([^ ]+) ]]; then
+              echo "MODEL=${BASH_REMATCH[1]}" >> $GITHUB_ENV
+          else
+              echo "MODEL=openai/gpt-4o" >> $GITHUB_ENV
+          fi
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Run AI Code Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_CI_KEY }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY_NAME: ${{ github.repository }}
+          MODEL: ${{ env.MODEL }}
+        run: |
+          uv run scripts/ai_code_review.py

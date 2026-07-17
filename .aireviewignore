@@ -1,0 +1,39 @@
+# Ignore specific files and directories for AI Code Review
+
+# Dependencies and Vendor
+vendor/
+node_modules/
+.venv/
+env/
+
+# Build and Generated files
+dist/
+build/
+out/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.o
+*.a
+*.class
+
+# Lock files
+poetry.lock
+Pipfile.lock
+Cargo.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+go.sum
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db
