@@ -18,9 +18,8 @@ code review from OpenRouter, and posts the result as a PR comment.
 import os
 import sys
 from pathlib import Path
-from typing import Optional
 
-from github import Github
+from github import Auth, Github
 from github.PullRequest import PullRequest
 from openrouter import OpenRouter
 import pathspec
@@ -63,7 +62,7 @@ matters. Provide a concrete fix.
 USER_PROMPT_TEMPLATE = "Here is the diff to review:\n\n{diff}"
 
 
-def load_ignore_spec(filepath: str = ".aireviewignore") -> Optional[pathspec.PathSpec]:
+def load_ignore_spec(filepath: str = ".aireviewignore") -> pathspec.PathSpec | None:
     ignore_path = Path(filepath)
     if not ignore_path.exists():
         print(f"INFO: No {filepath} file found.")
@@ -77,12 +76,13 @@ def load_ignore_spec(filepath: str = ".aireviewignore") -> Optional[pathspec.Pat
 
 
 def fetch_pr(github_token: str, repo_name: str, pr_number: int) -> PullRequest:
-    github_client = Github(github_token)
+    auth = Auth.Token(github_token)
+    github_client = Github(auth=auth)
     repo = github_client.get_repo(repo_name)
     return repo.get_pull(pr_number)
 
 
-def get_filtered_diff(pr: PullRequest, ignore_spec: Optional[pathspec.PathSpec]) -> str:
+def get_filtered_diff(pr: PullRequest, ignore_spec: pathspec.PathSpec | None) -> str:
     diff_text = ""
     files = pr.get_files()
 
