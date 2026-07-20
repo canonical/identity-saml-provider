@@ -56,3 +56,16 @@ When contributing code, please follow the
 specification for commit messages. This is enforced by
 the `conventional-pre-commit` hook at the `commit-msg`
 stage.
+
+## Code Verification Suite
+
+Before submitting a pull request, ensure the codebase compiles and satisfies
+all quality and style checks:
+
+```shell
+make fmt            # Format Go source code files
+make lint           # Execute golangci-lint
+make test           # Run unit tests
+make license-check  # Verify license headers
+make build          # Build the production executable
+```
