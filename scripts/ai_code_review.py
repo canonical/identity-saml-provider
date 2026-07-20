@@ -19,10 +19,10 @@ import os
 import sys
 from pathlib import Path
 
+import pathspec
 from github import Auth, Github
 from github.PullRequest import PullRequest
 from openrouter import OpenRouter
-import pathspec
 
 SYSTEM_PROMPT_TEMPLATE = """
 You are a senior Go engineer reviewing a pull request. Apply these guidelines for each area:
@@ -68,8 +68,7 @@ def load_ignore_spec(filepath: str = ".aireviewignore") -> pathspec.PathSpec | N
         print(f"INFO: No {filepath} file found.")
         return None
 
-    with open(ignore_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+    lines = ignore_path.read_text(encoding="utf-8").splitlines()
 
     print(f"INFO: Loaded ignore patterns from {filepath}")
     return pathspec.PathSpec.from_lines(pathspec.patterns.GitWildMatchPattern, lines)
@@ -120,18 +119,16 @@ def generate_review(diff: str, extra_instructions: str, api_key: str, model: str
 
     try:
         with OpenRouter(api_key=api_key) as client:
-            response = client.chat.send(
-                model=model,
-                messages=messages
-            )
-            if response.choices:
-                return response.choices[0].message.content
-            else:
-                print("WARNING: No choices returned in OpenRouter response.", file=sys.stderr)
-                return "Failed to generate review: OpenRouter returned an empty response."
+            response = client.chat.send(model=model, messages=messages)
     except Exception as e:
         print(f"ERROR: Failed to generate review from OpenRouter: {e}", file=sys.stderr)
         sys.exit(1)
+
+    if not response or not response.choices:
+        print("WARNING: No choices returned in OpenRouter response.", file=sys.stderr)
+        return "Failed to generate review: OpenRouter returned an empty response."
+
+    return response.choices[0].message.content
 
 
 def get_required_env(key: str) -> str:
