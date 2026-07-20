@@ -1,4 +1,4 @@
-name: AI Code Review
+name: PR Agent AI Code Review
 
 on:
   issue_comment:
