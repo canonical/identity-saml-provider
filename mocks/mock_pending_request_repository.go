@@ -42,18 +42,18 @@ func (m *MockPendingRequestRepository) EXPECT() *MockPendingRequestRepositoryMoc
 }
 
 // DeleteExpired mocks base method.
-func (m *MockPendingRequestRepository) DeleteExpired(ctx context.Context) (int64, error) {
+func (m *MockPendingRequestRepository) DeleteExpired(ctx context.Context, limit int) (int64, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DeleteExpired", ctx)
+	ret := m.ctrl.Call(m, "DeleteExpired", ctx, limit)
 	ret0, _ := ret[0].(int64)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // DeleteExpired indicates an expected call of DeleteExpired.
-func (mr *MockPendingRequestRepositoryMockRecorder) DeleteExpired(ctx any) *gomock.Call {
+func (mr *MockPendingRequestRepositoryMockRecorder) DeleteExpired(ctx, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpired", reflect.TypeOf((*MockPendingRequestRepository)(nil).DeleteExpired), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExpired", reflect.TypeOf((*MockPendingRequestRepository)(nil).DeleteExpired), ctx, limit)
 }
 
 // GetAndDelete mocks base method.

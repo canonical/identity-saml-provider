@@ -39,7 +39,7 @@ type ServiceProviderRepository interface {
 type PendingRequestRepository interface {
 	Save(ctx context.Context, req *domain.PendingAuthnRequest) error
 	GetAndDelete(ctx context.Context, requestID string) (*domain.PendingAuthnRequest, error)
-	DeleteExpired(ctx context.Context) (int64, error)
+	DeleteExpired(ctx context.Context, limit int) (int64, error)
 }
 
 // PersistentNameIDRepository stores opaque, stable per-(SP, user)

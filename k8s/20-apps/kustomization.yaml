@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - identity-saml-provider.yaml
   - login-ui.yaml
+  - identity-saml-provider-janitor.yaml
 
 secretGenerator:
   - name: saml-certs

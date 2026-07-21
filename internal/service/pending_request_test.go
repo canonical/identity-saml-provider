@@ -143,3 +143,68 @@ func TestPendingRequestService_Retrieve(t *testing.T) {
 		})
 	}
 }
+
+func TestPendingRequestService_CleanupExpired(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		limit     int
+		setupMock func(repo *mocks.MockPendingRequestRepository)
+		wantCount int64
+		wantErr   bool
+	}{
+		{
+			name:  "success with deleted entries",
+			limit: 100,
+			setupMock: func(repo *mocks.MockPendingRequestRepository) {
+				repo.EXPECT().DeleteExpired(gomock.Any(), 100).Return(int64(5), nil)
+			},
+			wantCount: 5,
+		},
+		{
+			name:  "success with zero deleted entries",
+			limit: 50,
+			setupMock: func(repo *mocks.MockPendingRequestRepository) {
+				repo.EXPECT().DeleteExpired(gomock.Any(), 50).Return(int64(0), nil)
+			},
+			wantCount: 0,
+		},
+		{
+			name:  "repo error",
+			limit: 10,
+			setupMock: func(repo *mocks.MockPendingRequestRepository) {
+				repo.EXPECT().DeleteExpired(gomock.Any(), 10).Return(int64(0), errors.New("db error"))
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+
+			mockRepo := mocks.NewMockPendingRequestRepository(ctrl)
+			logger := logging.NewNopLogger()
+
+			tt.setupMock(mockRepo)
+
+			svc := service.NewPendingRequestService(mockRepo, logger, tracing.NewNoopTracer())
+			count, err := svc.CleanupExpired(context.Background(), tt.limit)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if count != tt.wantCount {
+				t.Errorf("CleanupExpired() count = %d, want %d", count, tt.wantCount)
+			}
+		})
+	}
+}

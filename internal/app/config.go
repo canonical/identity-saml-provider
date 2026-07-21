@@ -74,6 +74,9 @@ type Config struct {
 	// IdleTimeout is the maximum amount of time to wait for the next
 	// request when keep-alives are enabled.
 	IdleTimeout time.Duration `envconfig:"SAML_PROVIDER_IDLE_TIMEOUT" default:"120s"`
+
+	// PendingRequestTTL is the lifetime of a pending SAML authentication request before it is considered expired.
+	PendingRequestTTL time.Duration `envconfig:"SAML_PROVIDER_PENDING_REQUEST_TTL" default:"15m"`
 }
 
 // validSSLModes is the set of PostgreSQL SSL modes accepted by Validate.
@@ -135,6 +138,10 @@ func (c *Config) Validate() error {
 	}
 	if c.SAMLKeyPath == "" {
 		return fmt.Errorf("SAML_PROVIDER_KEY_PATH must not be empty")
+	}
+
+	if c.PendingRequestTTL <= 0 {
+		return fmt.Errorf("SAML_PROVIDER_PENDING_REQUEST_TTL must be positive, got %s", c.PendingRequestTTL)
 	}
 
 	if c.DevMode {

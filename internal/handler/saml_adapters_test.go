@@ -14,10 +14,13 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/handler"
+	"github.com/canonical/identity-saml-provider/internal/infrastructure/samlkit"
 	"github.com/canonical/identity-saml-provider/internal/logging"
+	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/canonical/identity-saml-provider/mocks"
 	"github.com/crewjam/saml"
 	"go.uber.org/mock/gomock"
+	"go.uber.org/zap"
 )
 
 func TestSAMLSPAdapter_GetServiceProvider(t *testing.T) {
@@ -107,6 +110,7 @@ func TestSAMLSessionAdapter_GetSession(t *testing.T) {
 		name         string
 		cookies      []*http.Cookie
 		authnReq     *saml.IdpAuthnRequest
+		modifyReq    func(r *http.Request)
 		setup        func(deps *testSessionAdapterDeps)
 		wantNil      bool
 		wantRedirect bool
@@ -226,6 +230,66 @@ func TestSAMLSessionAdapter_GetSession(t *testing.T) {
 			},
 		},
 		{
+			name:    "no session cookie — extracts client metadata from proxy headers",
+			cookies: nil,
+			authnReq: &saml.IdpAuthnRequest{
+				Request: saml.AuthnRequest{
+					ID: "req-with-headers",
+				},
+				RelayState: "relay-headers",
+			},
+			modifyReq: func(r *http.Request) {
+				r.Header.Set("X-Forwarded-For", "192.168.1.100, 10.0.0.1")
+				r.Header.Set("User-Agent", "Mozilla-Custom/1.0")
+			},
+			setup: func(deps *testSessionAdapterDeps) {
+				deps.pending.EXPECT().Store(gomock.Any(), &pendingRequestMatcher{
+					expectedID: "req-with-headers",
+					check: func(p *domain.PendingAuthnRequest) bool {
+						return p.SAMLRequest == "encoded-request" &&
+							p.RelayState == "relay-headers" &&
+							p.ClientMetadata != nil &&
+							p.ClientMetadata["client_ip"] == "192.168.1.100" &&
+							p.ClientMetadata["user_agent"] == "Mozilla-Custom/1.0" &&
+							!p.ExpireAt.IsZero() &&
+							p.ExpireAt.Sub(p.CreatedAt) == 15*time.Minute
+					},
+				}).Return(nil)
+				deps.oidc.EXPECT().AuthCodeURL(gomock.Any(), gomock.Any()).Return("https://hydra.example.com/auth")
+			},
+			wantNil:      true,
+			wantRedirect: true,
+		},
+		{
+			name:    "no session cookie — extracts client metadata fallback to RemoteAddr",
+			cookies: nil,
+			authnReq: &saml.IdpAuthnRequest{
+				Request: saml.AuthnRequest{
+					ID: "req-with-remoteaddr",
+				},
+				RelayState: "relay-remoteaddr",
+			},
+			modifyReq: func(r *http.Request) {
+				r.RemoteAddr = "127.0.0.1:12345"
+				r.Header.Set("User-Agent", "Mozilla-Remote/2.0")
+			},
+			setup: func(deps *testSessionAdapterDeps) {
+				deps.pending.EXPECT().Store(gomock.Any(), &pendingRequestMatcher{
+					expectedID: "req-with-remoteaddr",
+					check: func(p *domain.PendingAuthnRequest) bool {
+						return p.ClientMetadata != nil &&
+							p.ClientMetadata["client_ip"] == "127.0.0.1" &&
+							p.ClientMetadata["user_agent"] == "Mozilla-Remote/2.0" &&
+							!p.ExpireAt.IsZero() &&
+							p.ExpireAt.Sub(p.CreatedAt) == 15*time.Minute
+					},
+				}).Return(nil)
+				deps.oidc.EXPECT().AuthCodeURL(gomock.Any(), gomock.Any()).Return("https://hydra.example.com/auth")
+			},
+			wantNil:      true,
+			wantRedirect: true,
+		},
+		{
 			name: "ApplyMapping failure aborts assertion with 500 — fail closed",
 			cookies: []*http.Cookie{
 				{Name: "saml_session", Value: "session-fc"},
@@ -281,13 +345,19 @@ func TestSAMLSessionAdapter_GetSession(t *testing.T) {
 				Mapping:  deps.mapping,
 				Pending:  deps.pending,
 				OIDC:     deps.oidc,
-				Config:   handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
-				Logger:   logging.NewNopLogger(),
+				Config: handler.HandlerConfig{
+					BridgeBaseURL:     "http://localhost:8082",
+					PendingRequestTTL: 15 * time.Minute,
+				},
+				Logger: logging.NewNopLogger(),
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "/saml/sso?SAMLRequest=encoded-request", nil)
 			for _, c := range tt.cookies {
 				req.AddCookie(c)
+			}
+			if tt.modifyReq != nil {
+				tt.modifyReq(req)
 			}
 			rec := httptest.NewRecorder()
 
@@ -312,9 +382,129 @@ func TestSAMLSessionAdapter_GetSession(t *testing.T) {
 	}
 }
 
+func TestHandlers_HandleSSO(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name           string
+		method         string
+		url            string
+		setupIDP       func() *saml.IdentityProvider
+		wantStatus     int
+		wantJSON       bool
+		wantBodySubset string
+	}{
+		{
+			name:           "GET with missing SAMLRequest → 400 Bad Request JSON",
+			method:         http.MethodGet,
+			url:            "/saml/sso",
+			wantStatus:     http.StatusBadRequest,
+			wantJSON:       true,
+			wantBodySubset: `"message":"missing or expired SAMLRequest parameter"`,
+		},
+		{
+			name:           "GET with empty SAMLRequest → 400 Bad Request JSON",
+			method:         http.MethodGet,
+			url:            "/saml/sso?SAMLRequest=",
+			wantStatus:     http.StatusBadRequest,
+			wantJSON:       true,
+			wantBodySubset: `"message":"missing or expired SAMLRequest parameter"`,
+		},
+		{
+			name:   "GET with present but invalid SAMLRequest → 400 Bad Request (from IDP)",
+			method: http.MethodGet,
+			url:    "/saml/sso?SAMLRequest=invalid_base64_data",
+			setupIDP: func() *saml.IdentityProvider {
+				return &saml.IdentityProvider{
+					Logger: samlkit.NewZapLoggerAdapter(zap.NewNop().Sugar()),
+				}
+			},
+			wantStatus: http.StatusBadRequest,
+			wantJSON:   false,
+		},
+		{
+			name:   "POST with empty SAMLRequest → 400 Bad Request (from IDP)",
+			method: http.MethodPost,
+			url:    "/saml/sso",
+			setupIDP: func() *saml.IdentityProvider {
+				return &saml.IdentityProvider{
+					Logger: samlkit.NewZapLoggerAdapter(zap.NewNop().Sugar()),
+				}
+			},
+			wantStatus: http.StatusBadRequest,
+			wantJSON:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+
+			sessions := mocks.NewMockSessionService(ctrl)
+			sps := mocks.NewMockServiceProviderService(ctrl)
+			mapping := mocks.NewMockMappingService(ctrl)
+			oidc := mocks.NewMockOIDCService(ctrl)
+			pending := mocks.NewMockPendingRequestService(ctrl)
+
+			var idp *saml.IdentityProvider
+			if tt.setupIDP != nil {
+				idp = tt.setupIDP()
+			}
+
+			h := handler.NewHandlers(
+				sessions, sps, mapping, oidc, pending, idp,
+				handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
+				logging.NewNopLogger(),
+				monitoring.NewNoopMonitor(),
+			)
+
+			req := httptest.NewRequest(tt.method, tt.url, nil)
+			if tt.method == http.MethodPost {
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			}
+			rec := httptest.NewRecorder()
+
+			h.HandleSSO(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+
+			body := rec.Body.String()
+			if tt.wantJSON {
+				ct := rec.Header().Get("Content-Type")
+				if !strings.Contains(ct, "application/json") {
+					t.Errorf("Content-Type = %q, want containing application/json", ct)
+				}
+			}
+			if tt.wantBodySubset != "" && !strings.Contains(body, tt.wantBodySubset) {
+				t.Errorf("body %q does not contain %q", body, tt.wantBodySubset)
+			}
+		})
+	}
+}
+
 type testSessionAdapterDeps struct {
 	sessions *mocks.MockSessionService
 	mapping  *mocks.MockMappingService
 	pending  *mocks.MockPendingRequestService
 	oidc     *mocks.MockOIDCService
+}
+
+type pendingRequestMatcher struct {
+	expectedID string
+	check      func(p *domain.PendingAuthnRequest) bool
+}
+
+func (m *pendingRequestMatcher) Matches(x interface{}) bool {
+	p, ok := x.(*domain.PendingAuthnRequest)
+	if !ok {
+		return false
+	}
+	return p.RequestID == m.expectedID && (m.check == nil || m.check(p))
+}
+
+func (m *pendingRequestMatcher) String() string {
+	return "is pending request with ID " + m.expectedID
 }

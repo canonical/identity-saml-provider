@@ -4,246 +4,215 @@
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-%23FE5196.svg)](https://conventionalcommits.org)
 
-A complete SAML-to-OIDC bridge solution that enables
-SAML-based Single Sign-On (SSO) through Ory Hydra, allowing
-seamless integration between SAML Service Providers and
-OIDC providers.
+The Identity SAML Provider is a high-performance **SAML-to-OIDC bridge** that
+enables SAML 2.0 Single Sign-On (SSO) through Ory Hydra. This service acts as
+an intermediary, translating legacy SAML 2.0 requests into modern OpenID Connect
+(OIDC) flows.
+
+---
 
 ## Project Overview
 
-This project provides a SAML Identity Provider that bridges
-between traditional SAML Service Providers and modern
-OIDC-based authentication systems. It consists of two main
-components:
+The bridge translates incoming SAML authentication requests, delegates
+authentication to an OIDC provider via Ory Hydra, and maps the resulting OIDC
+claims into secure, signed SAML assertions.
 
-- **SAML Provider** - The primary service in this repository
-  that handles SAML authentication requests and translates
-  them to OIDC flows
-- **Example SAML Service** - A sample service that
-  demonstrates user authentication and attribute handling
+The repository contains two components:
+
+- **SAML Provider**: The core bridge service handling protocol translation,
+  session validation, and attribute mappings.
+- **Example SAML Service (`test/example-sp`)**: A reference Service Provider
+  (SP) for development, local testing, and attribute verification.
+
+---
+
+## Key Features & Capabilities
+
+- **SAML 2.0 Compliance**: Supports the SAML 2.0 Web Browser SSO Profile with
+  both `HTTP-POST` and `HTTP-Redirect` bindings.
+- **Flexible Attribute Mapping**: Features a two-stage pipeline converting OIDC
+  ID token claims into standard SAML attributes.
+- **Configurable NameIDs**: Supports `persistent`, `transient`, `emailAddress`,
+  and `unspecified` NameID formats.
+- **Operational Observability**:
+  - OpenTelemetry (OTel) tracing with configurable parent-based ratio sampling.
+  - Native Prometheus metrics exposing database pool stats, application request
+    counters, and latencies.
+- **Production-Grade Security**: Validates OIDC state and nonce attributes,
+  signs SAML responses, and supports secure session cookie configurations.
+
+---
 
 ## Architecture
 
-```mermaid
-graph TD
-    A["SAML Service Provider<br/>(Client)"]
-    B["SAML Provider<br/>(This Bridge)"]
-    C["Ory Hydra<br/>(OIDC Provider)"]
-    D["User Authentication<br/>System"]
+The following diagram illustrates the interaction between components during a
+SAML login flow:
 
-    A -->|SAML Protocol| B
-    B -->|OIDC Protocol| C
-    C -->|User Data| D
-    D -->|Authentication| C
-    C -->|Token & Attributes| B
-    B -->|SAML Response| A
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Browser/User
+    participant SP as SAML Service Provider
+    participant Bridge as SAML Provider (Bridge)
+    participant Hydra as Ory Hydra (OIDC)
+    participant Auth as Auth System
+
+    User->>SP: Access protected resource
+    SP->>User: Redirect to Bridge (SAML AuthnRequest)
+    User->>Bridge: Deliver AuthnRequest to /saml/sso
+    Bridge->>Bridge: Persist pending request in DB
+    Bridge->>User: Redirect to Ory Hydra Login Flow
+    User->>Hydra: Handle authentication
+    Hydra->>Auth: Validate credentials
+    Auth-->>Hydra: Confirm identity
+    Hydra->>User: Redirect back to Bridge with Authorization Code
+    User->>Bridge: Deliver Code to /saml/callback
+    Bridge->>Hydra: Exchange Code for ID Token
+    Hydra-->>Bridge: Return ID Token & Claims
+    Bridge->>Bridge: Map claims & sign assertion
+    Bridge->>User: Return SAML Response (via Form POST)
+    User->>SP: Submit SAML Response to ACS URL
+    SP-->>User: Grant authenticated access
 ```
+
+---
 
 ## Quick Start
 
-### Running Locally with Docker Compose
+### 1. Local Development via Docker Compose
 
-#### Set up
+This configuration provisions Ory Hydra, Ory Kratos, PostgreSQL, and
+MailSlurper to simulate a complete identity ecosystem.
 
-To use an OIDC provider like GitHub or Google with
-Ory Kratos, you will need to set the appropriate
-environment variables.
+#### Configure Local Environment
 
-A `.env` file is recommended for this purpose. Commonly
-used variables include:
+Create a `.env` file in the project root containing the OIDC client credentials
+used by Ory Kratos:
 
 ```bash
-KRATOS_OIDC_PROVIDER_CLIENT_ID=my-client-id
-KRATOS_OIDC_PROVIDER_CLIENT_SECRET=my-client-secret
+KRATOS_OIDC_PROVIDER_CLIENT_ID=your-provider-client-id
+KRATOS_OIDC_PROVIDER_CLIENT_SECRET=your-provider-client-secret
 ```
 
-#### Run the Environment
+#### Start Supporting Services
 
-1. **Run the supporting services** (generates certs and starts the supporting services):
+Run the following command to generate local development TLS certificates and
+launch background containers:
 
-   ```bash
-   make dev
-   ```
+```bash
+make dev
+```
 
-2. **Run the SAML provider**:
+#### Start the SAML Provider
 
-   Then, run the identity-saml-provider:
+Run the SAML bridge service:
 
-   ```bash
-   make run
-   ```
+```bash
+make run
+```
 
-3. **Register the example SAML service**:
+#### Run and Register the Example SP
 
-   In another terminal, register the example SAML service
-   with the SAML provider, and then run it.
+In a separate terminal, register the test service provider with the database
+and start the example application:
 
-   ```bash
-   cd test/example-sp
-   make register
-   make run
-   ```
+```bash
+cd test/example-sp
+make register
+make run
+```
 
-4. **Access the services**:
+#### Verify the Flow
 
-   In a browser, access the Example SAML Service: <http://localhost:8083/hello>
+1. Navigate the browser to the Example SP dashboard:
+   [http://localhost:8083/hello](http://localhost:8083/hello).
+2. Follow the flow to complete the SAML login process.
 
-5. **Shut down supporting services**:
+#### Tear Down
 
-   To stop all running services, use:
+```bash
+make dev-down
+```
 
-   ```bash
-   make dev-down
-   ```
+---
 
-### Running with Skaffold
+### 2. Local Kubernetes via Skaffold
+
+Skaffold enables continuous local development and deployment to a Kubernetes
+cluster (such as `microk8s`).
 
 #### Prerequisites
 
-- **Kubernetes Cluster**: `microk8s` (recommended) or any K8s cluster.
-  - Enable addons: `sudo microk8s enable dns hostpath-storage registry`
-- **Skaffold**:
-  [Install Skaffold](https://skaffold.dev/docs/install/)
-  (if not using `snap` or included tools).
-- **Kustomize**: Required for generating manifests (Skaffold usually handles this).
-- **Make**: To generate certificates.
+- **Kubernetes Cluster**: `microk8s` with DNS, storage, and registry addons
+  enabled:
 
-#### Setup
+  ```bash
+  sudo microk8s enable dns hostpath-storage registry
+  ```
 
-First, ensure your kubernetes configuration is available
-at the default location (`~/.kube/config`). If you are
-using `microk8s`, you can generate this file with:
+- **Skaffold**: Installed locally ([Skaffold Installation Guide](https://skaffold.dev/docs/install/)).
+- **Configuration**: Expose the Kubeconfig context:
 
-```bash
-mkdir -p ~/.kube && microk8s config > ~/.kube/config
-```
+  ```bash
+  mkdir -p ~/.kube && microk8s config > ~/.kube/config
+  ```
 
-Next, generate the required certificates for the environment:
+#### Deployment Steps
 
-```bash
-make k8s-certs
-```
+1. Generate the required Kubernetes certificates:
 
-This will create the necessary certificates in
-`k8s/certs` for the SAML provider.
+   ```bash
+   make k8s-certs
+   ```
 
-Create or edit `k8s/secrets/kratos.env` and add your OIDC
-provider credentials (for Ory Kratos) in the following
-`key=value` format (or, if these values are already set in
-your root `.env` file, run `make k8s-secrets` to
-generate/update `k8s/secrets/kratos.env` automatically):
+2. Generate Kubernetes secrets from root `.env` variables:
 
-```bash
-client-id=your-kratos-oidc-client-id
-client-secret=your-kratos-oidc-client-secret
-```
+   ```bash
+   make k8s-secrets
+   ```
 
-Finally, redirect the host `hydra` to localhost in your `/etc/hosts` file:
+3. Map `hydra` to localhost in the host's `/etc/hosts` file:
 
-```text
-127.0.0.1 hydra
-```
+   ```text
+   127.0.0.1 hydra
+   ```
 
-This is necessary for Ory Hydra to function correctly in
-the local environment, because the container needs to use
-the same address / hostname as your browser. There's
-probably a better way to accomplish this, but this is the
-simplest for now.
+4. Build and deploy the services in development mode:
 
-#### Run
+   ```bash
+   skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
+   ```
 
-To start the development environment with Skaffold using
-your microk8s OCI registry, run:
-
-```bash
-skaffold dev --default-repo=localhost:32000 --cache-artifacts=false
-```
+---
 
 ## Configuration
 
-### Environment Variables and Kratos OIDC Configuration
+Application settings are configured via environment variables prefixed with
+`SAML_PROVIDER_`.
 
-See the [`config.go`](internal/app/config.go) file
-for configuration options specific to the SAML provider,
-which can all be set via environment variables.
+The complete schema, including available environment variables, validation
+rules, and default values, is defined in [internal/app/config.go](internal/app/config.go).
 
-### Custom CA Certificates
+---
 
-If Hydra uses a custom or private CA certificate,
-set `SAML_PROVIDER_HYDRA_CA_CERT_PATH` to the path of a
-PEM file containing the CA certificate(s). The application
-will trust only the certificates in that file for Hydra
-connections — the system certificate pool is not consulted.
+## SAML Service Provider Integration
 
-If the variable is not set, the application uses Go's
-default system certificate pool.
+Establishing trust and registering Service Providers (SPs) with the bridge
+requires metadata exchange and registration.
 
-| Variable | Default | Description |
-| -------- | ------- | ----------- |
-| `SAML_PROVIDER_HYDRA_CA_CERT_PATH` | (empty) | Path to CA PEM file for Hydra HTTPS |
+### 1. Metadata Trust Exchange
 
-**Deployment examples:**
+To configure a SAML Service Provider to trust this bridge, configure the SP to
+fetch the Identity Provider (IdP) metadata XML from:
 
-- **Kubernetes**: Mount a Secret or ConfigMap containing
-  `ca.pem` as a volume; set the env var to the mount path.
-- **Docker**: Bind mount the CA file; set the env var.
-- **Juju**: Write relation-provided CA to an app-owned path;
-  set the env var.
+```text
+http://<bridge-host-address>/saml/metadata
+```
 
-For local development, Hydra runs on plain HTTP
-(`http://hydra:4444`) and no TLS configuration is needed.
+### 2. Service Provider Registration (CLI)
 
-### Tracing Sampler Configuration
-
-Tracing sampling is configurable and defaults to a
-production-safe parent-based ratio sampler instead of
-sampling every request.
-
-To enable tracing, set:
-
-- `SAML_PROVIDER_TRACING_ENABLED=true`
-
-To export traces to an OTLP collector, set one of these endpoint variables:
-
-- `SAML_PROVIDER_OTEL_GRPC_ENDPOINT` for OTLP/gRPC (example: `localhost:4317`)
-- `SAML_PROVIDER_OTEL_HTTP_ENDPOINT` for OTLP/HTTP (example: `localhost:4318`)
-
-Endpoint selection behavior:
-
-- If `SAML_PROVIDER_OTEL_GRPC_ENDPOINT` is set, OTLP/gRPC is used.
-- Otherwise, if `SAML_PROVIDER_OTEL_HTTP_ENDPOINT` is set, OTLP/HTTP is used.
-- If neither endpoint is set, traces are written to stdout.
-
-- `SAML_PROVIDER_OTEL_SAMPLER` (default: `parentbased_traceidratio`)
-- `SAML_PROVIDER_OTEL_SAMPLER_RATIO` (default: `0.1`)
-
-Supported sampler values for `SAML_PROVIDER_OTEL_SAMPLER`:
-
-| Value | Description |
-| ----- | ----------- |
-| `parentbased_traceidratio` / `parentbased` | **(default)** Child spans follow the parent's sampling decision. New root traces are sampled at `SAML_PROVIDER_OTEL_SAMPLER_RATIO`. |
-| `traceidratio` | Samples every trace (root and child) independently at `SAML_PROVIDER_OTEL_SAMPLER_RATIO`, ignoring the parent decision. |
-| `always_on` | Samples every request. Not recommended for production due to high overhead. |
-| `always_off` | Never samples. Useful for disabling tracing output without disabling the tracer. |
-
-With the default configuration, new root traces are sampled
-at a ratio of `SAML_PROVIDER_OTEL_SAMPLER_RATIO`, and child
-spans follow the parent sampling decision.
-
-### Connecting to an External Identity Provider
-
-See the [Connecting to an External Identity Provider](docs/external-idp.md)
-guide for instructions on how to connect your local
-deployment to an external IDP such as one of the Prodstack
-IAM instances.
-
-### Service Provider Management CLI
-
-The `identity-saml-provider sp` command group manages SAML
-service provider registrations, including per-SP
-attribute mapping configuration.
-
-#### Registering a Service Provider
+Service providers are registered directly in the database using the `sp`
+command group:
 
 ```bash
 identity-saml-provider sp add \
@@ -254,55 +223,48 @@ identity-saml-provider sp add \
   [--format text|json]
 ```
 
-| Flag | Description | Default |
-| ---- | ----------- | ------- |
-| `--entity-id`, `-e` | Entity ID of the service provider (required, must be a valid URL) | — |
-| `--acs-url`, `-a` | Assertion Consumer Service URL (required, must be a valid URL) | — |
-| `--acs-binding`, `-b` | ACS binding type | `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST` |
-| `--attribute-mapping-file` | Path to a JSON file containing the attribute mapping configuration | — |
-| `--format`, `-f` | Output format: `text` or `json` | `text` |
+| Flag                       | Short | Description                                                                       |
+|:---------------------------|:------|:----------------------------------------------------------------------------------|
+| `--entity-id`              | `-e`  | Unique URI identifying the Service Provider (Required).                           |
+| `--acs-url`                | `-a`  | Assertion Consumer Service URL on the SP side (Required).                         |
+| `--acs-binding`            | `-b`  | SAML binding style. Defaults to `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST`. |
+| `--attribute-mapping-file` | —     | Path to JSON mapping rules.                                                       |
 
-The command connects directly to the database using
-`SAML_PROVIDER_DB_*` environment variables (same as the
-server). No running server is required.
+---
 
-#### Attribute Mapping File
+### 3. Attribute & Claims Mapping Flow
 
-The attribute mapping file is a JSON configuration that
-controls how OIDC claims from the identity provider are
-mapped to SAML attributes for a specific service provider.
-All claims from the OIDC ID token are available for
-mapping.
+The bridge translates identity claims via a two-stage mapping architecture:
 
-**Example `mapping.json`:**
+```text
+[ OIDC ID Token Claims ]
+           │
+           ▼  (Stage 1: oidc_claim_mappings)
+   [ Internal Fields ]
+           │
+           ▼  (Stage 2: saml_attribute_mappings)
+[ Signed SAML Assertions ]
+```
+
+#### Mapping Specification Schema (`mapping.json`)
 
 ```json
 {
   "nameid_format": "persistent",
   "saml_attribute_mappings": {
-    "subject": {
-      "name": "uid"
-    },
+    "subject": { "name": "uid" },
     "email": {
       "name": "urn:oid:0.9.2342.19200300.100.1.3",
       "friendly_name": "mail"
     },
-    "name": {
-      "name": "cn"
-    },
-    "groups": {
-      "name": "memberOf"
-    },
-    "username": {
-      "name": "preferredUsername"
-    }
+    "name": { "name": "cn" },
+    "groups": { "name": "memberOf" }
   },
   "oidc_claim_mappings": {
     "sub": "subject",
     "email": "email",
     "name": "name",
-    "groups": "groups",
-    "preferred_username": "username"
+    "groups": "groups"
   },
   "options": {
     "lowercase_email": true
@@ -310,90 +272,64 @@ mapping.
 }
 ```
 
-**Fields:**
+- `nameid_format`: Formats the subject identifier. Supported: `persistent`,
+  `transient`, `emailAddress`, `unspecified`, or custom URN. Defaults to
+  `transient`.
+- `oidc_claim_mappings`: Direct key-value conversion from OIDC ID Token claim
+  names to internal fields.
+- `saml_attribute_mappings`: Maps internal fields to SAML assertion attributes.
+- `options.lowercase_email`: When set to `true`, normalizes email value strings
+  to lowercase.
 
-| Field | Description |
-| ----- | ----------- |
-| `nameid_format` | SAML NameID format. Accepted values: `persistent`, `transient`, `emailAddress`, `unspecified`, or a full URN. Defaults to `transient`. |
-| `oidc_claim_mappings` | Maps OIDC claim names (from the ID token) to internal field names. Any claim present in the OIDC ID token can be mapped. |
-| `saml_attribute_mappings` | Maps internal field names to SAML attribute definitions. Each value is an object with `name` (required), `friendly_name` (optional), and `name_format` (optional, defaults to `urn:oasis:names:tc:SAML:2.0:attrname-format:uri`). Each key must be a well-known internal field (`subject`, `email`, `name`, `groups`) or appear as a target value in `oidc_claim_mappings`; otherwise registration or update is rejected. |
-| `options.lowercase_email` | When `true`, lowercases the email attribute value before mapping. |
+---
 
-The mapping works in two stages:
+### 4. Admin HTTP API
 
-1. **OIDC → Internal**: `oidc_claim_mappings` maps token claim names
-   to internal field names.
-2. **Internal → SAML**: `saml_attribute_mappings` maps internal
-   field names to SAML attribute definitions (Name, FriendlyName,
-   NameFormat).
+As an alternative to CLI actions, Service Providers and their mappings can be
+managed dynamically via a RESTful Admin API:
 
-**Example usage:**
-
-```bash
-# Register with a full attribute mapping file
-identity-saml-provider sp add \
-  --entity-id https://myapp.example.com \
-  --acs-url https://myapp.example.com/saml/acs \
-  --attribute-mapping-file mapping.json
-
-# Register with only a NameID format override — supply a minimal
-# mapping file. nameid-only.json contains: {"nameid_format": "persistent"}
-identity-saml-provider sp add \
-  --entity-id https://myapp.example.com \
-  --acs-url https://myapp.example.com/saml/acs \
-  --attribute-mapping-file nameid-only.json
-```
-
-### Admin HTTP API
-
-HTTP endpoints for managing registered service providers.
-`entity_id` is passed as a percent-encoded query parameter.
-
-| Method   | Path                                            | Purpose                                                          |
-| -------- | ----------------------------------------------- | ---------------------------------------------------------------- |
-| `POST`   | `/admin/service-providers`                      | Register a new SP (body = SP record).                            |
-| `GET`    | `/admin/service-providers`                      | Return the SP record. `attribute_mapping` is omitted when unset. |
-| `PUT`    | `/admin/service-providers/attribute-mapping`    | Replace the SP's `attribute_mapping`.                            |
-| `DELETE` | `/admin/service-providers/attribute-mapping`    | Clear the SP's `attribute_mapping`.                              |
+| Method   | Route                                        | Parameter                    | Request Body    | Purpose                                    |
+|:---------|:---------------------------------------------|:-----------------------------|:----------------|:-------------------------------------------|
+| `POST`   | `/admin/service-providers`                   | —                            | SP JSON Payload | Registers a new SP.                        |
+| `GET`    | `/admin/service-providers`                   | `entity_id=<url-encoded-id>` | —               | Retrieves SP configurations.               |
+| `PUT`    | `/admin/service-providers/attribute-mapping` | `entity_id=<url-encoded-id>` | JSON Mapping    | Sets or replaces mapping rules.            |
+| `DELETE` | `/admin/service-providers/attribute-mapping` | `entity_id=<url-encoded-id>` | —               | Deletes mapping rules (resets to default). |
 
 #### Examples
 
 ```bash
+# Setup environment variables
 ENTITY_ID=$(printf 'https://myapp.example.com' | jq -sRr @uri)
-BASE="http://localhost:8082/admin/service-providers"
+BASE_URL="http://localhost:8082/admin/service-providers"
 
-# GET
-curl "${BASE}?entity_id=${ENTITY_ID}"
+# Fetch registration details
+curl "${BASE_URL}?entity_id=${ENTITY_ID}"
 
-# PUT (replace mapping from a file)
+# Set mapping rules from a file
 curl -X PUT -H "Content-Type: application/json" \
-  "${BASE}/attribute-mapping?entity_id=${ENTITY_ID}" \
+  "${BASE_URL}/attribute-mapping?entity_id=${ENTITY_ID}" \
   --data-binary @mapping.json
 
-# DELETE (clear mapping)
-curl -X DELETE "${BASE}/attribute-mapping?entity_id=${ENTITY_ID}"
+# Reset mapping to default (writes NULL to DB)
+curl -X DELETE "${BASE_URL}/attribute-mapping?entity_id=${ENTITY_ID}"
 ```
 
-#### `PUT {}` vs `DELETE`
+- **Empty Map (`PUT {}`)**: Sets an explicit, empty mapping object. Subsequent
+  calls return `"attribute_mapping": {}`.
+- **Delete Map (`DELETE`)**: Removes mapping configuration rules. Subsequent
+  calls omit the `attribute_mapping` key.
 
-They write **different** persisted states:
+---
 
-| Operation       | Persisted state                                | `GET` response                              |
-| --------------- | ---------------------------------------------- | ------------------------------------------- |
-| `PUT` with `{}` | A configured mapping with zero-value fields    | `attribute_mapping` present with value `{}` |
-| `DELETE`        | No mapping at all (column is NULL)             | `attribute_mapping` omitted                 |
+## Development & Contribution
 
-Use `DELETE` to revert an SP to "as if registered without a
-mapping". Use `PUT {}` only when you want an explicit empty
-mapping (e.g., as a base for subsequent `PUT`s).
+Refer to [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on the
+contribution workflow, code generation, commit conventions, and running the code
+verification suite.
 
-```bash
-# PUT {} (install an explicit empty mapping)
-curl -X PUT -H "Content-Type: application/json" \
-  "${BASE}/attribute-mapping?entity_id=${ENTITY_ID}" \
-  --data-binary '{}'
-```
+---
 
 ## License
 
-See the [LICENSE](LICENSE) file for details.
+This project is licensed under the terms of the **GNU Affero General Public
+License v3.0**. Read [LICENSE](LICENSE) for the full details.

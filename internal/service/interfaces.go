@@ -61,6 +61,7 @@ type OIDCService interface {
 type PendingRequestService interface {
 	Store(ctx context.Context, req *domain.PendingAuthnRequest) error
 	Retrieve(ctx context.Context, requestID string) (*domain.PendingAuthnRequest, error)
+	CleanupExpired(ctx context.Context, limit int) (int64, error)
 }
 
 // HydraClient abstracts the Hydra OIDC infrastructure for auth URL

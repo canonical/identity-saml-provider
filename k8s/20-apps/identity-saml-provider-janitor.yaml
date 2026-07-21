@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: identity-saml-provider-janitor
+  labels:
+    app: identity-saml-provider-janitor
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: identity-saml-provider-janitor
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: janitor
+              image: identity-saml-provider
+              imagePullPolicy: IfNotPresent
+              command:
+                - "/usr/bin/identity-saml-provider"
+                - "janitor"
+                - "pending-requests"
+              env:
+                # Database Configuration
+                - name: SAML_PROVIDER_DB_HOST
+                  value: postgres
+                - name: SAML_PROVIDER_DB_PORT
+                  value: "5432"
+                - name: SAML_PROVIDER_DB_USER
+                  value: postgres
+                - name: SAML_PROVIDER_DB_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgres-credentials
+                      key: password
+                - name: SAML_PROVIDER_DB_NAME
+                  value: postgres

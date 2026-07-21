@@ -20,7 +20,6 @@ import (
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	prommon "github.com/canonical/identity-saml-provider/internal/monitoring/prometheus"
-	"github.com/canonical/identity-saml-provider/internal/repository/memory"
 	"github.com/canonical/identity-saml-provider/internal/repository/postgres"
 	"github.com/canonical/identity-saml-provider/internal/service"
 	"github.com/canonical/identity-saml-provider/internal/tracing"
@@ -87,7 +86,7 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	sessionRepo := postgres.NewSessionRepo(pool, tracer)
 	spRepo := postgres.NewServiceProviderRepo(pool, tracer)
 	persistentIDRepo := postgres.NewPersistentNameIDRepo(pool, tracer)
-	pendingRepo := memory.NewPendingRequestRepo(tracer)
+	pendingRepo := postgres.NewPendingRequestRepo(pool, tracer)
 
 	// --- Infrastructure ---
 	hydraClient, err := hydra.NewClient(ctx, cfg.HydraConfig(), cfg.OIDCConfig(), logger)
@@ -113,7 +112,11 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	handlers := handler.NewHandlers(
 		sessionSvc, spSvc, mappingSvc, oidcSvc, pendingSvc,
 		samlIDP,
-		handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL, DevMode: cfg.DevMode},
+		handler.HandlerConfig{
+			BridgeBaseURL:     cfg.BridgeBaseURL,
+			PendingRequestTTL: cfg.PendingRequestTTL,
+			DevMode:           cfg.DevMode,
+		},
 		logger, monitor,
 	)
 
@@ -124,8 +127,12 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		Mapping:  mappingSvc,
 		Pending:  pendingSvc,
 		OIDC:     oidcSvc,
-		Config:   handler.HandlerConfig{BridgeBaseURL: cfg.BridgeBaseURL, DevMode: cfg.DevMode},
-		Logger:   logger,
+		Config: handler.HandlerConfig{
+			BridgeBaseURL:     cfg.BridgeBaseURL,
+			PendingRequestTTL: cfg.PendingRequestTTL,
+			DevMode:           cfg.DevMode,
+		},
+		Logger: logger,
 	}
 	samlIDP.ServiceProviderProvider = &handler.SAMLSPAdapter{
 		SPs: spSvc,

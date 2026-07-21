@@ -4,6 +4,8 @@
 package handler
 
 import (
+	"time"
+
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/canonical/identity-saml-provider/internal/monitoring"
 	"github.com/canonical/identity-saml-provider/internal/service"
@@ -12,7 +14,8 @@ import (
 
 // HandlerConfig holds handler-layer configuration.
 type HandlerConfig struct {
-	BridgeBaseURL string
+	BridgeBaseURL     string
+	PendingRequestTTL time.Duration
 
 	// DevMode controls cookie security attributes. When true, the
 	// Secure attribute is omitted from session cookies to allow
