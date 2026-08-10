@@ -22,7 +22,7 @@ jobs:
     uses: ./.github/workflows/pre-commit.yaml
 
   build:
-    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@1bf335af1d939c8543e53d376dd49d79126c2cd3 # v1.15.0
+    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@e3a8bd76a4e2066baedcfd975ee7091368d029b1
 
   unit-test:
     uses: ./.github/workflows/unittest.yaml
