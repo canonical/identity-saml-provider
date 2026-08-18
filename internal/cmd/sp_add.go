@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -38,46 +39,44 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
   SAML_PROVIDER_DB_PASSWORD (default: saml_provider)`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
+		return RunHandler(cmd, formatSPRegistered, func(ctx context.Context) (*SPResult, error) {
+			// Load config from SAML_PROVIDER_DB_* env vars.
+			var cfg app.Config
+			if err := envconfig.Process("", &cfg); err != nil {
+				return nil, fmt.Errorf("load config from environment: %w", err)
+			}
+			if err := cfg.Validate(); err != nil {
+				return nil, fmt.Errorf("invalid configuration: %w", err)
+			}
 
-		formatter, err := newSPFormatter(spFormat)
-		if err != nil {
-			return err
-		}
+			// Open DB connection.
+			pool, err := openDB(ctx, cfg)
+			if err != nil {
+				return nil, err
+			}
+			defer pool.Close()
 
-		// Load config from SAML_PROVIDER_DB_* env vars.
-		var cfg app.Config
-		if err := envconfig.Process("", &cfg); err != nil {
-			return fmt.Errorf("load config from environment: %w", err)
-		}
-		if err := cfg.Validate(); err != nil {
-			return fmt.Errorf("invalid configuration: %w", err)
-		}
+			// Build domain object from CLI flags.
+			sp, err := buildServiceProvider()
+			if err != nil {
+				return nil, err
+			}
 
-		// Open DB connection.
-		pool, err := openDB(ctx, cfg)
-		if err != nil {
-			return err
-		}
-		defer pool.Close()
+			// Register via service layer.
+			repo := postgres.NewServiceProviderRepo(pool, tracing.NewNoopTracer())
+			logger := logging.NewNopLogger()
+			svc := service.NewServiceProviderService(repo, logger, tracing.NewNoopTracer())
 
-		// Build domain object from CLI flags.
-		sp, err := buildServiceProvider()
-		if err != nil {
-			return err
-		}
+			if err := svc.Register(ctx, sp); err != nil {
+				return nil, err
+			}
 
-		// Register via service layer.
-		repo := postgres.NewServiceProviderRepo(pool, tracing.NewNoopTracer())
-		logger := logging.NewNopLogger()
-		svc := service.NewServiceProviderService(repo, logger, tracing.NewNoopTracer())
-
-		if err := svc.Register(ctx, sp); err != nil {
-			cmd.SilenceErrors = true
-			return formatter.SPError(cmd.OutOrStdout(), sp, err)
-		}
-
-		return formatter.SPRegistered(cmd.OutOrStdout(), sp)
+			return &SPResult{
+				EntityID:   sp.EntityID,
+				ACSURL:     sp.ACSURL,
+				ACSBinding: sp.ACSBinding,
+			}, nil
+		})
 	},
 }
 

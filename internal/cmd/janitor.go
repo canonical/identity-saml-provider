@@ -7,10 +7,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	janitorFormat string
-)
-
 var janitorCmd = &cobra.Command{
 	Use:   "janitor",
 	Short: "Database janitor utility",
@@ -18,9 +14,5 @@ var janitorCmd = &cobra.Command{
 }
 
 func init() {
-	janitorCmd.PersistentFlags().StringVarP(
-		&janitorFormat, "format", "f", "text",
-		"Output format (text or json)",
-	)
 	rootCmd.AddCommand(janitorCmd)
 }

@@ -244,6 +244,7 @@ func TestNewClient_WithDiscovery(t *testing.T) {
 			}
 			if c == nil {
 				t.Fatal("NewClient() returned nil")
+				return
 			}
 			if c.httpClient == nil {
 				t.Error("NewClient().httpClient is nil")

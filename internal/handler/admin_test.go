@@ -593,6 +593,7 @@ func TestPutEmptyObjectVsDelete(t *testing.T) {
 			DoAndReturn(func(_ context.Context, _ string, m *domain.AttributeMapping) error {
 				if m == nil {
 					t.Fatalf("UpdateAttributeMapping received nil mapping; want non-nil zero-value")
+					return nil
 				}
 				if m.NameIDFormat != "" {
 					t.Errorf("NameIDFormat = %q, want empty zero value", m.NameIDFormat)

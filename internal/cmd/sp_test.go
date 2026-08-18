@@ -253,19 +253,18 @@ func TestSPAddDefaultACSBinding(t *testing.T) {
 
 // Verify JSON format output structure matches expected schema.
 func TestSPJSONOutputSchema(t *testing.T) {
-	f := &spJSONFormatter{}
-	sp := &domain.ServiceProvider{
+	sp := &SPResult{
 		EntityID:   "http://example.com/metadata",
 		ACSURL:     "http://example.com/acs",
 		ACSBinding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
 	}
 
 	var buf bytes.Buffer
-	if err := f.SPRegistered(&buf, sp); err != nil {
+	if err := WriteJSONSuccess(&buf, sp); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var result spJSONResult
+	var result ResponseEnvelope[SPResult]
 	if err := json.Unmarshal(buf.Bytes(), &result); err != nil {
 		t.Fatalf("failed to unmarshal JSON: %v", err)
 	}
@@ -273,7 +272,13 @@ func TestSPJSONOutputSchema(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("expected status 'success', got %q", result.Status)
 	}
-	if result.EntityID != sp.EntityID {
-		t.Errorf("expected entity_id %q, got %q", sp.EntityID, result.EntityID)
+	if result.Data.EntityID != sp.EntityID {
+		t.Errorf("expected entity_id %q, got %q", sp.EntityID, result.Data.EntityID)
+	}
+	if result.Data.ACSURL != sp.ACSURL {
+		t.Errorf("expected acs_url %q, got %q", sp.ACSURL, result.Data.ACSURL)
+	}
+	if result.Data.ACSBinding != sp.ACSBinding {
+		t.Errorf("expected acs_binding %q, got %q", sp.ACSBinding, result.Data.ACSBinding)
 	}
 }

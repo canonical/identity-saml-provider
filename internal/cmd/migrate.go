@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -14,8 +15,7 @@ import (
 )
 
 var (
-	dsn           string
-	migrateFormat string
+	dsn string
 )
 
 var migrateCmd = &cobra.Command{
@@ -26,7 +26,6 @@ var migrateCmd = &cobra.Command{
 
 func init() {
 	migrateCmd.PersistentFlags().StringVar(&dsn, "dsn", "", "PostgreSQL DSN connection string")
-	migrateCmd.PersistentFlags().StringVarP(&migrateFormat, "format", "f", "text", "Output format (text or json)")
 	_ = migrateCmd.MarkPersistentFlagRequired("dsn")
 
 	migrateDownCmd.Flags().Int64("version", -1, "Target version to migrate down to (default: roll back one)")
@@ -39,9 +38,9 @@ func init() {
 	rootCmd.AddCommand(migrateCmd)
 }
 
-func newGooseProvider(db *sql.DB, formatter MigrateOutputFormatter) (*goose.Provider, error) {
+func newGooseProvider(db *sql.DB, isJSON bool) (*goose.Provider, error) {
 	var opts []goose.ProviderOption
-	if formatter.ShouldSilenceGoose() {
+	if isJSON {
 		opts = append(opts, goose.WithLogger(goose.NopLogger()))
 	}
 
@@ -69,28 +68,28 @@ var migrateUpCmd = &cobra.Command{
 	Short:        "Apply all pending migrations",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter, err := newMigrateFormatter(migrateFormat)
-		if err != nil {
-			return err
-		}
+		return RunHandler(cmd, nil, func(ctx context.Context) (MigrateResultsResult, error) {
+			db, err := openMigrateDB(cmd)
+			if err != nil {
+				return MigrateResultsResult{}, err
+			}
+			defer func() { _ = db.Close() }()
 
-		db, err := openMigrateDB(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = db.Close() }()
+			provider, err := newGooseProvider(db, GetFormat(cmd) == "json")
+			if err != nil {
+				return MigrateResultsResult{}, fmt.Errorf("failed to create goose provider: %w", err)
+			}
 
-		provider, err := newGooseProvider(db, formatter)
-		if err != nil {
-			return fmt.Errorf("failed to create goose provider: %w", err)
-		}
+			results, err := provider.Up(ctx)
+			if err != nil {
+				return MigrateResultsResult{}, err
+			}
+			if results == nil {
+				results = []*goose.MigrationResult{}
+			}
 
-		results, err := provider.Up(cmd.Context())
-		if err != nil {
-			return err
-		}
-
-		return formatter.MigrationResults(cmd.OutOrStdout(), results)
+			return MigrateResultsResult{Applied: results}, nil
+		})
 	},
 }
 
@@ -102,42 +101,40 @@ var migrateDownCmd = &cobra.Command{
 	Long:         "Roll back the last migration, or down to a specific version with --version",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter, err := newMigrateFormatter(migrateFormat)
-		if err != nil {
-			return err
-		}
-
-		db, err := openMigrateDB(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = db.Close() }()
-
-		provider, err := newGooseProvider(db, formatter)
-		if err != nil {
-			return fmt.Errorf("failed to create goose provider: %w", err)
-		}
-
-		ctx := cmd.Context()
-		version, _ := cmd.Flags().GetInt64("version")
-
-		var results []*goose.MigrationResult
-
-		if version < 0 {
-			result, err := provider.Down(ctx)
+		return RunHandler(cmd, nil, func(ctx context.Context) (MigrateResultsResult, error) {
+			db, err := openMigrateDB(cmd)
 			if err != nil {
-				return err
+				return MigrateResultsResult{}, err
 			}
-			results = append(results, result)
-		} else {
-			var err error
-			results, err = provider.DownTo(ctx, version)
-			if err != nil {
-				return err
-			}
-		}
+			defer func() { _ = db.Close() }()
 
-		return formatter.MigrationResults(cmd.OutOrStdout(), results)
+			provider, err := newGooseProvider(db, GetFormat(cmd) == "json")
+			if err != nil {
+				return MigrateResultsResult{}, fmt.Errorf("failed to create goose provider: %w", err)
+			}
+
+			version, _ := cmd.Flags().GetInt64("version")
+			var results []*goose.MigrationResult
+
+			if version < 0 {
+				result, err := provider.Down(ctx)
+				if err != nil {
+					return MigrateResultsResult{}, err
+				}
+				results = append(results, result)
+			} else {
+				var err error
+				results, err = provider.DownTo(ctx, version)
+				if err != nil {
+					return MigrateResultsResult{}, err
+				}
+			}
+			if results == nil {
+				results = []*goose.MigrationResult{}
+			}
+
+			return MigrateResultsResult{Applied: results}, nil
+		})
 	},
 }
 
@@ -148,28 +145,25 @@ var migrateStatusCmd = &cobra.Command{
 	Short:        "Show migration status",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter, err := newMigrateFormatter(migrateFormat)
-		if err != nil {
-			return err
-		}
+		return RunHandler(cmd, formatMigrationStatuses, func(ctx context.Context) ([]*goose.MigrationStatus, error) {
+			db, err := openMigrateDB(cmd)
+			if err != nil {
+				return nil, err
+			}
+			defer func() { _ = db.Close() }()
 
-		db, err := openMigrateDB(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = db.Close() }()
+			provider, err := newGooseProvider(db, GetFormat(cmd) == "json")
+			if err != nil {
+				return nil, fmt.Errorf("failed to create goose provider: %w", err)
+			}
 
-		provider, err := newGooseProvider(db, formatter)
-		if err != nil {
-			return fmt.Errorf("failed to create goose provider: %w", err)
-		}
+			statuses, err := provider.Status(ctx)
+			if err != nil {
+				return nil, err
+			}
 
-		statuses, err := provider.Status(cmd.Context())
-		if err != nil {
-			return err
-		}
-
-		return formatter.MigrationStatuses(cmd.OutOrStdout(), statuses)
+			return statuses, nil
+		})
 	},
 }
 
@@ -180,48 +174,38 @@ var migrateCheckCmd = &cobra.Command{
 	Short:        "Check if there are pending migrations",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		formatter, err := newMigrateFormatter(migrateFormat)
-		if err != nil {
-			return err
-		}
+		return RunHandler(cmd, formatMigrationCheck, func(ctx context.Context) (CheckResult, error) {
+			db, err := openMigrateDB(cmd)
+			if err != nil {
+				return CheckResult{}, err
+			}
+			defer func() { _ = db.Close() }()
 
-		db, err := openMigrateDB(cmd)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = db.Close() }()
+			provider, err := newGooseProvider(db, GetFormat(cmd) == "json")
+			if err != nil {
+				return CheckResult{}, fmt.Errorf("failed to create goose provider: %w", err)
+			}
 
-		provider, err := newGooseProvider(db, formatter)
-		if err != nil {
-			return fmt.Errorf("failed to create goose provider: %w", err)
-		}
+			hasPending, err := provider.HasPending(ctx)
+			if err != nil {
+				return CheckResult{}, fmt.Errorf("failed to check pending migrations: %w", err)
+			}
 
-		ctx := cmd.Context()
-		out := cmd.OutOrStdout()
+			current, versionErr := provider.GetDBVersion(ctx)
 
-		hasPending, err := provider.HasPending(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to check pending migrations: %w", err)
-		}
+			result := CheckResult{Version: current}
+			switch {
+			case hasPending && versionErr != nil:
+				return CheckResult{}, fmt.Errorf("migrations are pending (failed to get current version: %v)", versionErr)
+			case hasPending:
+				result.Status = CheckStatusPending
+			case versionErr != nil:
+				result.Status = CheckStatusUnknown
+			default:
+				result.Status = CheckStatusOK
+			}
 
-		current, versionErr := provider.GetDBVersion(ctx)
-
-		result := CheckResult{Version: current}
-		switch {
-		case hasPending && versionErr != nil:
-			return fmt.Errorf("migrations are pending (failed to get current version: %v)", versionErr)
-		case hasPending:
-			result.Status = CheckStatusPending
-		case versionErr != nil:
-			result.Status = CheckStatusUnknown
-		default:
-			result.Status = CheckStatusOK
-		}
-
-		if err := formatter.MigrationCheck(out, result); err != nil {
-			return err
-		}
-
-		return nil
+			return result, nil
+		})
 	},
 }

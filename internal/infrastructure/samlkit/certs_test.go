@@ -107,6 +107,7 @@ func TestLoadKeyPair(t *testing.T) {
 			}
 			if kp == nil {
 				t.Fatal("LoadKeyPair() returned nil")
+				return
 			}
 			if kp.Certificate == nil {
 				t.Error("LoadKeyPair() Certificate is nil")
