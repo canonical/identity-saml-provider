@@ -154,7 +154,8 @@ def main() -> None:
         print("ERROR: PR_NUMBER environment variable is not a valid integer.", file=sys.stderr)
         sys.exit(1)
 
-    model = os.environ.get("MODEL", "openrouter/deepseek/deepseek-v4-flash")
+    model = os.environ.get("MODEL", "deepseek/deepseek-v4-flash")
+    model = model.removeprefix("openrouter/")
     extra_instructions = os.environ.get("EXTRA_INSTRUCTIONS", "")
 
     ignore_spec = load_ignore_spec()
