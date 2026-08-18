@@ -1,0 +1,83 @@
+name: OpenCode Code Review
+
+on:
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: |
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/opencode-review') &&
+      (github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'COLLABORATOR')
+
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Parse Model from Comment
+        id: parse
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          COMMENT="${{ github.event.comment.body }}"
+          if [[ "$COMMENT" =~ model=([^ ]+) ]]; then
+              echo "MODEL=${BASH_REMATCH[1]}" >> $GITHUB_ENV
+          else
+              echo "MODEL=openrouter/deepseek/deepseek-v4-flash" >> $GITHUB_ENV
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Run OpenCode Code Review
+        uses: anomalyco/opencode/github@77fc88c8ade8e5a620ebbe1197f3a572d29ae91a # latest
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_CI_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          use_github_token: true
+          model: ${{ env.MODEL }}
+          prompt: |
+            You are a senior Go engineer reviewing a pull request. Apply these guidelines for each area:
+
+            ## Review Areas
+
+            - **Code style** — formatting, comment quality, idiomatic Go patterns
+            - **Naming** — packages, types, variables, functions, constants
+            - **Error handling** — wrapping, sentinel errors, log-and-return, swallowed errors
+            - **Concurrency** — goroutine lifecycle, mutex usage, channel patterns, context propagation,
+                data races
+            - **Code safety** — nil dereference, map/slice aliasing, integer overflows, uninitialized state
+            - **Tests** — coverage of new code, test quality, table-driven tests, use of t.Helper()
+            - **Performance** — unnecessary allocations, inefficient data structures, missing bounds
+            - **Security** — injection, auth, crypto misuse, sensitive data exposure, input validation
+            - **Documentation** — exported symbols, package docs, README impact
+            - **Observability** — logging, metrics, tracing added for new code paths
+            - **Modernize code** — outdated patterns replaced with Go 1.21+ idioms
+
+            ## Priority
+
+            - **Blocking-first**: Security, Code safety, Error handling, Concurrency
+            - **Important**: Tests, Performance, Dependencies
+            - **Suggestion-first**: Code style, Naming, Documentation, Observability, Modernize code
+
+            ## Severity Labels
+
+            - 🔴 **BLOCKING** — bug, vulnerability, data race, or correctness issue; must be fixed
+              before merge.
+            - 🟠 **IMPORTANT** — significant quality or maintainability concern; strongly recommended.
+            - 🟡 **SUGGESTION** — style, naming, or minor improvement; optional but worthwhile.
+
+            ## Guidelines
+
+            - Keep feedback concise, specific, and actionable.
+            - Reference the exact file path and line number for each finding.
+            - Explain *what* is wrong, *why* it matters, and provide a concrete fix snippet.
