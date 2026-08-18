@@ -13,10 +13,10 @@ func TestJanitorCommandRegistered(t *testing.T) {
 		if cmd.Name() == "janitor" {
 			janitorCmdFound = true
 
-			// Verify format persistent flag is registered correctly
-			formatFlag := cmd.PersistentFlags().Lookup("format")
+			// Verify format flag is inherited
+			formatFlag := cmd.Flag("format")
 			if formatFlag == nil {
-				t.Error("expected 'format' persistent flag to be registered on 'janitor'")
+				t.Error("expected 'format' flag to be available on 'janitor'")
 			} else {
 				if formatFlag.DefValue != "text" {
 					t.Errorf("expected default format to be text, got %s", formatFlag.DefValue)

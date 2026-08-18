@@ -13,10 +13,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	spFormat string
-)
-
 var spCmd = &cobra.Command{
 	Use:   "sp",
 	Short: "Manage SAML service providers",
@@ -24,10 +20,6 @@ var spCmd = &cobra.Command{
 }
 
 func init() {
-	spCmd.PersistentFlags().StringVarP(
-		&spFormat, "format", "f", "text",
-		"Output format (text or json)",
-	)
 	rootCmd.AddCommand(spCmd)
 }
 

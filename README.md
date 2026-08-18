@@ -229,6 +229,7 @@ identity-saml-provider sp add \
 | `--acs-url`                | `-a`  | Assertion Consumer Service URL on the SP side (Required).                         |
 | `--acs-binding`            | `-b`  | SAML binding style. Defaults to `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST`. |
 | `--attribute-mapping-file` | —     | Path to JSON mapping rules.                                                       |
+| `--format`                 | —     | Output format (`text` or `json`, default: `text`).                                |
 
 ---
 

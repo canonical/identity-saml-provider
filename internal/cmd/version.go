@@ -4,7 +4,7 @@
 package cmd
 
 import (
-	"fmt"
+	"context"
 
 	"github.com/canonical/identity-saml-provider/internal/version"
 	"github.com/spf13/cobra"
@@ -15,8 +15,9 @@ var versionCmd = &cobra.Command{
 	Short: "Print the application version",
 	Long:  "Print the version of the identity-saml-provider application.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, err := fmt.Fprintln(cmd.OutOrStdout(), version.Version)
-		return err
+		return RunHandler(cmd, formatVersion, func(ctx context.Context) (VersionResult, error) {
+			return VersionResult{Version: version.Version}, nil
+		})
 	},
 }
 

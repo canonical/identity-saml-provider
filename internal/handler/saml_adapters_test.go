@@ -187,6 +187,7 @@ func TestSAMLSessionAdapter_GetSession(t *testing.T) {
 				}
 				if nonceCookie == nil {
 					t.Fatal("oauth_nonce cookie not found in response")
+					return
 				}
 				if nonceCookie.Path != "/saml/callback" {
 					t.Errorf("cookie Path = %q, want %q", nonceCookie.Path, "/saml/callback")
