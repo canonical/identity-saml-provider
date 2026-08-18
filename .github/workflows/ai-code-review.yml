@@ -13,7 +13,7 @@ jobs:
       issues: write
     if: >
       github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/review') &&
+      startsWith(github.event.comment.body, '/openrouter-review') &&
       (github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'COLLABORATOR')
     runs-on: ubuntu-latest
     steps:
@@ -24,7 +24,7 @@ jobs:
           if [[ "$COMMENT" =~ model=([^ ]+) ]]; then
               echo "MODEL=${BASH_REMATCH[1]}" >> $GITHUB_ENV
           else
-              echo "MODEL=openrouter/deepseek/deepseek-v4-flash" >> $GITHUB_ENV
+              echo "MODEL=deepseek/deepseek-v4-flash" >> $GITHUB_ENV
           fi
 
       - name: Checkout Repository
