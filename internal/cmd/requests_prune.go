@@ -19,7 +19,7 @@ import (
 )
 
 var (
-	janitorBatchSize int
+	requestsBatchSize int
 )
 
 func validateBatchSize(batchSize int) error {
@@ -29,8 +29,8 @@ func validateBatchSize(batchSize int) error {
 	return nil
 }
 
-var janitorPendingRequestsCmd = &cobra.Command{
-	Use:   "pending-requests",
+var requestsPruneCmd = &cobra.Command{
+	Use:   "prune",
 	Short: "Clean up expired SAML pending requests from the database",
 	Long: `Clean up transient SAML pending authentication requests that have exceeded their configured TTL in the database.
 
@@ -43,21 +43,21 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
-		return validateBatchSize(janitorBatchSize)
+		return validateBatchSize(requestsBatchSize)
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return RunHandler(cmd, formatJanitorPendingRequests, func(ctx context.Context) (JanitorResult, error) {
+		return RunHandler(cmd, formatRequestsPrune, func(ctx context.Context) (RequestsPruneResult, error) {
 			var cfg app.Config
 			if err := envconfig.Process("", &cfg); err != nil {
-				return JanitorResult{}, fmt.Errorf("failed to process configuration: %w", err)
+				return RequestsPruneResult{}, fmt.Errorf("cannot process configuration: %w", err)
 			}
 			if err := cfg.Validate(); err != nil {
-				return JanitorResult{}, fmt.Errorf("invalid configuration: %w", err)
+				return RequestsPruneResult{}, fmt.Errorf("invalid configuration: %w", err)
 			}
 
 			pool, err := openDB(ctx, cfg)
 			if err != nil {
-				return JanitorResult{}, err
+				return RequestsPruneResult{}, err
 			}
 			defer pool.Close()
 
@@ -76,20 +76,20 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 			const throttleDelay = 50 * time.Millisecond
 
 			for {
-				deleted, err := pendingSvc.CleanupExpired(loopCtx, janitorBatchSize)
+				deleted, err := pendingSvc.CleanupExpired(loopCtx, requestsBatchSize)
 				if err != nil {
 					// Gracefully handle context cancellation/timeouts to report partial progress
 					if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 						break
 					}
-					return JanitorResult{}, fmt.Errorf("failed to execute cleanup batch: %w", err)
+					return RequestsPruneResult{}, fmt.Errorf("cannot execute cleanup batch: %w", err)
 				}
 
 				totalDeleted += deleted
 
 				// If we deleted fewer rows than the batch size, we have fully caught up
 				// and can break early, saving a wasted database query roundtrip.
-				if deleted < int64(janitorBatchSize) {
+				if deleted < int64(requestsBatchSize) {
 					break
 				}
 
@@ -100,13 +100,13 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 				time.Sleep(throttleDelay)
 			}
 
-			return JanitorResult{DeletedCount: totalDeleted}, nil
+			return RequestsPruneResult{DeletedCount: totalDeleted}, nil
 		})
 	},
 }
 
 func init() {
-	janitorPendingRequestsCmd.Flags().IntVar(&janitorBatchSize, "batch-size", 1000, "Maximum number of pending requests to delete per batch")
+	requestsPruneCmd.Flags().IntVar(&requestsBatchSize, "batch-size", 1000, "Maximum number of pending requests to delete per batch")
 
-	janitorCmd.AddCommand(janitorPendingRequestsCmd)
+	requestsCmd.AddCommand(requestsPruneCmd)
 }

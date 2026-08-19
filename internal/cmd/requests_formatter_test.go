@@ -10,11 +10,11 @@ import (
 	"testing"
 )
 
-func TestFormatJanitorPendingRequests(t *testing.T) {
+func TestFormatRequestsPrune(t *testing.T) {
 	var buf bytes.Buffer
-	res := JanitorResult{DeletedCount: 42}
-	if err := formatJanitorPendingRequests(&buf, res); err != nil {
-		t.Fatalf("formatJanitorPendingRequests() unexpected error: %v", err)
+	res := RequestsPruneResult{DeletedCount: 42}
+	if err := formatRequestsPrune(&buf, res); err != nil {
+		t.Fatalf("formatRequestsPrune() unexpected error: %v", err)
 	}
 
 	output := buf.String()
@@ -23,14 +23,14 @@ func TestFormatJanitorPendingRequests(t *testing.T) {
 	}
 }
 
-func TestJanitorResultJSONEnvelope(t *testing.T) {
+func TestRequestsPruneResultJSONEnvelope(t *testing.T) {
 	var buf bytes.Buffer
-	res := JanitorResult{DeletedCount: 100}
+	res := RequestsPruneResult{DeletedCount: 100}
 	if err := WriteJSONSuccess(&buf, res); err != nil {
 		t.Fatalf("WriteJSONSuccess() unexpected error: %v", err)
 	}
 
-	var env ResponseEnvelope[JanitorResult]
+	var env ResponseEnvelope[RequestsPruneResult]
 	if err := json.Unmarshal(buf.Bytes(), &env); err != nil {
 		t.Fatalf("failed to unmarshal JSON: %v", err)
 	}

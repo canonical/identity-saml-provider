@@ -23,8 +23,8 @@ spec:
               imagePullPolicy: IfNotPresent
               command:
                 - "/usr/bin/identity-saml-provider"
-                - "janitor"
-                - "pending-requests"
+                - "requests"
+                - "prune"
               env:
                 # Database Configuration
                 - name: SAML_PROVIDER_DB_HOST

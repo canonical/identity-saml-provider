@@ -940,7 +940,7 @@ performed operation.
 
 ### Requirement: CLI mapping configuration uses a single input path
 
-The `identity-saml-provider sp add` command SHALL accept the service
+The `identity-saml-provider service-provider create` command SHALL accept the service
 provider's attribute mapping settings through a single flag,
 `--attribute-mapping-file`. The command MUST NOT expose any additional
 flag whose purpose is to set an individual mapping setting (such as the
@@ -963,7 +963,7 @@ contents are `{"nameid_format": "<value>"}`.
 
 #### Scenario: Register service provider with a full mapping file
 
-- **WHEN** an operator runs `sp add` with `--attribute-mapping-file
+- **WHEN** an operator runs `service-provider create` with `--attribute-mapping-file
   mapping.json`, and `mapping.json` describes the NameID format, the
   SAML attribute settings, and the OIDC claim mappings
 - **THEN** the command succeeds
@@ -972,7 +972,7 @@ contents are `{"nameid_format": "<value>"}`.
 
 #### Scenario: Register service provider with a NameID-only mapping file
 
-- **WHEN** an operator runs `sp add` with `--attribute-mapping-file
+- **WHEN** an operator runs `service-provider create` with `--attribute-mapping-file
   nameid.json`, and `nameid.json` is the JSON document
   `{"nameid_format": "persistent"}`
 - **THEN** the command succeeds
@@ -982,14 +982,14 @@ contents are `{"nameid_format": "<value>"}`.
 
 #### Scenario: Register service provider without any mapping flag
 
-- **WHEN** an operator runs `sp add` without `--attribute-mapping-file`
+- **WHEN** an operator runs `service-provider create` without `--attribute-mapping-file`
 - **THEN** the command succeeds
 - **AND** the registered service provider has no attribute mapping
   attached
 
 #### Scenario: Mapping file path cannot be read
 
-- **WHEN** an operator runs `sp add` with `--attribute-mapping-file
+- **WHEN** an operator runs `service-provider create` with `--attribute-mapping-file
   missing.json`, and `missing.json` does not exist or is not readable
 - **THEN** the command fails
 - **AND** the error message identifies the file path
@@ -997,7 +997,7 @@ contents are `{"nameid_format": "<value>"}`.
 
 #### Scenario: Mapping file contents are not valid JSON
 
-- **WHEN** an operator runs `sp add` with `--attribute-mapping-file
+- **WHEN** an operator runs `service-provider create` with `--attribute-mapping-file
   bad.json`, and `bad.json` cannot be parsed as an attribute mapping
   document
 - **THEN** the command fails
@@ -1006,7 +1006,7 @@ contents are `{"nameid_format": "<value>"}`.
 
 #### Scenario: Mapping file contents fail validation
 
-- **WHEN** an operator runs `sp add` with `--attribute-mapping-file
+- **WHEN** an operator runs `service-provider create` with `--attribute-mapping-file
   invalid.json`, and the document parses successfully but the resulting
   mapping fails the documented mapping validation rules (for example, a
   SAML attribute entry with an empty name)
@@ -1015,13 +1015,13 @@ contents are `{"nameid_format": "<value>"}`.
 
 #### Scenario: The removed `--nameid-format` flag is rejected
 
-- **WHEN** an operator runs `sp add` with `--nameid-format persistent`
+- **WHEN** an operator runs `service-provider create` with `--nameid-format persistent`
 - **THEN** the command fails
 - **AND** no service provider is registered
 
 #### Scenario: Help text lists a single mapping input
 
-- **WHEN** an operator runs `sp add --help`
+- **WHEN** an operator runs `service-provider create --help`
 - **THEN** the output lists `--attribute-mapping-file` as the way to
   supply mapping settings
 - **AND** the output does not list `--nameid-format`

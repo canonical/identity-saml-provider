@@ -77,7 +77,7 @@ help:
 	@echo ""
 	@echo "Migrations:"
 	@echo "  migrate-up             - Apply all pending migrations"
-	@echo "  migrate-down           - Roll back the last migration"
+	@echo "  migrate-down           - Roll back migration(s)"
 	@echo "  migrate-status         - Show migration status"
 	@echo "  migrate-check          - Check if there are pending migrations"
 
@@ -117,7 +117,7 @@ dev-down:
 
 run: certs
 	@echo "Running migrations..."
-	go run $(LDFLAGS) ./cmd/identity-saml-provider migrate up --dsn $(DSN)
+	go run $(LDFLAGS) ./cmd/identity-saml-provider migrations apply --dsn $(DSN)
 	@echo "Running with version: $(VERSION)"
 	SAML_PROVIDER_DEV_MODE=true \
 	SAML_PROVIDER_DB_PORT=$(DB_PORT) \
@@ -196,13 +196,13 @@ k8s: k8s-certs k8s-secrets
 # Migrations
 
 migrate-up:
-	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate up --dsn $(DSN)
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrations apply --dsn $(DSN)
 
 migrate-down:
-	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate down --dsn $(DSN)
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrations rollback --dsn $(DSN)
 
 migrate-status:
-	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate status --dsn $(DSN)
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrations show --dsn $(DSN)
 
 migrate-check:
-	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrate check --dsn $(DSN)
+	@go run $(LDFLAGS) ./cmd/identity-saml-provider migrations check --dsn $(DSN)

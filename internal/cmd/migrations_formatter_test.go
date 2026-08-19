@@ -13,7 +13,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-func TestFormatMigrationStatuses(t *testing.T) {
+func TestFormatMigrationShow(t *testing.T) {
 	sampleStatuses := []*goose.MigrationStatus{
 		{
 			State:     goose.StateApplied,
@@ -26,17 +26,48 @@ func TestFormatMigrationStatuses(t *testing.T) {
 		},
 	}
 
-	var buf bytes.Buffer
-	if err := formatMigrationStatuses(&buf, sampleStatuses); err != nil {
-		t.Fatalf("formatMigrationStatuses() unexpected error: %v", err)
-	}
-
-	output := buf.String()
-	for _, want := range []string{"Applied At", "001_init.sql", "Pending", "002_add_table.sql"} {
-		if !strings.Contains(output, want) {
-			t.Errorf("expected %q in output, got %q", want, output)
+	t.Run("with headers", func(t *testing.T) {
+		res := MigrationShowResult{
+			Statuses:  sampleStatuses,
+			NoHeaders: false,
 		}
-	}
+		var buf bytes.Buffer
+		if err := formatMigrationShow(&buf, res); err != nil {
+			t.Fatalf("formatMigrationShow() unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		for _, want := range []string{"APPLIED AT", "MIGRATION", "001_init.sql", "Pending", "002_add_table.sql"} {
+			if !strings.Contains(output, want) {
+				t.Errorf("expected %q in output, got %q", want, output)
+			}
+		}
+		// DE013 rules: no ==== or -- line art
+		if strings.Contains(output, "====") || strings.Contains(output, " -- ") {
+			t.Errorf("output contains forbidden ASCII decorations: %q", output)
+		}
+	})
+
+	t.Run("with no-headers", func(t *testing.T) {
+		res := MigrationShowResult{
+			Statuses:  sampleStatuses,
+			NoHeaders: true,
+		}
+		var buf bytes.Buffer
+		if err := formatMigrationShow(&buf, res); err != nil {
+			t.Fatalf("formatMigrationShow() unexpected error: %v", err)
+		}
+
+		output := buf.String()
+		if strings.Contains(output, "APPLIED AT") || strings.Contains(output, "MIGRATION") {
+			t.Errorf("expected headers to be omitted when NoHeaders is true, got %q", output)
+		}
+		for _, want := range []string{"001_init.sql", "Pending", "002_add_table.sql"} {
+			if !strings.Contains(output, want) {
+				t.Errorf("expected %q in output, got %q", want, output)
+			}
+		}
+	})
 }
 
 func TestFormatMigrationCheck(t *testing.T) {
@@ -114,11 +145,13 @@ func TestMigrateJSONEnvelopes(t *testing.T) {
 		}
 	})
 
-	t.Run("migration statuses envelope", func(t *testing.T) {
-		payload := []*goose.MigrationStatus{
-			{
-				State:  goose.StatePending,
-				Source: &goose.Source{Path: "002_add_table.sql"},
+	t.Run("migration show result envelope", func(t *testing.T) {
+		payload := MigrationShowResult{
+			Statuses: []*goose.MigrationStatus{
+				{
+					State:  goose.StatePending,
+					Source: &goose.Source{Path: "002_add_table.sql"},
+				},
 			},
 		}
 		var buf bytes.Buffer
@@ -126,7 +159,7 @@ func TestMigrateJSONEnvelopes(t *testing.T) {
 			t.Fatalf("WriteJSONSuccess() unexpected error: %v", err)
 		}
 
-		var env ResponseEnvelope[[]*goose.MigrationStatus]
+		var env ResponseEnvelope[MigrationShowResult]
 		if err := json.Unmarshal(buf.Bytes(), &env); err != nil {
 			t.Fatalf("failed to unmarshal JSON: %v", err)
 		}
@@ -134,8 +167,8 @@ func TestMigrateJSONEnvelopes(t *testing.T) {
 		if env.Status != "success" {
 			t.Errorf("expected status 'success', got %q", env.Status)
 		}
-		if len(env.Data) != 1 || env.Data[0].Source.Path != "002_add_table.sql" {
-			t.Errorf("unexpected statuses: %+v", env.Data)
+		if len(env.Data.Statuses) != 1 || env.Data.Statuses[0].Source.Path != "002_add_table.sql" {
+			t.Errorf("unexpected statuses: %+v", env.Data.Statuses)
 		}
 	})
 

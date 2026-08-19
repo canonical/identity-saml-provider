@@ -78,7 +78,7 @@ func TestRootFormatValidation(t *testing.T) {
 }
 
 func TestSubcommandsInheritFormatFlag(t *testing.T) {
-	subcommands := []string{"sp", "janitor", "migrate", "version", "serve"}
+	subcommands := []string{"service-provider", "requests", "migrations", "version", "serve"}
 
 	for _, name := range subcommands {
 		t.Run(name, func(t *testing.T) {

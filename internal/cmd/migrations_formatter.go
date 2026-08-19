@@ -28,34 +28,39 @@ type CheckResult struct {
 	Version int64 `json:"version"`
 }
 
-// MigrateResultsResult holds the results of an up or down migration execution.
+// MigrateResultsResult holds the results of an apply or rollback migration execution.
 type MigrateResultsResult struct {
 	Applied []*goose.MigrationResult `json:"applied"`
 }
 
-// formatMigrationStatuses formats the output of the migrate status command in text mode.
-func formatMigrationStatuses(w io.Writer, statuses []*goose.MigrationStatus) error {
-	if _, err := fmt.Fprintf(w, "    Applied At                  Migration\n"); err != nil {
-		return err
+// MigrationShowResult holds the statuses and display options for migrations show.
+type MigrationShowResult struct {
+	Statuses  []*goose.MigrationStatus `json:"statuses"`
+	NoHeaders bool                     `json:"-"`
+}
+
+// formatMigrationShow formats the output of the migrations show command in text mode.
+func formatMigrationShow(w io.Writer, result MigrationShowResult) error {
+	if !result.NoHeaders {
+		if _, err := fmt.Fprintf(w, "%-24s  %s\n", "APPLIED AT", "MIGRATION"); err != nil {
+			return err
+		}
 	}
-	if _, err := fmt.Fprintf(w, "    =======================================\n"); err != nil {
-		return err
-	}
-	for _, s := range statuses {
+	for _, s := range result.Statuses {
 		var appliedAt string
 		if s.State == goose.StateApplied {
 			appliedAt = s.AppliedAt.Format(time.RFC3339)
 		} else {
 			appliedAt = "Pending"
 		}
-		if _, err := fmt.Fprintf(w, "    %-24s -- %s\n", appliedAt, s.Source.Path); err != nil {
+		if _, err := fmt.Fprintf(w, "%-24s  %s\n", appliedAt, s.Source.Path); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// formatMigrationCheck formats the output of the migrate check command in text mode.
+// formatMigrationCheck formats the output of the migrations check command in text mode.
 func formatMigrationCheck(w io.Writer, result CheckResult) error {
 	var err error
 	switch result.Status {

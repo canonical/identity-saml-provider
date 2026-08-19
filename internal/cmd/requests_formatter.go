@@ -8,13 +8,13 @@ import (
 	"io"
 )
 
-// JanitorResult represents the data payload for janitor pruning operations.
-type JanitorResult struct {
+// RequestsPruneResult represents the data payload for pending requests prune operations.
+type RequestsPruneResult struct {
 	DeletedCount int64 `json:"deleted_count"`
 }
 
-// formatJanitorPendingRequests formats the pending requests cleanup result in text mode.
-func formatJanitorPendingRequests(w io.Writer, res JanitorResult) error {
+// formatRequestsPrune formats the pending requests cleanup result in text mode.
+func formatRequestsPrune(w io.Writer, res RequestsPruneResult) error {
 	_, err := fmt.Fprintf(w, "[Pruned] successfully deleted %d expired pending request(s).\n", res.DeletedCount)
 	return err
 }
