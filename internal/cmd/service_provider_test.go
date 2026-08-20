@@ -15,25 +15,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestSPSubcommands(t *testing.T) {
-	expected := map[string]bool{"add": false}
-	for _, sub := range spCmd.Commands() {
+func TestServiceProviderSubcommands(t *testing.T) {
+	expected := map[string]bool{"create": false}
+	for _, sub := range serviceProviderCmd.Commands() {
 		if _, ok := expected[sub.Name()]; ok {
 			expected[sub.Name()] = true
 		}
 	}
 	for name, found := range expected {
 		if !found {
-			t.Errorf("expected subcommand %q not found on sp command", name)
+			t.Errorf("expected subcommand %q not found on service-provider command", name)
 		}
 	}
 }
 
-func TestSPAddRequiresEntityID(t *testing.T) {
+func TestServiceProviderCreateRequiresEntityID(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
-	rootCmd.SetArgs([]string{"sp", "add", "--acs-url", "http://example.com/acs"})
+	rootCmd.SetArgs([]string{"service-provider", "create", "--acs-url", "http://example.com/acs"})
 
 	err := rootCmd.Execute()
 	if err == nil {
@@ -41,15 +41,24 @@ func TestSPAddRequiresEntityID(t *testing.T) {
 	}
 }
 
-func TestSPAddRequiresACSURL(t *testing.T) {
+func TestServiceProviderCreateRequiresACSURL(t *testing.T) {
 	buf := new(bytes.Buffer)
 	rootCmd.SetOut(buf)
 	rootCmd.SetErr(buf)
-	rootCmd.SetArgs([]string{"sp", "add", "--entity-id", "http://example.com/metadata"})
+	rootCmd.SetArgs([]string{"service-provider", "create", "--entity-id", "http://example.com/metadata"})
 
 	err := rootCmd.Execute()
 	if err == nil {
 		t.Error("expected error when --acs-url is not provided")
+	}
+}
+
+func TestServiceProviderCreateRejectsShortFlags(t *testing.T) {
+	shortFlags := []string{"e", "a", "b"}
+	for _, flag := range shortFlags {
+		if f := serviceProviderCreateCmd.Flags().ShorthandLookup(flag); f != nil {
+			t.Errorf("expected shorthand flag -%s to be removed, but it exists", flag)
+		}
 	}
 }
 
@@ -189,9 +198,9 @@ func TestBuildServiceProvider(t *testing.T) {
 			// Create a standalone command with the same flags to test
 			// buildServiceProvider without triggering DB connections.
 			cmd := &cobra.Command{Use: "test"}
-			cmd.Flags().StringVarP(&spEntityID, "entity-id", "e", "", "")
-			cmd.Flags().StringVarP(&spACSURL, "acs-url", "a", "", "")
-			cmd.Flags().StringVarP(&spACSBinding, "acs-binding", "b",
+			cmd.Flags().StringVar(&spEntityID, "entity-id", "", "")
+			cmd.Flags().StringVar(&spACSURL, "acs-url", "", "")
+			cmd.Flags().StringVar(&spACSBinding, "acs-binding",
 				"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST", "")
 			cmd.Flags().StringVar(&spAttributeMappingFile, "attribute-mapping-file", "", "")
 
@@ -226,7 +235,7 @@ func TestBuildServiceProvider(t *testing.T) {
 	}
 }
 
-func TestSPAddHasExpectedFlags(t *testing.T) {
+func TestServiceProviderCreateHasExpectedFlags(t *testing.T) {
 	expectedFlags := []string{
 		"entity-id",
 		"acs-url",
@@ -235,14 +244,14 @@ func TestSPAddHasExpectedFlags(t *testing.T) {
 	}
 
 	for _, name := range expectedFlags {
-		if spAddCmd.Flags().Lookup(name) == nil {
-			t.Errorf("expected flag %q not found on sp add command", name)
+		if serviceProviderCreateCmd.Flags().Lookup(name) == nil {
+			t.Errorf("expected flag %q not found on service-provider create command", name)
 		}
 	}
 }
 
-func TestSPAddDefaultACSBinding(t *testing.T) {
-	flag := spAddCmd.Flags().Lookup("acs-binding")
+func TestServiceProviderCreateDefaultACSBinding(t *testing.T) {
+	flag := serviceProviderCreateCmd.Flags().Lookup("acs-binding")
 	if flag == nil {
 		t.Fatal("expected --acs-binding flag")
 	}
@@ -252,7 +261,7 @@ func TestSPAddDefaultACSBinding(t *testing.T) {
 }
 
 // Verify JSON format output structure matches expected schema.
-func TestSPJSONOutputSchema(t *testing.T) {
+func TestServiceProviderJSONOutputSchema(t *testing.T) {
 	sp := &SPResult{
 		EntityID:   "http://example.com/metadata",
 		ACSURL:     "http://example.com/acs",

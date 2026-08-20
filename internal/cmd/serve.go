@@ -36,22 +36,22 @@ func runServe() {
 
 	var cfg app.Config
 	if err := envconfig.Process("", &cfg); err != nil {
-		panic(fmt.Sprintf("Failed to process configuration: %v", err))
+		panic(fmt.Sprintf("cannot process configuration: %v", err))
 	}
 	if err := cfg.Validate(); err != nil {
-		panic(fmt.Sprintf("Invalid configuration: %v", err))
+		panic(fmt.Sprintf("invalid configuration: %v", err))
 	}
 
 	logger, err := logging.BuildLogger(cfg.LogLevel, cfg.DevMode)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
+		panic(fmt.Sprintf("cannot initialize logger: %v", err))
 	}
 
 	logger.Infow("Starting identity-saml-provider", "version", version.Version, "logLevel", cfg.LogLevel, "devMode", cfg.DevMode)
 
 	application, err := app.Build(ctx, cfg, logger)
 	if err != nil {
-		logger.Fatalw("Failed to build application", "error", err)
+		logger.Fatalw("cannot build application", "error", err)
 	}
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)

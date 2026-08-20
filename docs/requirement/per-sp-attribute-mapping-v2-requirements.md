@@ -22,7 +22,8 @@ This document defines the remaining requirements from a product perspective.
 - NameID format selection (persistent, transient, emailAddress) per SP.
 - `lowercase_email` transform option.
 - CLI flags for `--nameid-format` and `--attribute-mapping-file` at registration
-  time.
+  time (the standalone `--nameid-format` flag was later removed in favor of a
+  single `--attribute-mapping-file` input path).
 - Raw OIDC claims preserved in sessions for dynamic mapping.
 
 ### What's Missing
@@ -105,17 +106,17 @@ populates.
 
 ### P7: Overlapping and confusing CLI flags for SP registration
 
-The `sp add` CLI currently exposes two separate flags for attribute mapping
+The Phase 1 CLI exposed two separate flags for attribute mapping
 configuration: `--attribute-mapping-file` (a JSON file containing the full
 `AttributeMapping` struct) and `--nameid-format` (a standalone flag for the
-NameID format). These overlap and create confusion:
+NameID format). These overlapped and created confusion:
 
-- **Silent priority**: When both flags are provided, `--attribute-mapping-file`
-  wins and `--nameid-format` is silently ignored — no error or warning is
+- **Silent priority**: When both flags were provided, `--attribute-mapping-file`
+  won and `--nameid-format` was silently ignored — no error or warning was
   emitted.
-- **Conceptual duplication**: `--nameid-format` sets
+- **Conceptual duplication**: `--nameid-format` set
   `AttributeMapping.NameIDFormat`, which is already a field inside the mapping
-  file. The flag is a duplicate entry point for the same config value.
+  file. The flag was a duplicate entry point for the same config value.
 - **Doesn't scale**: Phase 2 adds richer config (`SAMLAttributeDef` with
   `friendly_name`, `name_format`; cross-map validation; `options`).
   Cherry-picking individual fields as CLI flags creates an unbounded surface —
@@ -138,7 +139,7 @@ NameID format). These overlap and create confusion:
 | FR-5 | **Update attribute mapping**: Administrators must be able to update the attribute mapping of an existing SP without re-registering it. | `PUT /admin/service-providers/{entity_id}/attribute-mapping` accepts a new mapping config, validates it, and persists it. Returns 400 for invalid config, 404 for unknown SPs. |
 | FR-6 | **Robust assertion control**: The bridge must have full control over which attributes appear in SAML assertions for mapped SPs, without relying on suppression of library defaults. An SP is considered "mapped" only when it has non-empty `saml_attribute_mappings`; an SP with only `nameid_format` set (and no `saml_attribute_mappings`) is treated as unmapped for attribute purposes and receives default attributes. | Mapped SPs (non-empty `saml_attribute_mappings`) receive only the attributes defined in their mapping config. No default attributes leak into the assertion. SPs with only `nameid_format` and no `saml_attribute_mappings` receive default attributes with the configured NameID format. Unmapped SPs (no `AttributeMapping` at all) continue to receive the same assertions as today. |
 | FR-7 | **Semantic validation of internal field references**: The bridge must validate that internal field names used in `oidc_claim_mappings` targets and `saml_attribute_mappings` keys are consistent and resolvable. Every `saml_attribute_mappings` key must either be a well-known field (`subject`, `email`, `name`, `groups`) or appear as a target value in `oidc_claim_mappings`. | Configuration with a misspelled field (e.g., `"emal"` instead of `"email"`) is rejected at registration/update time with an actionable error message identifying the unresolvable field. Custom fields (e.g., `"dept"`) are accepted when consistently defined in both maps. |
-| FR-8 | **Unified CLI mapping input**: The `sp add` CLI must use `--attribute-mapping-file` as the sole entry point for all mapping configuration, including NameID format. The separate `--nameid-format` flag must be removed. | `sp add --attribute-mapping-file mapping.json` applies the full config (including `nameid_format`). Passing `--nameid-format` produces a clear error directing the user to include `nameid_format` in the mapping file. A minimal `{"nameid_format": "persistent"}` file is valid for the common "just set NameID format" case. |
+| FR-8 | **Unified CLI mapping input**: The `service-provider create` CLI must use `--attribute-mapping-file` as the sole entry point for all mapping configuration, including NameID format. The separate `--nameid-format` flag must be removed. | `service-provider create --attribute-mapping-file mapping.json` applies the full config (including `nameid_format`). Passing `--nameid-format` produces a clear error directing the user to include `nameid_format` in the mapping file. A minimal `{"nameid_format": "persistent"}` file is valid for the common "just set NameID format" case. |
 
 ---
 
@@ -199,8 +200,8 @@ NameID format). These overlap and create confusion:
 | `oidc_claim_mappings` maps a claim to a custom field (e.g., `"department": "dept"`) and `saml_attribute_mappings` references `"dept"` | Valid — custom fields are allowed when consistently defined across both maps. The value flows through `Custom["dept"]` → SAML attribute. |
 | Administrator updates mapping while a user has an active session | Mapping updates take effect on the next assertion generation. Active authentication flows that have not yet reached assertion generation may use the updated mapping. |
 | SP is deleted (via direct DB operation) | All associated persistent NameIDs are automatically cleaned up via `ON DELETE CASCADE`. No SP deletion API exists in this phase. |
-| `sp add` with removed `--nameid-format` flag | CLI returns an error explaining the flag has been removed and directs the user to use `--attribute-mapping-file` with `{"nameid_format": "persistent"}` instead. |
-| `sp add` with `--attribute-mapping-file` containing only `{"nameid_format": "persistent"}` | Valid — registers SP with persistent NameID format and no custom attribute mappings. Because `saml_attribute_mappings` is empty, the SP is treated as unmapped for attribute purposes: default attributes are preserved, only the NameID format changes. This is equivalent to the old `--nameid-format persistent` shortcut. |
+| `service-provider create` with removed `--nameid-format` flag | CLI returns an error explaining the flag has been removed and directs the user to use `--attribute-mapping-file` with `{"nameid_format": "persistent"}` instead. |
+| `service-provider create` with `--attribute-mapping-file` containing only `{"nameid_format": "persistent"}` | Valid — registers SP with persistent NameID format and no custom attribute mappings. Because `saml_attribute_mappings` is empty, the SP is treated as unmapped for attribute purposes: default attributes are preserved, only the NameID format changes. This is equivalent to the old `--nameid-format persistent` shortcut. |
 
 ---
 

@@ -7,27 +7,27 @@ import (
 	"testing"
 )
 
-func TestJanitorCommandRegistered(t *testing.T) {
-	var janitorCmdFound bool
+func TestRequestsCommandRegistered(t *testing.T) {
+	var requestsCmdFound bool
 	for _, cmd := range rootCmd.Commands() {
-		if cmd.Name() == "janitor" {
-			janitorCmdFound = true
+		if cmd.Name() == "requests" {
+			requestsCmdFound = true
 
 			// Verify format flag is inherited
 			formatFlag := cmd.Flag("format")
 			if formatFlag == nil {
-				t.Error("expected 'format' flag to be available on 'janitor'")
+				t.Error("expected 'format' flag to be available on 'requests'")
 			} else {
 				if formatFlag.DefValue != "text" {
 					t.Errorf("expected default format to be text, got %s", formatFlag.DefValue)
 				}
 			}
 
-			// Verify pending-requests subcommand is registered under janitor
-			var pendingReqSubCmdFound bool
+			// Verify prune subcommand is registered under requests
+			var pruneSubCmdFound bool
 			for _, sub := range cmd.Commands() {
-				if sub.Name() == "pending-requests" {
-					pendingReqSubCmdFound = true
+				if sub.Name() == "prune" {
+					pruneSubCmdFound = true
 
 					// Verify default flags are registered correctly
 					batchSizeFlag := sub.Flags().Lookup("batch-size")
@@ -41,14 +41,14 @@ func TestJanitorCommandRegistered(t *testing.T) {
 				}
 			}
 
-			if !pendingReqSubCmdFound {
-				t.Error("expected 'pending-requests' subcommand to be registered under 'janitor'")
+			if !pruneSubCmdFound {
+				t.Error("expected 'prune' subcommand to be registered under 'requests'")
 			}
 		}
 	}
 
-	if !janitorCmdFound {
-		t.Error("expected 'janitor' command to be registered under rootCmd")
+	if !requestsCmdFound {
+		t.Error("expected 'requests' command to be registered under rootCmd")
 	}
 }
 

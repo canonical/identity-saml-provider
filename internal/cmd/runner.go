@@ -92,6 +92,6 @@ func handleExecutionError(cmd *cobra.Command, err error) {
 	if GetFormat(cmd) == "json" {
 		_ = WriteJSONError(cmd.OutOrStdout(), err)
 	} else {
-		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err)
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "error: %v\n", err)
 	}
 }

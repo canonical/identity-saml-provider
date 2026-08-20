@@ -230,6 +230,9 @@ func TestExecuteRoot_FlagError_Text(t *testing.T) {
 	if stdout.Len() > 0 {
 		t.Errorf("expected empty stdout on text flag error, got %q", stdout.String())
 	}
+	if !strings.Contains(stderr.String(), "error: ") {
+		t.Errorf("expected stderr to contain 'error: ' prefix, got %q", stderr.String())
+	}
 	if !strings.Contains(stderr.String(), "required flag") {
 		t.Errorf("expected error on stderr, got %q", stderr.String())
 	}

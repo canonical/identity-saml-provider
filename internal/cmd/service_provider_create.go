@@ -26,8 +26,8 @@ var (
 	spAttributeMappingFile string
 )
 
-var spAddCmd = &cobra.Command{
-	Use:   "add",
+var serviceProviderCreateCmd = &cobra.Command{
+	Use:   "create",
 	Short: "Register a SAML service provider",
 	Long: `Register a new SAML service provider with the Identity SAML Provider.
 
@@ -43,7 +43,7 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 			// Load config from SAML_PROVIDER_DB_* env vars.
 			var cfg app.Config
 			if err := envconfig.Process("", &cfg); err != nil {
-				return nil, fmt.Errorf("load config from environment: %w", err)
+				return nil, fmt.Errorf("cannot load config from environment: %w", err)
 			}
 			if err := cfg.Validate(); err != nil {
 				return nil, fmt.Errorf("invalid configuration: %w", err)
@@ -81,29 +81,29 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
 }
 
 func init() {
-	spAddCmd.Flags().StringVarP(
-		&spEntityID, "entity-id", "e", "",
+	serviceProviderCreateCmd.Flags().StringVar(
+		&spEntityID, "entity-id", "",
 		"Entity ID of the service provider (required)",
 	)
-	spAddCmd.Flags().StringVarP(
-		&spACSURL, "acs-url", "a", "",
+	serviceProviderCreateCmd.Flags().StringVar(
+		&spACSURL, "acs-url", "",
 		"Assertion Consumer Service URL (required)",
 	)
-	spAddCmd.Flags().StringVarP(
-		&spACSBinding, "acs-binding", "b",
+	serviceProviderCreateCmd.Flags().StringVar(
+		&spACSBinding, "acs-binding",
 		"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
 		"ACS binding type",
 	)
-	spAddCmd.Flags().StringVar(
+	serviceProviderCreateCmd.Flags().StringVar(
 		&spAttributeMappingFile,
 		"attribute-mapping-file", "",
 		"Path to attribute mapping JSON file",
 	)
 
-	_ = spAddCmd.MarkFlagRequired("entity-id")
-	_ = spAddCmd.MarkFlagRequired("acs-url")
+	_ = serviceProviderCreateCmd.MarkFlagRequired("entity-id")
+	_ = serviceProviderCreateCmd.MarkFlagRequired("acs-url")
 
-	spCmd.AddCommand(spAddCmd)
+	serviceProviderCmd.AddCommand(serviceProviderCreateCmd)
 }
 
 // buildServiceProvider constructs a domain.ServiceProvider from CLI flags.
@@ -120,11 +120,11 @@ func buildServiceProvider() (*domain.ServiceProvider, error) {
 	if spAttributeMappingFile != "" {
 		data, err := os.ReadFile(spAttributeMappingFile)
 		if err != nil {
-			return nil, fmt.Errorf("read attribute mapping file %q: %w", spAttributeMappingFile, err)
+			return nil, fmt.Errorf("cannot read attribute mapping file %q: %w", spAttributeMappingFile, err)
 		}
 		var mapping domain.AttributeMapping
 		if err := json.Unmarshal(data, &mapping); err != nil {
-			return nil, fmt.Errorf("parse attribute mapping JSON from %q: %w", spAttributeMappingFile, err)
+			return nil, fmt.Errorf("cannot parse attribute mapping JSON from %q: %w", spAttributeMappingFile, err)
 		}
 		sp.AttributeMapping = &mapping
 	}

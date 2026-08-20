@@ -13,21 +13,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var spCmd = &cobra.Command{
-	Use:   "sp",
+var serviceProviderCmd = &cobra.Command{
+	Use:   "service-provider",
 	Short: "Manage SAML service providers",
 	Long:  "Register, list, and manage SAML service providers.",
 }
 
 func init() {
-	rootCmd.AddCommand(spCmd)
+	rootCmd.AddCommand(serviceProviderCmd)
 }
 
 // openDB opens a pgxpool connection using the application config.
 func openDB(ctx context.Context, cfg app.Config) (*pgxpool.Pool, error) {
 	pool, err := postgres.NewPool(ctx, cfg.PoolConfig())
 	if err != nil {
-		return nil, fmt.Errorf("connect to database: %w", err)
+		return nil, fmt.Errorf("cannot connect to database: %w", err)
 	}
 	return pool, nil
 }

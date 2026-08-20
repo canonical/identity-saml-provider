@@ -998,7 +998,7 @@ type ServiceProviderRepository interface {
 
 ```bash
 # Two separate flags — nameid-format is silently ignored when file is present
-identity-saml-provider sp add \
+identity-saml-provider service-provider create \
   --entity-id https://sp.example.com \
   --acs-url https://sp.example.com/saml/acs \
   --attribute-mapping-file mapping.json \
@@ -1012,14 +1012,14 @@ path.
 
 ```bash
 # Full mapping via file (unchanged)
-identity-saml-provider sp add \
+identity-saml-provider service-provider create \
   --entity-id https://sp.example.com \
   --acs-url https://sp.example.com/saml/acs \
   --attribute-mapping-file mapping.json
 
 # Minimal nameid-only config via file (replaces --nameid-format)
 # nameid-only.json: {"nameid_format": "persistent"}
-identity-saml-provider sp add \
+identity-saml-provider service-provider create \
   --entity-id https://sp.example.com \
   --acs-url https://sp.example.com/saml/acs \
   --attribute-mapping-file nameid-only.json
@@ -1404,8 +1404,8 @@ assertions.
 **Goal**: Remove `--nameid-format` and keep `--attribute-mapping-file` as the
 single CLI input path for all mapping configuration.
 
-1. Remove the `--nameid-format` flag from `sp add` command in
-`internal/cmd/sp_add.go`.
+1. Remove the `--nameid-format` flag from `service-provider create` command in
+   `internal/cmd/service_provider_create.go`.
 2. Remove the `spNameIDFormat` variable and the `else if spNameIDFormat != ""`
 branch in `buildServiceProvider()`.
 3. Update help text and flag descriptions to document the minimal

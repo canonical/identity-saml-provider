@@ -211,11 +211,11 @@ http://<bridge-host-address>/saml/metadata
 
 ### 2. Service Provider Registration (CLI)
 
-Service providers are registered directly in the database using the `sp`
+Service providers are registered directly in the database using the `service-provider`
 command group:
 
 ```bash
-identity-saml-provider sp add \
+identity-saml-provider service-provider create \
   --entity-id <entity-id> \
   --acs-url <acs-url> \
   [--acs-binding <binding>] \
@@ -223,13 +223,13 @@ identity-saml-provider sp add \
   [--format text|json]
 ```
 
-| Flag                       | Short | Description                                                                       |
-|:---------------------------|:------|:----------------------------------------------------------------------------------|
-| `--entity-id`              | `-e`  | Unique URI identifying the Service Provider (Required).                           |
-| `--acs-url`                | `-a`  | Assertion Consumer Service URL on the SP side (Required).                         |
-| `--acs-binding`            | `-b`  | SAML binding style. Defaults to `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST`. |
-| `--attribute-mapping-file` | —     | Path to JSON mapping rules.                                                       |
-| `--format`                 | —     | Output format (`text` or `json`, default: `text`).                                |
+| Flag                       | Description                                                                       |
+|:---------------------------|:----------------------------------------------------------------------------------|
+| `--entity-id`              | Unique URI identifying the Service Provider (Required).                           |
+| `--acs-url`                | Assertion Consumer Service URL on the SP side (Required).                         |
+| `--acs-binding`            | SAML binding style. Defaults to `urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST`. |
+| `--attribute-mapping-file` | Path to JSON mapping rules.                                                       |
+| `--format`                 | Output format (`text` or `json`, default: `text`).                                |
 
 ---
 

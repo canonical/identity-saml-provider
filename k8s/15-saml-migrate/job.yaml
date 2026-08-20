@@ -12,8 +12,8 @@ spec:
         image: identity-saml-provider
         command:
           - identity-saml-provider
-          - migrate
-          - up
+          - migrations
+          - apply
           - --dsn
           - "host=postgres port=5432 user=postgres password=$(POSTGRES_PASSWORD) dbname=postgres sslmode=disable"
         env:
