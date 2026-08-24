@@ -101,6 +101,7 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 	tests := []struct {
 		name           string
 		format         string
+		persistentType string
 		expectedFormat string
 		// expectedNameID is the exact value expected. Empty string means
 		// "don't check exact value — the assertion below applies extra
@@ -109,11 +110,28 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 		mockPersistent bool
 	}{
 		{
-			name:           "persistent format calls persistent repo",
+			name:           "persistent format with pairwise type calls persistent repo",
 			format:         "persistent",
+			persistentType: domain.PersistentTypePairwise,
 			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
 			expectedNameID: persistentSentinel,
 			mockPersistent: true,
+		},
+		{
+			name:           "persistent format default (public) returns OIDC sub directly",
+			format:         "persistent",
+			persistentType: "",
+			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+			expectedNameID: "alice-oidc-sub",
+			mockPersistent: false,
+		},
+		{
+			name:           "persistent format explicit public type returns OIDC sub directly",
+			format:         "persistent",
+			persistentType: domain.PersistentTypePublic,
+			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+			expectedNameID: "alice-oidc-sub",
+			mockPersistent: false,
 		},
 		{
 			name:           "emailAddress format uses email",
@@ -159,7 +177,10 @@ func TestMappingService_ApplyMapping_NameIDFormats(t *testing.T) {
 					"sub": "alice-oidc-sub",
 				},
 			}
-			mapping := &domain.AttributeMapping{NameIDFormat: tt.format}
+			mapping := &domain.AttributeMapping{
+				NameIDFormat:   tt.format,
+				PersistentType: tt.persistentType,
+			}
 			mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 			if tt.mockPersistent {
 				mockPID.EXPECT().
@@ -467,7 +488,8 @@ func TestMappingService_ApplyMapping_DoesNotModifyOriginal(t *testing.T) {
 		RawOIDCClaims:  map[string]interface{}{"sub": "user-sub-id"},
 	}
 	mapping := &domain.AttributeMapping{
-		NameIDFormat: "persistent",
+		NameIDFormat:   "persistent",
+		PersistentType: "pairwise",
 		SAMLAttributeMappings: map[string]domain.SAMLAttributeDef{
 			"email": {Name: "mail"},
 		},
@@ -685,7 +707,10 @@ func TestMappingService_ApplyMapping_Persistent_FailsClosed_RepoError(t *testing
 		UserName:      "alice-sub",
 		RawOIDCClaims: map[string]interface{}{"sub": "alice-oidc-sub"},
 	}
-	mapping := &domain.AttributeMapping{NameIDFormat: "persistent"}
+	mapping := &domain.AttributeMapping{
+		NameIDFormat:   "persistent",
+		PersistentType: "pairwise",
+	}
 	mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 
 	repoErr := errors.New("database unreachable")
@@ -734,7 +759,8 @@ func TestMappingService_ApplyMapping_Persistent_UsesCanonicalNotMappedSubject(t 
 		},
 	}
 	mapping := &domain.AttributeMapping{
-		NameIDFormat: "persistent",
+		NameIDFormat:   "persistent",
+		PersistentType: "pairwise",
 		OIDCClaimMappings: map[string]string{
 			"email": "subject", // re-route: subject is now sourced from email
 		},
@@ -831,16 +857,26 @@ func TestMappingService_ApplyMapping_FullURNFormats(t *testing.T) {
 	tests := []struct {
 		name           string
 		format         string
+		persistentType string
 		expectedFormat string
 		expectedNameID string
 		mockPersistent bool
 	}{
 		{
-			name:           "persistent full URN dispatches to persistent branch",
+			name:           "persistent full URN dispatches to persistent pairwise branch",
 			format:         "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+			persistentType: domain.PersistentTypePairwise,
 			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
 			expectedNameID: persistentSentinel,
 			mockPersistent: true,
+		},
+		{
+			name:           "persistent full URN dispatches to persistent public branch",
+			format:         "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+			persistentType: domain.PersistentTypePublic,
+			expectedFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent",
+			expectedNameID: "alice-oidc-sub",
+			mockPersistent: false,
 		},
 		{
 			name:           "emailAddress full URN dispatches to email branch",
@@ -871,7 +907,10 @@ func TestMappingService_ApplyMapping_FullURNFormats(t *testing.T) {
 					"sub": "alice-oidc-sub",
 				},
 			}
-			mapping := &domain.AttributeMapping{NameIDFormat: tt.format}
+			mapping := &domain.AttributeMapping{
+				NameIDFormat:   tt.format,
+				PersistentType: tt.persistentType,
+			}
 			mockRepo.EXPECT().GetAttributeMapping(gomock.Any(), "sp1").Return(mapping, nil)
 			if tt.mockPersistent {
 				mockPID.EXPECT().

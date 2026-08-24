@@ -149,6 +149,44 @@ func TestAttributeMapping_Validate(t *testing.T) {
 				OIDCClaimMappings: map[string]string{},
 			},
 		},
+		{
+			name: "public persistent_type with persistent format is valid",
+			mapping: &domain.AttributeMapping{
+				NameIDFormat:   "persistent",
+				PersistentType: "public",
+			},
+		},
+		{
+			name: "pairwise persistent_type with persistent format is valid",
+			mapping: &domain.AttributeMapping{
+				NameIDFormat:   "persistent",
+				PersistentType: "pairwise",
+			},
+		},
+		{
+			name: "public persistent_type with empty nameid_format is valid",
+			mapping: &domain.AttributeMapping{
+				PersistentType: "public",
+			},
+		},
+		{
+			name: "invalid persistent_type is rejected",
+			mapping: &domain.AttributeMapping{
+				NameIDFormat:   "persistent",
+				PersistentType: "invalid",
+			},
+			wantErr: true,
+			field:   "persistent_type",
+		},
+		{
+			name: "persistent_type with non-persistent format is rejected",
+			mapping: &domain.AttributeMapping{
+				NameIDFormat:   "transient",
+				PersistentType: "public",
+			},
+			wantErr: true,
+			field:   "persistent_type",
+		},
 	}
 
 	for _, tt := range tests {
@@ -279,7 +317,8 @@ func TestAttributeMapping_JSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	original := &domain.AttributeMapping{
-		NameIDFormat: "persistent",
+		NameIDFormat:   "persistent",
+		PersistentType: "public",
 		SAMLAttributeMappings: map[string]domain.SAMLAttributeDef{
 			"email": {
 				Name:         "urn:oid:0.9.2342.19200300.100.1.3",
@@ -312,7 +351,7 @@ func TestAttributeMapping_JSONRoundTrip(t *testing.T) {
 
 	// Spot-check that the JSON field names match the expected tag names.
 	jsonStr := string(data)
-	for _, want := range []string{`"saml_attribute_mappings"`, `"oidc_claim_mappings"`, `"name_format"`, `"friendly_name"`} {
+	for _, want := range []string{`"saml_attribute_mappings"`, `"oidc_claim_mappings"`, `"name_format"`, `"friendly_name"`, `"persistent_type"`} {
 		if !strings.Contains(jsonStr, want) {
 			t.Errorf("expected JSON to contain %s, got: %s", want, jsonStr)
 		}

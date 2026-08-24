@@ -2,10 +2,10 @@
 
 ## 1. Domain Model & Validation
 
-- [ ] 1.1 Add `PersistentType` string field (`json:"persistent_type,omitempty"`)
+- [x] 1.1 Add `PersistentType` string field (`json:"persistent_type,omitempty"`)
   to `AttributeMapping` in `internal/domain/attribute_mapping.go`. Includes
   unit tests in `internal/domain/attribute_mapping_test.go`.
-- [ ] 1.2 Update `AttributeMapping.Validate()` in
+- [x] 1.2 Update `AttributeMapping.Validate()` in
   `internal/domain/attribute_mapping.go` to validate `persistent_type`:
   - Must be `"public"` or `"pairwise"` when non-empty.
   - Must be rejected if `nameid_format` is explicitly non-persistent
@@ -15,7 +15,7 @@
 
 ## 2. Service Layer Implementation
 
-- [ ] 2.1 Update `mappingService.resolveNameID` in
+- [x] 2.1 Update `mappingService.resolveNameID` in
   `internal/service/attribute_mapping.go` to check `PersistentType`. If
   `"pairwise"`, query/generate UUID via `PersistentNameIDRepository`. If
   `"public"` or empty (default), return canonical subject directly without
@@ -23,19 +23,19 @@
 
 ## 3. Handlers & API Testing
 
-- [ ] 3.1 Verify HTTP request/response JSON serialization of `persistent_type`
+- [x] 3.1 Verify HTTP request/response JSON serialization of `persistent_type`
   in admin API tests (`internal/handler/admin_test.go`). Note:
   `HandleUpdateAttributeMapping` unmarshals directly into `domain.AttributeMapping`,
   so no new DTO struct is required.
 
 ## 4. Verification Suite
 
-- [ ] 4.1 Run full verification suite (`make fmt`, `make lint`, `make test`,
+- [x] 4.1 Run full verification suite (`make fmt`, `make lint`, `make test`,
   `make build`, `make license-check`) and ensure zero errors or warnings.
 
 ## 5. Documentation & Rollout
 
-- [ ] 5.1 Update `docs/authentication-flow/authentication-flow.md` and
+- [x] 5.1 Update `docs/authentication-flow/authentication-flow.md` and
   `docs/design/per-sp-attribute-mapping-v2-design.md` with details on
   `persistent_type` configuration (`"public"` default vs `"pairwise"` opt-in)
   and highlight the breaking change.
