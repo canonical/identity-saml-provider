@@ -76,7 +76,7 @@ func (s *mappingService) ApplyMapping(ctx context.Context, session *domain.Sessi
 
 	// Set NameID based on the configured format.
 	if mapping.NameIDFormat != "" {
-		value, formatURN, resolveErr := s.resolveNameID(ctx, session, attrs, mapping.NameIDFormat, entityID)
+		value, formatURN, resolveErr := s.resolveNameID(ctx, session, attrs, mapping, entityID)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
@@ -308,7 +308,7 @@ func buildSAMLAttributes(attrs *domain.UserAttributes, samlMappings map[string]d
 }
 
 // resolveNameID returns the NameID value and full format URN for the
-// configured nameid_format. The persistent and emailAddress branches
+// configured nameid_format and persistent_type. The persistent and emailAddress branches
 // fail closed on missing input rather than emit a non-conforming
 // NameID. The canonical OIDC `sub` claim is extracted from session
 // only on the persistent branch, where it is the stable lookup key.
@@ -316,18 +316,19 @@ func (s *mappingService) resolveNameID(
 	ctx context.Context,
 	session *domain.Session,
 	attrs *domain.UserAttributes,
-	nameIDFormat string,
+	mapping *domain.AttributeMapping,
 	entityID string,
 ) (value string, formatURN string, err error) {
 	logger := logging.FromContext(ctx, s.logger)
-	formatURN = nameIDFormatToURN(nameIDFormat)
+	formatURN = nameIDFormatToURN(mapping.NameIDFormat)
 
 	logger.Debugw("Resolving NameID",
 		"entityID", entityID,
-		"format", nameIDFormat,
+		"format", mapping.NameIDFormat,
+		"persistentType", mapping.PersistentType,
 	)
 
-	switch normalizeNameIDFormat(nameIDFormat) {
+	switch normalizeNameIDFormat(mapping.NameIDFormat) {
 	case nameIDFormatPersistent:
 		// Persistent NameIDs are keyed on the canonical OIDC sub,
 		// never the mapped attrs.Subject (admins can remap that).
@@ -335,7 +336,7 @@ func (s *mappingService) resolveNameID(
 		if !ok {
 			resErr := &domain.ErrNameIDResolution{
 				EntityID: entityID,
-				Format:   nameIDFormat,
+				Format:   mapping.NameIDFormat,
 				Reason:   "missing or empty OIDC sub claim in session",
 			}
 			logger.Errorw("Persistent NameID resolution failed",
@@ -345,26 +346,35 @@ func (s *mappingService) resolveNameID(
 			)
 			return "", formatURN, resErr
 		}
-		persistentID, repoErr := s.persistentIDs.GetOrCreate(ctx, entityID, canonicalSubject)
-		if repoErr != nil {
-			resErr := &domain.ErrNameIDResolution{
-				EntityID: entityID,
-				Format:   nameIDFormat,
-				Reason:   "persistent NameID storage call failed",
-				Err:      repoErr,
+
+		if mapping.PersistentType == domain.PersistentTypePairwise {
+			persistentID, repoErr := s.persistentIDs.GetOrCreate(ctx, entityID, canonicalSubject)
+			if repoErr != nil {
+				resErr := &domain.ErrNameIDResolution{
+					EntityID: entityID,
+					Format:   mapping.NameIDFormat,
+					Reason:   "persistent NameID storage call failed",
+					Err:      repoErr,
+				}
+				logger.Errorw("Persistent NameID resolution failed",
+					"entityID", entityID,
+					"canonicalSubject", canonicalSubject,
+					"error", resErr,
+				)
+				return "", formatURN, resErr
 			}
-			logger.Errorw("Persistent NameID resolution failed",
+			logger.Infow("Resolved pairwise persistent NameID",
 				"entityID", entityID,
 				"canonicalSubject", canonicalSubject,
-				"error", resErr,
 			)
-			return "", formatURN, resErr
+			return persistentID, formatURN, nil
 		}
-		logger.Infow("Resolved persistent NameID",
+
+		logger.Infow("Resolved public persistent NameID",
 			"entityID", entityID,
 			"canonicalSubject", canonicalSubject,
 		)
-		return persistentID, formatURN, nil
+		return canonicalSubject, formatURN, nil
 
 	case nameIDFormatTransient:
 		return uuid.New().String(), formatURN, nil
@@ -373,7 +383,7 @@ func (s *mappingService) resolveNameID(
 		if attrs.Email == "" {
 			resErr := &domain.ErrNameIDResolution{
 				EntityID: entityID,
-				Format:   nameIDFormat,
+				Format:   mapping.NameIDFormat,
 				Reason:   "emailAddress NameID requested but user email is empty",
 			}
 			logger.Errorw("Email NameID resolution failed",

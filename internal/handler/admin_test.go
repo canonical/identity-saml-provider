@@ -319,6 +319,52 @@ func TestHandleUpdateAttributeMapping(t *testing.T) {
 		wantBody   func(t *testing.T, body []byte)
 	}{
 		{
+			name:  "success — 200 with persistent_type pairwise",
+			query: "?entity_id=" + url.QueryEscape(entityID),
+			body:  `{"nameid_format":"persistent","persistent_type":"pairwise"}`,
+			setup: func(deps *testHandlerDeps) {
+				deps.sps.EXPECT().
+					UpdateAttributeMapping(gomock.Any(), entityID, gomock.Any()).
+					DoAndReturn(func(_ context.Context, _ string, m *domain.AttributeMapping) error {
+						if m == nil {
+							t.Fatalf("service received nil mapping")
+							return nil
+						}
+						if m.NameIDFormat != "persistent" {
+							t.Errorf("NameIDFormat = %q, want persistent", m.NameIDFormat)
+						}
+						if m.PersistentType != "pairwise" {
+							t.Errorf("PersistentType = %q, want pairwise", m.PersistentType)
+						}
+						return nil
+					})
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:  "success — 200 with persistent_type public",
+			query: "?entity_id=" + url.QueryEscape(entityID),
+			body:  `{"nameid_format":"persistent","persistent_type":"public"}`,
+			setup: func(deps *testHandlerDeps) {
+				deps.sps.EXPECT().
+					UpdateAttributeMapping(gomock.Any(), entityID, gomock.Any()).
+					DoAndReturn(func(_ context.Context, _ string, m *domain.AttributeMapping) error {
+						if m == nil {
+							t.Fatalf("service received nil mapping")
+							return nil
+						}
+						if m.NameIDFormat != "persistent" {
+							t.Errorf("NameIDFormat = %q, want persistent", m.NameIDFormat)
+						}
+						if m.PersistentType != "public" {
+							t.Errorf("PersistentType = %q, want public", m.PersistentType)
+						}
+						return nil
+					})
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
 			name:  "success — 200 and round-trips through the service",
 			query: "?entity_id=" + url.QueryEscape(entityID),
 			body:  validBody,

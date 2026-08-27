@@ -13,6 +13,14 @@ import (
 // SAMLAttributeDef does not specify one explicitly.
 const DefaultNameFormat = "urn:oasis:names:tc:SAML:2.0:attrname-format:uri"
 
+const (
+	// PersistentTypePublic directly emits the canonical upstream OIDC sub claim.
+	PersistentTypePublic = "public"
+
+	// PersistentTypePairwise generates and persists a distinct UUID per SP.
+	PersistentTypePairwise = "pairwise"
+)
+
 // WellKnownField is one entry in the canonical set of internal
 // user-attribute fields. It carries the typed dispatch (read, write,
 // session fallback) so callers never need to switch on the field name.
@@ -176,6 +184,10 @@ type AttributeMapping struct {
 	// Defaults to "transient" if not specified.
 	NameIDFormat string `json:"nameid_format,omitempty"`
 
+	// PersistentType specifies the persistent NameID mode ("public" or "pairwise").
+	// Defaults to "public" when empty.
+	PersistentType string `json:"persistent_type,omitempty"`
+
 	// SAMLAttributeMappings maps internal field names to SAML
 	// attribute definitions. The well-known internal field names are
 	// "subject", "email", "name", and "groups"; other keys are
@@ -220,6 +232,21 @@ func (m *AttributeMapping) Validate() error {
 		return &ErrValidation{
 			Field:   "nameid_format",
 			Message: "must be one of: persistent, transient, emailAddress, email, unspecified, or a valid URN",
+		}
+	}
+
+	if m.PersistentType != "" {
+		if m.PersistentType != PersistentTypePublic && m.PersistentType != PersistentTypePairwise {
+			return &ErrValidation{
+				Field:   "persistent_type",
+				Message: "must be one of: public, pairwise",
+			}
+		}
+		if !isPersistentFormat(m.NameIDFormat) {
+			return &ErrValidation{
+				Field:   "persistent_type",
+				Message: "persistent_type is only valid when nameid_format is persistent",
+			}
 		}
 	}
 
@@ -271,4 +298,10 @@ func (m *AttributeMapping) Validate() error {
 // isURN reports whether s is a valid URN string (starts with "urn:").
 func isURN(s string) bool {
 	return strings.HasPrefix(s, "urn:")
+}
+
+// isPersistentFormat reports whether format represents a persistent NameID format.
+// An empty format defaults to persistent.
+func isPersistentFormat(format string) bool {
+	return format == "" || format == "persistent" || format == "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
 }

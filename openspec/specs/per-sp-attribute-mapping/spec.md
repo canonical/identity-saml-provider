@@ -12,9 +12,11 @@ names, formats, and claim-to-field transformations.
 
 The system SHALL persist per-SP attribute mapping configuration as a
 single nullable JSONB document on the service provider record. The
-configuration document SHALL expose four top-level fields:
+configuration document SHALL expose five top-level fields:
 
 - `nameid_format` (string, optional) — the requested SAML NameID format.
+- `persistent_type` (string, optional) — the persistent NameID mode (`public`
+  or `pairwise`).
 - `saml_attribute_mappings` (object, optional) — keyed by internal field
   name, valued by `SAMLAttributeDef`.
 - `oidc_claim_mappings` (object, optional) — keyed by OIDC claim name,
@@ -34,7 +36,7 @@ and the service provider SHALL receive the bridge's default assertion.
 
 #### Scenario: SP registered with a full mapping
 - **WHEN** a service provider is registered with a non-null mapping
-  containing all four top-level fields
+  containing all five top-level fields
 - **THEN** the JSONB document SHALL round-trip through the database
   without field loss
 - **AND** `ApplyMapping` SHALL produce a session reflecting that
@@ -213,36 +215,75 @@ configuration.
   `saml_attribute_mappings: {}`
 - **THEN** `Validate` SHALL return no error
 
+### Requirement: Persistent NameID type validation
+
+`AttributeMapping.Validate` SHALL enforce that `persistent_type`, when
+non-empty:
+
+- MUST be one of `pairwise` or `public`.
+- MUST NOT be specified when `nameid_format` is explicitly configured to a
+  non-persistent format (such as `transient` or `emailAddress`).
+
+#### Scenario: Reject unrecognised persistent NameID type
+
+- **WHEN** an admin submits a mapping with
+  `nameid_format: "persistent"` and `persistent_type: "invalid"`
+- **THEN** `Validate` SHALL return an error whose `Field` identifies
+  `persistent_type`
+
+#### Scenario: Reject persistent_type when nameid_format is non-persistent
+
+- **WHEN** an admin submits a mapping with
+  `nameid_format: "transient"` and `persistent_type: "public"`
+- **THEN** `Validate` SHALL return an error whose `Field` identifies
+  `persistent_type`
+
+#### Scenario: Accept valid persistent NameID types
+
+- **WHEN** an admin submits a mapping with
+  `nameid_format: "persistent"` and `persistent_type: "public"`
+  (or `"pairwise"`)
+- **THEN** `Validate` SHALL return no error
+
+#### Scenario: Accept persistent_type when nameid_format is empty
+
+- **WHEN** an admin submits a mapping with
+  `persistent_type: "public"` and an empty `nameid_format`
+- **THEN** `Validate` SHALL return no error, because `nameid_format`
+  defaults to `persistent`
+
 ### Requirement: Persistent NameID resolution
 
-The mapping service SHALL emit an opaque, pairwise, stable NameID
-for every `(service-provider, upstream-user)` pair whose mapping
-configures `nameid_format: persistent` (or the equivalent
+The mapping service SHALL emit a persistent NameID for every
+`(service-provider, upstream-user)` pair whose mapping configures
+`nameid_format: persistent` (or the equivalent
 `urn:oasis:names:tc:SAML:2.0:nameid-format:persistent` URN).
 
-The NameID value SHALL satisfy all of the following:
+The resolution mode SHALL be determined by the configured top-level
+`persistent_type` field:
 
-- **Opaque**: the value SHALL be a randomly generated UUID
-  (RFC 4122 v4) and SHALL NOT be derived from, equal to, or contain
-  any user-attribute value (`Subject`, `Email`, `Name`, raw OIDC
-  `sub`, or any custom claim).
-- **Pairwise**: two distinct service providers authenticating the
-  same upstream user SHALL receive distinct NameID values.
-- **Stable**: every authentication for the same
-  `(service-provider, upstream-user)` pair SHALL receive the same
-  NameID value, including across bridge restarts and database
-  failovers.
-- **Durable**: the NameID SHALL be persisted before being emitted
-  in an assertion, so that a subsequent authentication can recover
-  the same value.
+1. **`public` mode (default / empty)**:
+   - **Public/Direct**: the NameID value SHALL equal the canonical OIDC `sub`
+     claim value directly.
+   - **Cross-SP Uniformity**: multiple distinct service providers configured
+     with `public` mode (or omitting `persistent_type`) authenticating the
+     same user SHALL receive the exact same NameID value.
+   - **No Database Dependency**: resolution in `public` mode SHALL NOT query
+     or store records in the persistent NameID repository.
 
-The pair SHALL be keyed by `(service-provider EntityID,
-RawOIDCClaims["sub"])`. The bridge SHALL NOT use the mapped
-`UserAttributes.Subject` for this lookup, because operators can
-remap `subject` via `oidc_claim_mappings`; doing so would break
-stability and orphan previously-issued NameIDs.
+2. **`pairwise` mode**:
+   - **Opaque**: the value SHALL be a randomly generated UUID (RFC 4122 v4)
+     and SHALL NOT be derived from user-attribute values.
+   - **Pairwise**: two distinct service providers configured in `pairwise` mode
+     for the same user SHALL receive distinct NameID values.
+   - **Stable**: every authentication for the same
+     `(service-provider, upstream-user)` pair SHALL receive the same NameID.
+   - **Durable**: the NameID SHALL be persisted in database storage before
+     being emitted.
 
-The NameID format URI emitted in the SAML assertion SHALL be
+In all cases, the lookup/value key SHALL be derived from `RawOIDCClaims["sub"]`
+and NOT the mapped `UserAttributes.Subject`. The NameID format URI emitted in
+the SAML assertion SHALL be
 `urn:oasis:names:tc:SAML:2.0:nameid-format:persistent`.
 
 #### Scenario: Same SP and same user receive the same NameID
@@ -252,20 +293,21 @@ The NameID format URI emitted in the SAML assertion SHALL be
   with the same OIDC `sub` claim on both authentications
 - **THEN** both assertions SHALL carry the same `<saml:NameID>`
   value
-- **AND** the value SHALL parse as an RFC 4122 UUID
+- **AND** the value SHALL parse as an RFC 4122 UUID when `persistent_type` is
+  `pairwise`
 
 #### Scenario: Different SPs for the same user receive different NameIDs
 
 - **WHEN** the same upstream user authenticates to two distinct
-  service providers, both configured with `nameid_format:
-  persistent`
+  service providers, both configured with `nameid_format: persistent`
+  and `persistent_type: "pairwise"`
 - **THEN** the two assertions SHALL carry distinct `<saml:NameID>`
   values
 
 #### Scenario: NameID survives bridge restart
 
-- **WHEN** a user has authenticated once to a persistent-format SP,
-  and the bridge process is then restarted, and the user
+- **WHEN** a user has authenticated once to a persistent-format SP in pairwise
+  mode, and the bridge process is then restarted, and the user
   authenticates again
 - **THEN** the second assertion SHALL carry the same
   `<saml:NameID>` value as the first
@@ -277,68 +319,86 @@ The NameID format URI emitted in the SAML assertion SHALL be
   authentications for the same upstream user
 - **THEN** the persistent NameID emitted on the second
   authentication SHALL equal the one emitted on the first, because
-  the lookup key is the OIDC `sub` claim and not the mapped
-  `Subject`
+  the key is the canonical OIDC `sub` claim and not the mapped `Subject`
 
 #### Scenario: NameID does not contain user attribute values
 
-- **WHEN** a persistent NameID is generated for a user whose OIDC
+- **WHEN** a pairwise persistent NameID is generated for a user whose OIDC
   `sub`, `email`, and `name` claims are known
 - **THEN** the emitted `<saml:NameID>` value SHALL NOT contain any
   of those claim values as a substring
 
+#### Scenario: Shared mode emits OIDC sub directly
+
+- **WHEN** an upstream user with OIDC claim `sub: "user-12345"` authenticates to
+  an SP configured with `nameid_format: persistent` and
+  `persistent_type: "public"` (or `persistent_type` omitted)
+- **THEN** the assertion SHALL carry `"user-12345"` as the `<saml:NameID>`
+- **AND** no database query SHALL be executed against the persistent NameID
+  repository
+
+#### Scenario: Shared mode returns identical NameIDs across multiple SPs
+
+- **WHEN** the same upstream user with OIDC claim `sub: "user-12345"`
+  authenticates to two distinct SPs both configured with
+  `nameid_format: persistent` and `persistent_type: "public"` (or omitted)
+- **THEN** both assertions SHALL carry `<saml:NameID>` equal to `"user-12345"`
+
 ### Requirement: Persistent NameID fails closed on missing inputs or storage errors
 
 The mapping service SHALL refuse to issue a persistent NameID — and
-therefore refuse to build the SAML assertion — when it cannot
-satisfy the opaque/pairwise/stable contract. Specifically,
-`ApplyMapping` SHALL return a typed domain error (and emit no
-SAML response) in each of these cases:
+therefore refuse to build the SAML assertion — when it cannot satisfy
+the persistent NameID contract. Specifically, `ApplyMapping` SHALL
+return a typed domain error (and emit no SAML response) in each of these
+cases:
 
-- The session's `RawOIDCClaims["sub"]` is absent, empty, or not a
-  string.
-- The persistent-NameID storage backend returns any error from the
-  get-or-create operation.
+- The session's `RawOIDCClaims["sub"]` is absent, empty, or not a string
+  (applies to both `public` mode default and `pairwise` mode).
+- In `pairwise` mode, the persistent-NameID storage backend returns any error
+  from the get-or-create operation.
 
-The service SHALL NOT fall back to `UserAttributes.Email`,
-`UserAttributes.Subject`, the raw OIDC `sub`, a freshly generated
-UUID, or any other surrogate. Falling back would either expose a
-non-opaque value or introduce a NameID that changes across requests,
-both of which break the SAML 2.0 contract for persistent
-identifiers.
+In `pairwise` mode, the service SHALL NOT fall back to `UserAttributes.Email`,
+`UserAttributes.Subject`, the raw OIDC `sub`, a freshly generated UUID, or
+any other surrogate upon storage error. In `public` mode, emitting the raw OIDC
+`sub` is the configured behavior rather than an error fallback; however, an
+absent or non-string `sub` claim SHALL fail closed and return an error without
+emitting an assertion.
 
 #### Scenario: Missing OIDC sub aborts the assertion
 
-- **WHEN** an SP configured with `nameid_format: persistent`
-  presents a session whose `RawOIDCClaims` contains no `sub` claim
-- **THEN** `ApplyMapping` SHALL return a typed domain error
-  identifying the SP entity ID and the missing canonical subject
-- **AND** the bridge SHALL NOT emit a SAML response for that
-  request
+- **WHEN** an SP configured with `nameid_format: persistent` (in either `public`
+  mode default or `pairwise` mode) presents a session whose `RawOIDCClaims`
+  contains no `sub` claim
+- **THEN** `ApplyMapping` SHALL return a typed domain error identifying the SP
+  entity ID and the missing canonical subject
+- **AND** the bridge SHALL NOT emit a SAML response for that request
 
 #### Scenario: Storage backend error aborts the assertion
 
-- **WHEN** the persistent-NameID storage backend returns any error
-  from the get-or-create call
-- **THEN** `ApplyMapping` SHALL return a typed domain error wrapping
-  that storage error
-- **AND** the bridge SHALL NOT emit a SAML response for that
-  request
-- **AND** subsequent authentications SHALL re-attempt resolution
-  rather than caching a fallback value
+- **WHEN** an SP is configured in `pairwise` mode and the persistent-NameID
+  storage backend returns any error from the get-or-create call
+- **THEN** `ApplyMapping` SHALL return a typed domain error wrapping that
+  storage error
+- **AND** the bridge SHALL NOT emit a SAML response for that request
+- **AND** subsequent authentications SHALL re-attempt resolution rather than
+  caching a fallback value
 
 ### Requirement: Persistent NameID storage durability
 
 The system SHALL persist each generated persistent NameID before it
-is returned to the caller, so that the same NameID is recoverable on
-subsequent authentications.
+is returned to the caller when configured in `pairwise` mode,
+so that the same NameID is recoverable on subsequent authentications.
 
-The storage SHALL guarantee at-most-one persistent NameID per
-`(service-provider EntityID, upstream user OIDC sub)` pair, even
-under concurrent first-time-authentication requests for the same
-pair. The first writer's value SHALL be returned to all concurrent
-callers; no caller SHALL receive a value that is not also persisted
-for future reads.
+In `public` mode (the default when `persistent_type` is omitted or empty),
+resolution SHALL NOT interact with or persist records in the persistent
+NameID repository.
+
+When configured in `pairwise` mode, the storage SHALL guarantee
+at-most-one persistent NameID per `(service-provider EntityID, upstream
+user OIDC sub)` pair, even under concurrent first-time-authentication
+requests for the same pair. The first writer's value SHALL be returned
+to all concurrent callers; no caller SHALL receive a value that is not also
+persisted for future reads.
 
 When a service provider record is removed from the bridge, all
 persistent NameID rows associated with that service provider SHALL
@@ -350,38 +410,34 @@ is explicitly out of scope for this capability version.
 
 #### Scenario: First and second resolution return the same persisted value
 
-- **WHEN** `GetOrCreate` is invoked for a `(SP, user)` pair that has
-  no existing row, and is then invoked again for the same pair
-- **THEN** the first call SHALL return a freshly generated UUID and
-  persist it
-- **AND** the second call SHALL return the exact same UUID without
-  generating a new one
+- **WHEN** a user authenticates for the first time to an SP configured in
+  `pairwise` mode
+- **THEN** the generated UUID SHALL be written to the database before the
+  SAML response is returned
 
 #### Scenario: Concurrent first-time resolution converges on one value
 
-- **WHEN** two concurrent requests invoke `GetOrCreate` for the same
-  `(SP, user)` pair that has no existing row
-- **THEN** both calls SHALL return the same UUID value
+- **WHEN** two concurrent requests arrive for the same user and SP in `pairwise`
+  mode
+- **THEN** the database SHALL ensure a single UUID is persisted and returned
 - **AND** exactly one row SHALL exist in the persistent NameID
   storage for that pair
 
 #### Scenario: Service provider removal cascades to NameIDs
 
-- **WHEN** an operator removes a service provider record from the
-  bridge while persistent NameID rows exist for that service
-  provider
-- **THEN** every persistent NameID row whose `entity_id` matches
-  the removed service provider SHALL be removed in the same
-  operation
+- **WHEN** a service provider record is deleted
+- **THEN** associated pairwise `persistent_nameids` rows SHALL be removed
 
 #### Scenario: Upstream user removal does not cascade
 
-- **WHEN** an upstream user is deleted from the OIDC provider
-- **THEN** the bridge SHALL NOT remove any persistent NameID rows
-  associated with that user
-- **AND** the bridge SHALL surface no error from this condition; the
-  rows SHALL remain inert until cleanup is addressed by a later
-  capability version
+- **WHEN** an upstream user account is removed from the OIDC provider
+- **THEN** existing `persistent_nameids` rows SHALL remain untouched
+
+#### Scenario: Shared mode bypasses persistent storage
+
+- **WHEN** a user authenticates to an SP configured in `public` mode (or with `persistent_type` omitted)
+- **THEN** no database query or insert SHALL be executed against the
+  `persistent_nameids` repository
 
 ### Requirement: Transient NameID resolution
 
