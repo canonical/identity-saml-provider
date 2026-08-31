@@ -13,6 +13,7 @@ func TestRootFormatFlag(t *testing.T) {
 	flag := rootCmd.PersistentFlags().Lookup("format")
 	if flag == nil {
 		t.Fatal("expected persistent flag 'format' on rootCmd")
+		return
 	}
 
 	if flag.Shorthand != "" {

@@ -36,7 +36,9 @@ Requires database connection via SAML_PROVIDER_DB_* environment variables:
   SAML_PROVIDER_DB_PORT (default: 5432)
   SAML_PROVIDER_DB_NAME (default: saml_provider)
   SAML_PROVIDER_DB_USER (default: saml_provider)
-  SAML_PROVIDER_DB_PASSWORD (default: saml_provider)`,
+  SAML_PROVIDER_DB_PASSWORD (default: saml_provider)
+  SAML_PROVIDER_DB_SSLMODE (optional)
+  SAML_PROVIDER_DB_CA_CERT_PATH (optional)`,
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return RunHandler(cmd, formatSPRegistered, func(ctx context.Context) (*SPResult, error) {

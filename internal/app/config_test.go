@@ -57,6 +57,29 @@ func TestConfig_DatabaseDSN(t *testing.T) {
 			want: "postgres://saml_provider:saml_provider@localhost:5432/saml_provider?sslmode=disable",
 		},
 		{
+			name: "unspecified sslmode without CA cert defaults to disable",
+			cfg: app.Config{
+				DBUser:     "saml_provider",
+				DBPassword: "saml_provider",
+				DBHost:     "localhost",
+				DBPort:     5432,
+				DBName:     "saml_provider",
+			},
+			want: "postgres://saml_provider:saml_provider@localhost:5432/saml_provider?sslmode=disable",
+		},
+		{
+			name: "unspecified sslmode with CA cert defaults to verify-full",
+			cfg: app.Config{
+				DBUser:       "saml_provider",
+				DBPassword:   "saml_provider",
+				DBHost:       "localhost",
+				DBPort:       5432,
+				DBName:       "saml_provider",
+				DBCACertPath: "/etc/ssl/certs/db-ca.crt",
+			},
+			want: "postgres://saml_provider:saml_provider@localhost:5432/saml_provider?sslmode=verify-full&sslrootcert=%2Fetc%2Fssl%2Fcerts%2Fdb-ca.crt",
+		},
+		{
 			name: "custom values",
 			cfg: app.Config{
 				DBUser:     "admin",
@@ -91,6 +114,45 @@ func TestConfig_DatabaseDSN(t *testing.T) {
 				DBSSLMode:  "require",
 			},
 			want: "postgres://admin:pass@db.example.com:5432/mydb?sslmode=require",
+		},
+		{
+			name: "explicit verify-ca with CA cert",
+			cfg: app.Config{
+				DBUser:       "admin",
+				DBPassword:   "pass",
+				DBHost:       "db.example.com",
+				DBPort:       5432,
+				DBName:       "mydb",
+				DBSSLMode:    "verify-ca",
+				DBCACertPath: "/etc/ssl/certs/db-ca.crt",
+			},
+			want: "postgres://admin:pass@db.example.com:5432/mydb?sslmode=verify-ca&sslrootcert=%2Fetc%2Fssl%2Fcerts%2Fdb-ca.crt",
+		},
+		{
+			name: "explicit verify-full with CA cert",
+			cfg: app.Config{
+				DBUser:       "admin",
+				DBPassword:   "pass",
+				DBHost:       "db.example.com",
+				DBPort:       5432,
+				DBName:       "mydb",
+				DBSSLMode:    "verify-full",
+				DBCACertPath: "/etc/ssl/certs/db-ca.crt",
+			},
+			want: "postgres://admin:pass@db.example.com:5432/mydb?sslmode=verify-full&sslrootcert=%2Fetc%2Fssl%2Fcerts%2Fdb-ca.crt",
+		},
+		{
+			name: "CA cert path with spaces and special characters is URL-encoded",
+			cfg: app.Config{
+				DBUser:       "admin",
+				DBPassword:   "pass",
+				DBHost:       "db.example.com",
+				DBPort:       5432,
+				DBName:       "mydb",
+				DBSSLMode:    "verify-full",
+				DBCACertPath: "/path with spaces/ca cert.pem",
+			},
+			want: "postgres://admin:pass@db.example.com:5432/mydb?sslmode=verify-full&sslrootcert=%2Fpath+with+spaces%2Fca+cert.pem",
 		},
 	}
 
@@ -364,8 +426,11 @@ func TestConfig_EnvconfigProcess(t *testing.T) {
 	if cfg.DBPort != 5432 {
 		t.Errorf("DBPort = %d, want %d", cfg.DBPort, 5432)
 	}
-	if cfg.DBSSLMode != "disable" {
-		t.Errorf("DBSSLMode = %q, want %q", cfg.DBSSLMode, "disable")
+	if cfg.DBSSLMode != "" {
+		t.Errorf("DBSSLMode = %q, want %q", cfg.DBSSLMode, "")
+	}
+	if cfg.DBCACertPath != "" {
+		t.Errorf("DBCACertPath = %q, want %q", cfg.DBCACertPath, "")
 	}
 	if cfg.DBMaxConns != 10 {
 		t.Errorf("DBMaxConns = %d, want %d", cfg.DBMaxConns, 10)
@@ -384,6 +449,23 @@ func TestConfig_EnvconfigProcess(t *testing.T) {
 	}
 }
 
+func TestConfig_EnvconfigProcess_CustomDBCACertPath(t *testing.T) {
+	t.Setenv("SAML_PROVIDER_DB_CA_CERT_PATH", "/etc/ssl/certs/db-ca.pem")
+	t.Setenv("SAML_PROVIDER_DB_SSLMODE", "verify-full")
+
+	var cfg app.Config
+	if err := envconfig.Process("", &cfg); err != nil {
+		t.Fatalf("envconfig.Process() error: %v", err)
+	}
+
+	if cfg.DBCACertPath != "/etc/ssl/certs/db-ca.pem" {
+		t.Errorf("DBCACertPath = %q, want %q", cfg.DBCACertPath, "/etc/ssl/certs/db-ca.pem")
+	}
+	if cfg.DBSSLMode != "verify-full" {
+		t.Errorf("DBSSLMode = %q, want %q", cfg.DBSSLMode, "verify-full")
+	}
+}
+
 func TestConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -393,6 +475,39 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name:   "valid defaults",
 			modify: func(_ *app.Config) {},
+		},
+		{
+			name:   "unspecified DBSSLMode is valid",
+			modify: func(c *app.Config) { c.DBSSLMode = "" },
+		},
+		{
+			name: "valid DBCACertPath with unspecified DBSSLMode",
+			modify: func(c *app.Config) {
+				c.DBSSLMode = ""
+				c.DBCACertPath = "/etc/ssl/certs/db-ca.crt"
+			},
+		},
+		{
+			name: "valid DBCACertPath with verify-full",
+			modify: func(c *app.Config) {
+				c.DBSSLMode = "verify-full"
+				c.DBCACertPath = "/etc/ssl/certs/db-ca.crt"
+			},
+		},
+		{
+			name: "valid DBCACertPath with verify-ca",
+			modify: func(c *app.Config) {
+				c.DBSSLMode = "verify-ca"
+				c.DBCACertPath = "/etc/ssl/certs/db-ca.crt"
+			},
+		},
+		{
+			name: "conflicting DBCACertPath with sslmode disable",
+			modify: func(c *app.Config) {
+				c.DBSSLMode = "disable"
+				c.DBCACertPath = "/etc/ssl/certs/db-ca.crt"
+			},
+			wantErr: "SAML_PROVIDER_DB_CA_CERT_PATH cannot be used with SAML_PROVIDER_DB_SSLMODE",
 		},
 		{
 			name:    "empty BridgeBaseURL",

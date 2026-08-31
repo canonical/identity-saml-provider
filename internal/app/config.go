@@ -44,12 +44,13 @@ type Config struct {
 	ClientSecret    string `envconfig:"SAML_PROVIDER_OIDC_CLIENT_SECRET" default:"secret"`
 
 	// Database Configuration
-	DBHost     string `envconfig:"SAML_PROVIDER_DB_HOST" default:"localhost"`
-	DBPort     int    `envconfig:"SAML_PROVIDER_DB_PORT" default:"5432"`
-	DBName     string `envconfig:"SAML_PROVIDER_DB_NAME" default:"saml_provider"`
-	DBUser     string `envconfig:"SAML_PROVIDER_DB_USER" default:"saml_provider"`
-	DBPassword string `envconfig:"SAML_PROVIDER_DB_PASSWORD" default:"saml_provider"`
-	DBSSLMode  string `envconfig:"SAML_PROVIDER_DB_SSLMODE" default:"disable"`
+	DBHost       string `envconfig:"SAML_PROVIDER_DB_HOST" default:"localhost"`
+	DBPort       int    `envconfig:"SAML_PROVIDER_DB_PORT" default:"5432"`
+	DBName       string `envconfig:"SAML_PROVIDER_DB_NAME" default:"saml_provider"`
+	DBUser       string `envconfig:"SAML_PROVIDER_DB_USER" default:"saml_provider"`
+	DBPassword   string `envconfig:"SAML_PROVIDER_DB_PASSWORD" default:"saml_provider"`
+	DBSSLMode    string `envconfig:"SAML_PROVIDER_DB_SSLMODE" default:""`
+	DBCACertPath string `envconfig:"SAML_PROVIDER_DB_CA_CERT_PATH" default:""`
 
 	// Database Pool Configuration
 	DBMaxConns        int32         `envconfig:"SAML_PROVIDER_DB_MAX_CONNS" default:"10"`
@@ -124,8 +125,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("SAML_PROVIDER_DB_PORT must be 1–65535, got %d", c.DBPort)
 	}
 
-	if !validSSLModes[c.DBSSLMode] {
+	if c.DBSSLMode != "" && !validSSLModes[c.DBSSLMode] {
 		return fmt.Errorf("invalid SAML_PROVIDER_DB_SSLMODE %q", c.DBSSLMode)
+	}
+
+	if c.DBCACertPath != "" && c.DBSSLMode == "disable" {
+		return fmt.Errorf("SAML_PROVIDER_DB_CA_CERT_PATH cannot be used with SAML_PROVIDER_DB_SSLMODE %q", c.DBSSLMode)
 	}
 
 	if c.DBMaxConns < c.DBMinConns {
@@ -167,12 +172,28 @@ func (c *Config) PoolConfig() postgres.PoolConfig {
 
 // DatabaseDSN builds a safely-encoded PostgreSQL connection string.
 func (c *Config) DatabaseDSN() string {
+	sslMode := c.DBSSLMode
+	if sslMode == "" {
+		if c.DBCACertPath != "" {
+			sslMode = "verify-full"
+		} else {
+			sslMode = "disable"
+		}
+	}
+
+	q := url.Values{
+		"sslmode": {sslMode},
+	}
+	if c.DBCACertPath != "" {
+		q.Set("sslrootcert", c.DBCACertPath)
+	}
+
 	u := url.URL{
 		Scheme:   "postgres",
 		User:     url.UserPassword(c.DBUser, c.DBPassword),
 		Host:     net.JoinHostPort(c.DBHost, strconv.Itoa(c.DBPort)),
 		Path:     c.DBName,
-		RawQuery: url.Values{"sslmode": {c.DBSSLMode}}.Encode(),
+		RawQuery: q.Encode(),
 	}
 	return u.String()
 }

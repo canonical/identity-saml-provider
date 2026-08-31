@@ -254,6 +254,7 @@ func TestServiceProviderCreateDefaultACSBinding(t *testing.T) {
 	flag := serviceProviderCreateCmd.Flags().Lookup("acs-binding")
 	if flag == nil {
 		t.Fatal("expected --acs-binding flag")
+		return
 	}
 	if flag.DefValue != "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" {
 		t.Errorf("expected default binding to be HTTP-POST, got %q", flag.DefValue)
