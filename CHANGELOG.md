@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.2.0](https://github.com/canonical/identity-saml-provider/compare/v0.1.7...v0.2.0) (2026-08-31)
+
+
+### ⚠ BREAKING CHANGES
+
+* Refactor CLI Command Structure and Error Handling
+
+### Features
+
+* allows specifying PostgreSQL CA certificate location ([0ac3187](https://github.com/canonical/identity-saml-provider/commit/0ac3187d4c450851c9b5dcad85b8e1a6f112eba3))
+* configurable persistent NameID mode ([3b3fd0e](https://github.com/canonical/identity-saml-provider/commit/3b3fd0e04b19812601d5e1ff19e73b820a5b7265))
+* persist pending requests ([0bc95b8](https://github.com/canonical/identity-saml-provider/commit/0bc95b8f1cc1c08286c44c305b4655374b0f361d))
+* standardize cli formatting and output streams ([9cc96ee](https://github.com/canonical/identity-saml-provider/commit/9cc96ee1ad5170218df7076ae502c1b5279f0b54))
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([4d915bb](https://github.com/canonical/identity-saml-provider/commit/4d915bb825e1045adb9c86d00cccd2281d2625a7))
+* **deps:** update go deps ([d6f57da](https://github.com/canonical/identity-saml-provider/commit/d6f57da41ac58784b0abbac468cde928ad4169ba))
+* **deps:** update go deps to v1.45.0 ([9d3f622](https://github.com/canonical/identity-saml-provider/commit/9d3f6227ffbcb59147915aee98306613e3e7b2a3))
+* **deps:** update go deps to v1.45.0 ([#167](https://github.com/canonical/identity-saml-provider/issues/167)) ([18b0f0b](https://github.com/canonical/identity-saml-provider/commit/18b0f0bc14536284c8f6fd237ce9eb0e7948d6c8))
+* **deps:** update go deps to v1.46.0 ([922dac8](https://github.com/canonical/identity-saml-provider/commit/922dac8cade9f1e1d934a3d9ae2277e8625ff1fc))
+* **deps:** update go deps to v1.46.0 ([#203](https://github.com/canonical/identity-saml-provider/issues/203)) ([38bb362](https://github.com/canonical/identity-saml-provider/commit/38bb362be2ebc5e8d374d57917bb867e5371239c))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.3.2 ([1e55ba7](https://github.com/canonical/identity-saml-provider/commit/1e55ba7b579aa08e423e167b75c13d6b59844f9c))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.3.2 ([#194](https://github.com/canonical/identity-saml-provider/issues/194)) ([44e5bdd](https://github.com/canonical/identity-saml-provider/commit/44e5bdd6450a09f8a9379d452b4d61d53a9bf73a))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.3 ([d77b5b8](https://github.com/canonical/identity-saml-provider/commit/d77b5b80ac141f59ec7713cfa2c78c7288b32c0c))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.3 ([#164](https://github.com/canonical/identity-saml-provider/issues/164)) ([2608f7d](https://github.com/canonical/identity-saml-provider/commit/2608f7d5a7f7221d80a94cc5c159b32a599979a7))
+* **deps:** update module github.com/prometheus/client_golang to v1.24.0 ([e8c7bc0](https://github.com/canonical/identity-saml-provider/commit/e8c7bc085944402644326647700a103a33b2130a))
+* **deps:** update module github.com/prometheus/client_golang to v1.24.0 ([#161](https://github.com/canonical/identity-saml-provider/issues/161)) ([4040ccf](https://github.com/canonical/identity-saml-provider/commit/4040ccfbf2d72d21ba05c916d4ac0735a4026f2a))
+* **deps:** update module github.com/prometheus/client_golang to v1.24.1 ([4c1a03e](https://github.com/canonical/identity-saml-provider/commit/4c1a03eda26341c80b4f4a5bdded3aecc9f52d36))
+* **deps:** update module github.com/prometheus/client_golang to v1.24.1 ([#165](https://github.com/canonical/identity-saml-provider/issues/165)) ([752782f](https://github.com/canonical/identity-saml-provider/commit/752782f368693337b980eb3850099b2fa9ea94a6))
+* **deps:** update module go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp to v0.71.0 ([48c1417](https://github.com/canonical/identity-saml-provider/commit/48c1417f00b6430c9fb6af73dccb36760bee389e))
+* **deps:** update module go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp to v0.71.0 ([#207](https://github.com/canonical/identity-saml-provider/issues/207)) ([838c6d6](https://github.com/canonical/identity-saml-provider/commit/838c6d65459560cf11024f0d1fb2558254185f6e))
+* **deps:** update module go.opentelemetry.io/contrib/propagators/jaeger to v1.46.0 ([ca6ae9f](https://github.com/canonical/identity-saml-provider/commit/ca6ae9f4b6dfcff35bfb78f008e70d43e1514a5b))
+* **deps:** update module go.opentelemetry.io/contrib/propagators/jaeger to v1.46.0 ([#205](https://github.com/canonical/identity-saml-provider/issues/205)) ([308d550](https://github.com/canonical/identity-saml-provider/commit/308d550c4990cbaf2dd9def8c2c0840a5a51ee76))
+
+
+### Code Refactoring
+
+* Refactor CLI Command Structure and Error Handling ([227f0f8](https://github.com/canonical/identity-saml-provider/commit/227f0f818d78d6a77af068c554652b9132f087bb))
+
 ## [0.1.7](https://github.com/canonical/identity-saml-provider/compare/v0.1.6...v0.1.7) (2026-07-13)
 
 
