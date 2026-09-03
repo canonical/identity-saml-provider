@@ -26,7 +26,7 @@ jobs:
     uses: ./.github/workflows/openspec-check.yaml
 
   build:
-    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@e017941885bd1d17774bf7be2cbbb1d1abe80d9e # v1.16.0
+    uses: canonical/identity-team/.github/workflows/_rock-build.yaml@b5428d226e364de1c5ad601c1ec27c333f489d1d # v1.16.2
 
   unit-test:
     uses: ./.github/workflows/unittest.yaml
@@ -34,6 +34,6 @@ jobs:
   gh-publish:
     if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
     needs: [ build, unit-test ]
-    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@e017941885bd1d17774bf7be2cbbb1d1abe80d9e # v1.16.0
+    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@b5428d226e364de1c5ad601c1ec27c333f489d1d # v1.16.2
     with:
       rock: ${{ needs.build.outputs.rock }}
