@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.1](https://github.com/canonical/identity-saml-provider/compare/v0.2.0...v0.2.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/coreos/go-oidc/v3 to v3.21.0 ([9d245c2](https://github.com/canonical/identity-saml-provider/commit/9d245c231cc2da2cb53c4b13378a36c08d4e3725))
+* **deps:** update module github.com/coreos/go-oidc/v3 to v3.21.0 ([#226](https://github.com/canonical/identity-saml-provider/issues/226)) ([bf46e95](https://github.com/canonical/identity-saml-provider/commit/bf46e95a391eb657f384e897004b4b11ecd747d9))
+* **deps:** update module github.com/prometheus/client_model to v0.6.3 ([7977269](https://github.com/canonical/identity-saml-provider/commit/79772696db2956dc70e1cc03a532200f36d2d86e))
+* **deps:** update module github.com/prometheus/client_model to v0.6.3 ([#222](https://github.com/canonical/identity-saml-provider/issues/222)) ([d983d1e](https://github.com/canonical/identity-saml-provider/commit/d983d1e5534ca93d10c4eb89fd964e334d639e4c))
+
 ## [0.2.0](https://github.com/canonical/identity-saml-provider/compare/v0.1.7...v0.2.0) (2026-08-31)
 
 
