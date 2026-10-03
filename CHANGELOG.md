@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.1](https://github.com/canonical/identity-saml-provider/compare/v0.2.0...v0.2.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([70f5fd6](https://github.com/canonical/identity-saml-provider/commit/70f5fd62e719e80fa6cc5e8323f0ba2ce8f8ca6d))
+* **deps:** update go deps ([2daa31c](https://github.com/canonical/identity-saml-provider/commit/2daa31c1096cfa7cebc90f0d67c1bc3a17d01200))
+* **deps:** update go deps (minor) ([#228](https://github.com/canonical/identity-saml-provider/issues/228)) ([986323d](https://github.com/canonical/identity-saml-provider/commit/986323d10fdac721acc667b1561a6765385af5dd))
+* **deps:** update go deps (minor) ([#291](https://github.com/canonical/identity-saml-provider/issues/291)) ([0a3d505](https://github.com/canonical/identity-saml-provider/commit/0a3d5052eb7c9cb05ffbd8bdad74cc584a6dfbbe))
+* **deps:** update go deps to v1.47.0 ([70afe9b](https://github.com/canonical/identity-saml-provider/commit/70afe9ba0e700694d7d1a534a9c26066afa34dbb))
+* **deps:** update go deps to v1.47.0 ([#288](https://github.com/canonical/identity-saml-provider/issues/288)) ([4bb13b1](https://github.com/canonical/identity-saml-provider/commit/4bb13b173ccc5649e012cfb9cee923820447546d))
+* **deps:** update module github.com/coreos/go-oidc/v3 to v3.21.0 ([9d245c2](https://github.com/canonical/identity-saml-provider/commit/9d245c231cc2da2cb53c4b13378a36c08d4e3725))
+* **deps:** update module github.com/coreos/go-oidc/v3 to v3.21.0 ([#226](https://github.com/canonical/identity-saml-provider/issues/226)) ([bf46e95](https://github.com/canonical/identity-saml-provider/commit/bf46e95a391eb657f384e897004b4b11ecd747d9))
+* **deps:** update module github.com/prometheus/client_model to v0.6.3 ([7977269](https://github.com/canonical/identity-saml-provider/commit/79772696db2956dc70e1cc03a532200f36d2d86e))
+* **deps:** update module github.com/prometheus/client_model to v0.6.3 ([#222](https://github.com/canonical/identity-saml-provider/issues/222)) ([d983d1e](https://github.com/canonical/identity-saml-provider/commit/d983d1e5534ca93d10c4eb89fd964e334d639e4c))
+
 ## [0.2.0](https://github.com/canonical/identity-saml-provider/compare/v0.1.7...v0.2.0) (2026-08-31)
 
 
