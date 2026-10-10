@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Run PR Agent
-        uses: the-pr-agent/pr-agent@7cfa9ebe9fa9e121b094ba8ff6d9f87535f03859 # main
+        uses: the-pr-agent/pr-agent@ada0eb6d6ecdd19a609a9f03bb4b608d2924ab8c # main
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_CI_KEY }}
