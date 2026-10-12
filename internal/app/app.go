@@ -95,6 +95,12 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		return nil, err
 	}
 
+	sigMethodURI := cfg.SAMLSignatureMethodURI()
+	if sigMethodURI == SignatureMethodRSASHA1 {
+		logger.Warnw("SAML_PROVIDER_SIGNATURE_METHOD is set to rsa-sha1; SHA-1 is deprecated and should only be used for backward compatibility with legacy service providers")
+	}
+	logger.Infow("Configured SAML signature method", "method", cfg.SAMLSignatureMethod, "signatureURI", sigMethodURI, "digestURI", cfg.SAMLDigestMethodURI())
+
 	samlIDP, err := samlkit.NewIdentityProvider(cfg.SAMLConfig(), logger)
 	if err != nil {
 		pool.Close()
@@ -109,14 +115,18 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 	pendingSvc := service.NewPendingRequestService(pendingRepo, logger, tracer)
 
 	// --- Handlers ---
+	handlerCfg := handler.HandlerConfig{
+		BridgeBaseURL:       cfg.BridgeBaseURL,
+		PendingRequestTTL:   cfg.PendingRequestTTL,
+		DevMode:             cfg.DevMode,
+		SAMLSignatureMethod: cfg.SAMLSignatureMethodURI(),
+		SAMLDigestMethod:    cfg.SAMLDigestMethodURI(),
+	}
+
 	handlers := handler.NewHandlers(
 		sessionSvc, spSvc, mappingSvc, oidcSvc, pendingSvc,
 		samlIDP,
-		handler.HandlerConfig{
-			BridgeBaseURL:     cfg.BridgeBaseURL,
-			PendingRequestTTL: cfg.PendingRequestTTL,
-			DevMode:           cfg.DevMode,
-		},
+		handlerCfg,
 		logger, monitor,
 	)
 
@@ -127,12 +137,8 @@ func Build(ctx context.Context, cfg Config, logger *logging.ZapLogger) (*App, er
 		Mapping:  mappingSvc,
 		Pending:  pendingSvc,
 		OIDC:     oidcSvc,
-		Config: handler.HandlerConfig{
-			BridgeBaseURL:     cfg.BridgeBaseURL,
-			PendingRequestTTL: cfg.PendingRequestTTL,
-			DevMode:           cfg.DevMode,
-		},
-		Logger: logger,
+		Config:   handlerCfg,
+		Logger:   logger,
 	}
 	samlIDP.ServiceProviderProvider = &handler.SAMLSPAdapter{
 		SPs: spSvc,

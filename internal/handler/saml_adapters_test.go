@@ -4,14 +4,17 @@
 package handler_test
 
 import (
+	"crypto/x509"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/beevik/etree"
 	"github.com/canonical/identity-saml-provider/internal/domain"
 	"github.com/canonical/identity-saml-provider/internal/handler"
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/samlkit"
@@ -508,4 +511,400 @@ func (m *pendingRequestMatcher) Matches(x interface{}) bool {
 
 func (m *pendingRequestMatcher) String() string {
 	return "is pending request with ID " + m.expectedID
+}
+
+func TestEnrichMetadataXML(t *testing.T) {
+	t.Parallel()
+
+	validMetadataXML := `<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="http://localhost:8082/saml/metadata">
+  <IDPSSODescriptor WantAuthnRequestsSigned="false" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <KeyDescriptor use="signing">
+      <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+        <X509Data>
+          <X509Certificate>MIICTestSigningCert</X509Certificate>
+        </X509Data>
+      </KeyInfo>
+    </KeyDescriptor>
+    <KeyDescriptor use="encryption">
+      <KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#">
+        <X509Data>
+          <X509Certificate>MIICTestEncryptionCert</X509Certificate>
+        </X509Data>
+      </KeyInfo>
+    </KeyDescriptor>
+    <SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="http://localhost:8082/saml/sso"/>
+  </IDPSSODescriptor>
+</EntityDescriptor>`
+
+	t.Run("injects extensions before key descriptor and preserves keys", func(t *testing.T) {
+		t.Parallel()
+
+		sigURI := "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+		digestURI := "http://www.w3.org/2001/04/xmlenc#sha256"
+
+		enriched, err := handler.EnrichMetadataXML([]byte(validMetadataXML), sigURI, digestURI)
+		if err != nil {
+			t.Fatalf("EnrichMetadataXML() error: %v", err)
+		}
+
+		doc := etree.NewDocument()
+		if err := doc.ReadFromBytes(enriched); err != nil {
+			t.Fatalf("failed to parse enriched XML: %v", err)
+		}
+
+		idpSSO := doc.FindElement("//IDPSSODescriptor")
+		if idpSSO == nil {
+			t.Fatal("missing IDPSSODescriptor")
+		}
+
+		// Verify Extensions exists and has correct xmlns:alg
+		extensions := idpSSO.SelectElement("Extensions")
+		if extensions == nil {
+			t.Fatal("missing Extensions element in IDPSSODescriptor")
+		}
+		if algAttr := extensions.SelectAttr("xmlns:alg"); algAttr == nil || algAttr.Value != "urn:oasis:names:tc:SAML:metadata:algsupport" {
+			t.Errorf("xmlns:alg attribute missing or wrong: %v", algAttr)
+		}
+
+		// Verify Extensions is positioned before the first KeyDescriptor
+		keyDesc := idpSSO.SelectElement("KeyDescriptor")
+		if keyDesc == nil {
+			t.Fatal("missing KeyDescriptor")
+		}
+		if extensions.Index() >= keyDesc.Index() {
+			t.Errorf("Extensions index (%d) should be < KeyDescriptor index (%d)", extensions.Index(), keyDesc.Index())
+		}
+
+		// Verify SigningMethod and DigestMethod elements
+		sm := extensions.FindElement("alg:SigningMethod")
+		if sm == nil {
+			t.Fatal("missing alg:SigningMethod")
+		}
+		if algo := sm.SelectAttrValue("Algorithm", ""); algo != sigURI {
+			t.Errorf("alg:SigningMethod Algorithm = %q, want %q", algo, sigURI)
+		}
+
+		dm := extensions.FindElement("alg:DigestMethod")
+		if dm == nil {
+			t.Fatal("missing alg:DigestMethod")
+		}
+		if algo := dm.SelectAttrValue("Algorithm", ""); algo != digestURI {
+			t.Errorf("alg:DigestMethod Algorithm = %q, want %q", algo, digestURI)
+		}
+
+		// Verify both KeyDescriptor elements (signing and encryption) remain intact
+		keyDescriptors := idpSSO.SelectElements("KeyDescriptor")
+		if len(keyDescriptors) != 2 {
+			t.Fatalf("expected 2 KeyDescriptor elements, got %d", len(keyDescriptors))
+		}
+		if use := keyDescriptors[0].SelectAttrValue("use", ""); use != "signing" {
+			t.Errorf("first KeyDescriptor use = %q, want 'signing'", use)
+		}
+		if use := keyDescriptors[1].SelectAttrValue("use", ""); use != "encryption" {
+			t.Errorf("second KeyDescriptor use = %q, want 'encryption'", use)
+		}
+	})
+
+	t.Run("handles existing Extensions without duplicating", func(t *testing.T) {
+		t.Parallel()
+
+		xmlWithExtensions := `<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <Extensions>
+      <ExistingCustomExtension>custom_value</ExistingCustomExtension>
+    </Extensions>
+    <KeyDescriptor use="signing"/>
+  </IDPSSODescriptor>
+</EntityDescriptor>`
+
+		sigURI := "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384"
+		digestURI := "http://www.w3.org/2001/04/xmldsig-more#sha384"
+
+		enriched, err := handler.EnrichMetadataXML([]byte(xmlWithExtensions), sigURI, digestURI)
+		if err != nil {
+			t.Fatalf("EnrichMetadataXML() error: %v", err)
+		}
+
+		doc := etree.NewDocument()
+		if err := doc.ReadFromBytes(enriched); err != nil {
+			t.Fatalf("failed to parse enriched XML: %v", err)
+		}
+
+		extensions := doc.FindElements("//IDPSSODescriptor/Extensions")
+		if len(extensions) != 1 {
+			t.Fatalf("expected exactly 1 Extensions element, got %d", len(extensions))
+		}
+
+		if extensions[0].SelectElement("ExistingCustomExtension") == nil {
+			t.Error("existing custom extension was removed")
+		}
+		if extensions[0].FindElement("alg:SigningMethod") == nil {
+			t.Error("missing alg:SigningMethod")
+		}
+		if extensions[0].FindElement("alg:DigestMethod") == nil {
+			t.Error("missing alg:DigestMethod")
+		}
+	})
+
+	t.Run("does not duplicate alg elements if already present", func(t *testing.T) {
+		t.Parallel()
+
+		xmlWithAlgs := `<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata">
+  <IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <Extensions xmlns:alg="urn:oasis:names:tc:SAML:metadata:algsupport">
+      <alg:SigningMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+      <alg:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+    </Extensions>
+    <KeyDescriptor use="signing"/>
+  </IDPSSODescriptor>
+</EntityDescriptor>`
+
+		enriched, err := handler.EnrichMetadataXML([]byte(xmlWithAlgs), "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", "http://www.w3.org/2001/04/xmlenc#sha256")
+		if err != nil {
+			t.Fatalf("EnrichMetadataXML() error: %v", err)
+		}
+
+		doc := etree.NewDocument()
+		if err := doc.ReadFromBytes(enriched); err != nil {
+			t.Fatalf("failed to parse enriched XML: %v", err)
+		}
+
+		sms := doc.FindElements("//IDPSSODescriptor/Extensions/alg:SigningMethod")
+		if len(sms) != 1 {
+			t.Errorf("expected 1 alg:SigningMethod, got %d", len(sms))
+		}
+		dms := doc.FindElements("//IDPSSODescriptor/Extensions/alg:DigestMethod")
+		if len(dms) != 1 {
+			t.Errorf("expected 1 alg:DigestMethod, got %d", len(dms))
+		}
+	})
+
+	t.Run("leaves XML unchanged when empty URIs provided", func(t *testing.T) {
+		t.Parallel()
+
+		enriched, err := handler.EnrichMetadataXML([]byte(validMetadataXML), "", "")
+		if err != nil {
+			t.Fatalf("EnrichMetadataXML() error: %v", err)
+		}
+		if string(enriched) != validMetadataXML {
+			t.Errorf("got %s, want %s", string(enriched), validMetadataXML)
+		}
+	})
+
+	t.Run("injects explicit algorithm and digest methods", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name      string
+			sigURI    string
+			digestURI string
+		}{
+			{
+				name:      "rsa-sha256",
+				sigURI:    "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+				digestURI: "http://www.w3.org/2001/04/xmlenc#sha256",
+			},
+			{
+				name:      "rsa-sha384",
+				sigURI:    "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384",
+				digestURI: "http://www.w3.org/2001/04/xmldsig-more#sha384",
+			},
+			{
+				name:      "rsa-sha512",
+				sigURI:    "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512",
+				digestURI: "http://www.w3.org/2001/04/xmlenc#sha512",
+			},
+			{
+				name:      "rsa-sha1",
+				sigURI:    "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
+				digestURI: "http://www.w3.org/2000/09/xmldsig#sha1",
+			},
+		}
+
+		for _, tc := range tests {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				enriched, err := handler.EnrichMetadataXML([]byte(validMetadataXML), tc.sigURI, tc.digestURI)
+				if err != nil {
+					t.Fatalf("EnrichMetadataXML() error: %v", err)
+				}
+				doc := etree.NewDocument()
+				if err := doc.ReadFromBytes(enriched); err != nil {
+					t.Fatalf("parse enriched XML error: %v", err)
+				}
+				sm := doc.FindElement("//IDPSSODescriptor/Extensions/alg:SigningMethod")
+				if sm == nil {
+					t.Fatal("missing alg:SigningMethod")
+				}
+				if got := sm.SelectAttrValue("Algorithm", ""); got != tc.sigURI {
+					t.Errorf("signing Algorithm = %q, want %q", got, tc.sigURI)
+				}
+				dm := doc.FindElement("//IDPSSODescriptor/Extensions/alg:DigestMethod")
+				if dm == nil {
+					t.Fatal("missing alg:DigestMethod")
+				}
+				if got := dm.SelectAttrValue("Algorithm", ""); got != tc.digestURI {
+					t.Errorf("digest Algorithm = %q, want %q", got, tc.digestURI)
+				}
+			})
+		}
+	})
+
+	t.Run("returns raw XML when no IDPSSODescriptor is present", func(t *testing.T) {
+		t.Parallel()
+
+		noIDPXML := `<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"><SPSSODescriptor/></EntityDescriptor>`
+		enriched, err := handler.EnrichMetadataXML([]byte(noIDPXML), "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256", "http://www.w3.org/2001/04/xmlenc#sha256")
+		if err != nil {
+			t.Fatalf("EnrichMetadataXML() error: %v", err)
+		}
+		if string(enriched) != noIDPXML {
+			t.Errorf("got %s, want %s", string(enriched), noIDPXML)
+		}
+	})
+
+	t.Run("returns error on invalid XML", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := handler.EnrichMetadataXML([]byte("<invalid xml"), "", "")
+		if err == nil {
+			t.Fatal("expected error on invalid XML, got nil")
+		}
+	})
+
+	t.Run("returns error on empty XML", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := handler.EnrichMetadataXML([]byte(""), "", "")
+		if err == nil {
+			t.Fatal("expected error on empty XML, got nil")
+		}
+	})
+}
+
+func TestHandleMetadata(t *testing.T) {
+	t.Parallel()
+
+	ssoURL, _ := url.Parse("http://localhost:8082/saml/sso")
+	metadataURL, _ := url.Parse("http://localhost:8082/saml/metadata")
+
+	testIDP := &saml.IdentityProvider{
+		Certificate:     &x509.Certificate{Raw: []byte("test-raw-cert")},
+		MetadataURL:     *metadataURL,
+		SSOURL:          *ssoURL,
+		SignatureMethod: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+	}
+
+	t.Run("serves 200 OK with enriched metadata XML", func(t *testing.T) {
+		t.Parallel()
+		ctrl := gomock.NewController(t)
+
+		sessions := mocks.NewMockSessionService(ctrl)
+		sps := mocks.NewMockServiceProviderService(ctrl)
+		mapping := mocks.NewMockMappingService(ctrl)
+		oidc := mocks.NewMockOIDCService(ctrl)
+		pending := mocks.NewMockPendingRequestService(ctrl)
+
+		h := handler.NewHandlers(
+			sessions, sps, mapping, oidc, pending, testIDP,
+			handler.HandlerConfig{
+				BridgeBaseURL:       "http://localhost:8082",
+				SAMLSignatureMethod: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+				SAMLDigestMethod:    "http://www.w3.org/2001/04/xmlenc#sha256",
+			},
+			logging.NewNopLogger(),
+			monitoring.NewNoopMonitor(),
+		)
+
+		req := httptest.NewRequest(http.MethodGet, "/saml/metadata", nil)
+		rec := httptest.NewRecorder()
+
+		h.HandleMetadata(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+
+		ct := rec.Header().Get("Content-Type")
+		if ct != "application/samlmetadata+xml" {
+			t.Errorf("Content-Type = %q, want application/samlmetadata+xml", ct)
+		}
+
+		body := rec.Body.String()
+		if !strings.Contains(body, `<KeyDescriptor use="signing">`) {
+			t.Errorf("body missing <KeyDescriptor use=\"signing\">:\n%s", body)
+		}
+		if !strings.Contains(body, `<alg:SigningMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"`) {
+			t.Errorf("body missing alg:SigningMethod:\n%s", body)
+		}
+		if !strings.Contains(body, `<alg:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"`) {
+			t.Errorf("body missing alg:DigestMethod:\n%s", body)
+		}
+	})
+
+	t.Run("serves metadata with custom signature method from config", func(t *testing.T) {
+		t.Parallel()
+		ctrl := gomock.NewController(t)
+
+		sessions := mocks.NewMockSessionService(ctrl)
+		sps := mocks.NewMockServiceProviderService(ctrl)
+		mapping := mocks.NewMockMappingService(ctrl)
+		oidc := mocks.NewMockOIDCService(ctrl)
+		pending := mocks.NewMockPendingRequestService(ctrl)
+
+		h := handler.NewHandlers(
+			sessions, sps, mapping, oidc, pending, testIDP,
+			handler.HandlerConfig{
+				BridgeBaseURL:       "http://localhost:8082",
+				SAMLSignatureMethod: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512",
+				SAMLDigestMethod:    "http://www.w3.org/2001/04/xmlenc#sha512",
+			},
+			logging.NewNopLogger(),
+			monitoring.NewNoopMonitor(),
+		)
+
+		req := httptest.NewRequest(http.MethodGet, "/saml/metadata", nil)
+		rec := httptest.NewRecorder()
+
+		h.HandleMetadata(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+
+		body := rec.Body.String()
+		if !strings.Contains(body, "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512") {
+			t.Errorf("body missing sha512 signing method:\n%s", body)
+		}
+		if !strings.Contains(body, "http://www.w3.org/2001/04/xmlenc#sha512") {
+			t.Errorf("body missing sha512 digest method:\n%s", body)
+		}
+	})
+
+	t.Run("returns 500 when SAML IdP is nil", func(t *testing.T) {
+		t.Parallel()
+		ctrl := gomock.NewController(t)
+
+		sessions := mocks.NewMockSessionService(ctrl)
+		sps := mocks.NewMockServiceProviderService(ctrl)
+		mapping := mocks.NewMockMappingService(ctrl)
+		oidc := mocks.NewMockOIDCService(ctrl)
+		pending := mocks.NewMockPendingRequestService(ctrl)
+
+		h := handler.NewHandlers(
+			sessions, sps, mapping, oidc, pending, nil,
+			handler.HandlerConfig{BridgeBaseURL: "http://localhost:8082"},
+			logging.NewNopLogger(),
+			monitoring.NewNoopMonitor(),
+		)
+
+		req := httptest.NewRequest(http.MethodGet, "/saml/metadata", nil)
+		rec := httptest.NewRecorder()
+
+		h.HandleMetadata(rec, req)
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+		}
+	})
 }

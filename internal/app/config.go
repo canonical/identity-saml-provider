@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/canonical/identity-saml-provider/internal/infrastructure/hydra"
@@ -58,9 +59,10 @@ type Config struct {
 	DBMaxConnLifetime time.Duration `envconfig:"SAML_PROVIDER_DB_MAX_CONN_LIFETIME" default:"30m"`
 	DBMaxConnIdleTime time.Duration `envconfig:"SAML_PROVIDER_DB_MAX_CONN_IDLE_TIME" default:"5m"`
 
-	// Certificate Configuration
-	SAMLCertPath string `envconfig:"SAML_PROVIDER_CERT_PATH" default:".local/certs/bridge.crt"`
-	SAMLKeyPath  string `envconfig:"SAML_PROVIDER_KEY_PATH" default:".local/certs/bridge.key"`
+	// Certificate and Cryptographic Configuration
+	SAMLCertPath        string `envconfig:"SAML_PROVIDER_CERT_PATH" default:".local/certs/bridge.crt"`
+	SAMLKeyPath         string `envconfig:"SAML_PROVIDER_KEY_PATH" default:".local/certs/bridge.key"`
+	SAMLSignatureMethod string `envconfig:"SAML_PROVIDER_SIGNATURE_METHOD" default:"rsa-sha256"`
 
 	// Logging Configuration
 	// LogLevel sets the minimum log level.
@@ -149,6 +151,17 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("SAML_PROVIDER_PENDING_REQUEST_TTL must be positive, got %s", c.PendingRequestTTL)
 	}
 
+	normalizedSigMethod := strings.ToLower(strings.TrimSpace(c.SAMLSignatureMethod))
+	if normalizedSigMethod == "" {
+		normalizedSigMethod = "rsa-sha256"
+	}
+	switch normalizedSigMethod {
+	case "rsa-sha256", "rsa-sha384", "rsa-sha512", "rsa-sha1":
+		c.SAMLSignatureMethod = normalizedSigMethod
+	default:
+		return fmt.Errorf("invalid SAML_PROVIDER_SIGNATURE_METHOD %q: must be one of rsa-sha256, rsa-sha384, rsa-sha512, rsa-sha1", c.SAMLSignatureMethod)
+	}
+
 	if c.DevMode {
 		fmt.Println("WARNING: SAML_PROVIDER_DEV_MODE is enabled." +
 			" Secure cookie attribute is disabled and" +
@@ -220,8 +233,56 @@ func (c *Config) OIDCConfig() hydra.OIDCConfig {
 // SAMLConfig returns the subset needed for SAML IdP setup.
 func (c *Config) SAMLConfig() samlkit.Config {
 	return samlkit.Config{
-		BridgeBaseURL: c.BridgeBaseURL,
-		CertPath:      c.SAMLCertPath,
-		KeyPath:       c.SAMLKeyPath,
+		BridgeBaseURL:   c.BridgeBaseURL,
+		CertPath:        c.SAMLCertPath,
+		KeyPath:         c.SAMLKeyPath,
+		SignatureMethod: c.SAMLSignatureMethodURI(),
+	}
+}
+
+// SAML signature and digest algorithm URIs.
+const (
+	SignatureMethodRSASHA256 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"
+	SignatureMethodRSASHA384 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha384"
+	SignatureMethodRSASHA512 = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512"
+	SignatureMethodRSASHA1   = "http://www.w3.org/2000/09/xmldsig#rsa-sha1"
+
+	DigestMethodSHA256 = "http://www.w3.org/2001/04/xmlenc#sha256"
+	DigestMethodSHA384 = "http://www.w3.org/2001/04/xmldsig-more#sha384"
+	DigestMethodSHA512 = "http://www.w3.org/2001/04/xmlenc#sha512"
+	DigestMethodSHA1   = "http://www.w3.org/2000/09/xmldsig#sha1"
+)
+
+// SAMLSignatureMethodURI returns the W3C XMLDSIG URI corresponding to
+// the configured SAMLSignatureMethod. Defaults to SignatureMethodRSASHA256.
+func (c *Config) SAMLSignatureMethodURI() string {
+	switch strings.ToLower(strings.TrimSpace(c.SAMLSignatureMethod)) {
+	case "rsa-sha384":
+		return SignatureMethodRSASHA384
+	case "rsa-sha512":
+		return SignatureMethodRSASHA512
+	case "rsa-sha1":
+		return SignatureMethodRSASHA1
+	case "rsa-sha256":
+		fallthrough
+	default:
+		return SignatureMethodRSASHA256
+	}
+}
+
+// SAMLDigestMethodURI returns the W3C XML digest URI corresponding to
+// the configured SAMLSignatureMethod. Defaults to DigestMethodSHA256.
+func (c *Config) SAMLDigestMethodURI() string {
+	switch strings.ToLower(strings.TrimSpace(c.SAMLSignatureMethod)) {
+	case "rsa-sha384":
+		return DigestMethodSHA384
+	case "rsa-sha512":
+		return DigestMethodSHA512
+	case "rsa-sha1":
+		return DigestMethodSHA1
+	case "rsa-sha256":
+		fallthrough
+	default:
+		return DigestMethodSHA256
 	}
 }

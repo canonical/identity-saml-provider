@@ -9,8 +9,8 @@ import (
 
 // RegisterRoutes registers all endpoints on the provided chi.Router.
 func (h *Handlers) RegisterRoutes(r chi.Router) {
-	// SAML endpoints (delegated to crewjam/saml IdentityProvider)
-	r.HandleFunc("/saml/metadata", h.samlIDP.ServeMetadata)
+	// SAML endpoints
+	r.HandleFunc("/saml/metadata", h.HandleMetadata)
 	r.HandleFunc("/saml/sso", h.HandleSSO)
 
 	// OIDC callback (Hydra redirects users back here)

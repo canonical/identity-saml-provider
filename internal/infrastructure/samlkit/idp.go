@@ -9,13 +9,15 @@ import (
 
 	"github.com/canonical/identity-saml-provider/internal/logging"
 	"github.com/crewjam/saml"
+	dsig "github.com/russellhaering/goxmldsig"
 )
 
 // Config holds the configuration needed to create a SAML Identity Provider.
 type Config struct {
-	BridgeBaseURL string
-	CertPath      string
-	KeyPath       string
+	BridgeBaseURL   string
+	CertPath        string
+	KeyPath         string
+	SignatureMethod string
 }
 
 // NewIdentityProvider creates a *saml.IdentityProvider from the given config
@@ -38,12 +40,18 @@ func NewIdentityProvider(cfg Config, logger *logging.ZapLogger) (*saml.IdentityP
 		return nil, fmt.Errorf("parse metadata URL: %w", err)
 	}
 
+	sigMethod := cfg.SignatureMethod
+	if sigMethod == "" {
+		sigMethod = dsig.RSASHA256SignatureMethod
+	}
+
 	idp := &saml.IdentityProvider{
-		Key:         kp.PrivateKey,
-		Certificate: kp.Certificate,
-		Logger:      NewZapLoggerAdapter(logger.SugaredLogger),
-		SSOURL:      *ssoURL,
-		MetadataURL: *metadataURL,
+		Key:             kp.PrivateKey,
+		Certificate:     kp.Certificate,
+		Logger:          NewZapLoggerAdapter(logger.SugaredLogger),
+		SSOURL:          *ssoURL,
+		MetadataURL:     *metadataURL,
+		SignatureMethod: sigMethod,
 	}
 
 	return idp, nil
