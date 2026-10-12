@@ -21,6 +21,11 @@ type HandlerConfig struct {
 	// Secure attribute is omitted from session cookies to allow
 	// HTTP-only local development.
 	DevMode bool
+
+	// SAMLSignatureMethod is the W3C URI for the signature algorithm.
+	SAMLSignatureMethod string
+	// SAMLDigestMethod is the W3C URI for the digest algorithm.
+	SAMLDigestMethod string
 }
 
 // Handlers groups all HTTP handler functions for the SAML-OIDC bridge.

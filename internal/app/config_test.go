@@ -17,24 +17,25 @@ import (
 // returned value before calling the method under test.
 func validConfig() app.Config {
 	return app.Config{
-		BridgeBasePort:    8082,
-		BridgeBaseURL:     "http://localhost:8082",
-		HydraPublicURL:    "http://localhost:4444",
-		ClientID:          "service-bridge-client",
-		ClientSecret:      "secret",
-		DBHost:            "localhost",
-		DBPort:            5432,
-		DBName:            "saml_provider",
-		DBUser:            "saml_provider",
-		DBPassword:        "saml_provider",
-		DBSSLMode:         "disable",
-		DBMaxConns:        10,
-		DBMinConns:        2,
-		DBMaxConnLifetime: 30 * time.Minute,
-		DBMaxConnIdleTime: 5 * time.Minute,
-		SAMLCertPath:      ".local/certs/bridge.crt",
-		SAMLKeyPath:       ".local/certs/bridge.key",
-		PendingRequestTTL: 15 * time.Minute,
+		BridgeBasePort:      8082,
+		BridgeBaseURL:       "http://localhost:8082",
+		HydraPublicURL:      "http://localhost:4444",
+		ClientID:            "service-bridge-client",
+		ClientSecret:        "secret",
+		DBHost:              "localhost",
+		DBPort:              5432,
+		DBName:              "saml_provider",
+		DBUser:              "saml_provider",
+		DBPassword:          "saml_provider",
+		DBSSLMode:           "disable",
+		DBMaxConns:          10,
+		DBMinConns:          2,
+		DBMaxConnLifetime:   30 * time.Minute,
+		DBMaxConnIdleTime:   5 * time.Minute,
+		SAMLCertPath:        ".local/certs/bridge.crt",
+		SAMLKeyPath:         ".local/certs/bridge.key",
+		SAMLSignatureMethod: "rsa-sha256",
+		PendingRequestTTL:   15 * time.Minute,
 	}
 }
 
@@ -364,31 +365,38 @@ func TestConfig_OIDCConfig(t *testing.T) {
 
 func TestConfig_SAMLConfig(t *testing.T) {
 	tests := []struct {
-		name      string
-		bridgeURL string
-		certPath  string
-		keyPath   string
+		name            string
+		bridgeURL       string
+		certPath        string
+		keyPath         string
+		signatureMethod string
+		wantSigURI      string
 	}{
 		{
-			name:      "default paths",
-			bridgeURL: "http://localhost:8082",
-			certPath:  ".local/certs/bridge.crt",
-			keyPath:   ".local/certs/bridge.key",
+			name:            "default paths",
+			bridgeURL:       "http://localhost:8082",
+			certPath:        ".local/certs/bridge.crt",
+			keyPath:         ".local/certs/bridge.key",
+			signatureMethod: "rsa-sha256",
+			wantSigURI:      app.SignatureMethodRSASHA256,
 		},
 		{
-			name:      "custom paths",
-			bridgeURL: "https://saml.example.com",
-			certPath:  "/etc/ssl/certs/saml.pem",
-			keyPath:   "/etc/ssl/private/saml.key",
+			name:            "custom paths and signature method",
+			bridgeURL:       "https://saml.example.com",
+			certPath:        "/etc/ssl/certs/saml.pem",
+			keyPath:         "/etc/ssl/private/saml.key",
+			signatureMethod: "rsa-sha384",
+			wantSigURI:      app.SignatureMethodRSASHA384,
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := app.Config{
-				BridgeBaseURL: tc.bridgeURL,
-				SAMLCertPath:  tc.certPath,
-				SAMLKeyPath:   tc.keyPath,
+				BridgeBaseURL:       tc.bridgeURL,
+				SAMLCertPath:        tc.certPath,
+				SAMLKeyPath:         tc.keyPath,
+				SAMLSignatureMethod: tc.signatureMethod,
 			}
 			sc := cfg.SAMLConfig()
 
@@ -400,6 +408,9 @@ func TestConfig_SAMLConfig(t *testing.T) {
 			}
 			if sc.KeyPath != tc.keyPath {
 				t.Errorf("SAMLConfig().KeyPath = %q, want %q", sc.KeyPath, tc.keyPath)
+			}
+			if sc.SignatureMethod != tc.wantSigURI {
+				t.Errorf("SAMLConfig().SignatureMethod = %q, want %q", sc.SignatureMethod, tc.wantSigURI)
 			}
 		})
 	}
@@ -446,6 +457,78 @@ func TestConfig_EnvconfigProcess(t *testing.T) {
 	}
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+	}
+	if cfg.SAMLSignatureMethod != "rsa-sha256" {
+		t.Errorf("SAMLSignatureMethod = %q, want %q", cfg.SAMLSignatureMethod, "rsa-sha256")
+	}
+}
+
+func TestConfig_EnvconfigProcess_CustomSignatureMethod(t *testing.T) {
+	t.Setenv("SAML_PROVIDER_SIGNATURE_METHOD", "rsa-sha512")
+
+	var cfg app.Config
+	if err := envconfig.Process("", &cfg); err != nil {
+		t.Fatalf("envconfig.Process() error: %v", err)
+	}
+
+	if cfg.SAMLSignatureMethod != "rsa-sha512" {
+		t.Errorf("SAMLSignatureMethod = %q, want %q", cfg.SAMLSignatureMethod, "rsa-sha512")
+	}
+}
+
+func TestConfig_SAMLSignatureMethodURI(t *testing.T) {
+	tests := []struct {
+		method string
+		want   string
+	}{
+		{method: "rsa-sha256", want: app.SignatureMethodRSASHA256},
+		{method: "RSA-SHA256", want: app.SignatureMethodRSASHA256},
+		{method: "  rsa-sha256  ", want: app.SignatureMethodRSASHA256},
+		{method: "", want: app.SignatureMethodRSASHA256},
+		{method: "rsa-sha384", want: app.SignatureMethodRSASHA384},
+		{method: "RSA-SHA384", want: app.SignatureMethodRSASHA384},
+		{method: "rsa-sha512", want: app.SignatureMethodRSASHA512},
+		{method: "RSA-SHA512", want: app.SignatureMethodRSASHA512},
+		{method: "rsa-sha1", want: app.SignatureMethodRSASHA1},
+		{method: "RSA-SHA1", want: app.SignatureMethodRSASHA1},
+		{method: "unsupported", want: app.SignatureMethodRSASHA256},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.method, func(t *testing.T) {
+			cfg := app.Config{SAMLSignatureMethod: tc.method}
+			if got := cfg.SAMLSignatureMethodURI(); got != tc.want {
+				t.Errorf("SAMLSignatureMethodURI() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestConfig_SAMLDigestMethodURI(t *testing.T) {
+	tests := []struct {
+		method string
+		want   string
+	}{
+		{method: "rsa-sha256", want: app.DigestMethodSHA256},
+		{method: "RSA-SHA256", want: app.DigestMethodSHA256},
+		{method: "  rsa-sha256  ", want: app.DigestMethodSHA256},
+		{method: "", want: app.DigestMethodSHA256},
+		{method: "rsa-sha384", want: app.DigestMethodSHA384},
+		{method: "RSA-SHA384", want: app.DigestMethodSHA384},
+		{method: "rsa-sha512", want: app.DigestMethodSHA512},
+		{method: "RSA-SHA512", want: app.DigestMethodSHA512},
+		{method: "rsa-sha1", want: app.DigestMethodSHA1},
+		{method: "RSA-SHA1", want: app.DigestMethodSHA1},
+		{method: "unsupported", want: app.DigestMethodSHA256},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.method, func(t *testing.T) {
+			cfg := app.Config{SAMLSignatureMethod: tc.method}
+			if got := cfg.SAMLDigestMethodURI(); got != tc.want {
+				t.Errorf("SAMLDigestMethodURI() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -585,6 +668,40 @@ func TestConfig_Validate(t *testing.T) {
 			name:    "invalid non-positive PendingRequestTTL",
 			modify:  func(c *app.Config) { c.PendingRequestTTL = 0 },
 			wantErr: "SAML_PROVIDER_PENDING_REQUEST_TTL must be positive",
+		},
+		{
+			name:   "valid rsa-sha384 signature method",
+			modify: func(c *app.Config) { c.SAMLSignatureMethod = "rsa-sha384" },
+		},
+		{
+			name:   "valid rsa-sha512 signature method",
+			modify: func(c *app.Config) { c.SAMLSignatureMethod = "rsa-sha512" },
+		},
+		{
+			name:   "valid rsa-sha1 signature method",
+			modify: func(c *app.Config) { c.SAMLSignatureMethod = "rsa-sha1" },
+		},
+		{
+			name: "valid uppercase signature method normalized",
+			modify: func(c *app.Config) {
+				c.SAMLSignatureMethod = "RSA-SHA256"
+			},
+		},
+		{
+			name: "empty signature method defaults to rsa-sha256",
+			modify: func(c *app.Config) {
+				c.SAMLSignatureMethod = ""
+			},
+		},
+		{
+			name:    "invalid signature method",
+			modify:  func(c *app.Config) { c.SAMLSignatureMethod = "invalid-algo" },
+			wantErr: "invalid SAML_PROVIDER_SIGNATURE_METHOD",
+		},
+		{
+			name:    "unsupported md5 signature method",
+			modify:  func(c *app.Config) { c.SAMLSignatureMethod = "md5" },
+			wantErr: "invalid SAML_PROVIDER_SIGNATURE_METHOD",
 		},
 	}
 

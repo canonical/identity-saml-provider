@@ -4,12 +4,16 @@
 package handler
 
 import (
+	"encoding/xml"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/beevik/etree"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
@@ -299,4 +303,109 @@ func (h *Handlers) HandleSSO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.samlIDP.ServeSSO(w, r)
+}
+
+// HandleMetadata serves the SAML IdP metadata XML, enriched with OASIS algorithm support
+// extensions (<alg:SigningMethod> and <alg:DigestMethod>) while preserving the standard
+// <KeyDescriptor use="signing"> for universal compatibility across all service providers.
+func (h *Handlers) HandleMetadata(w http.ResponseWriter, r *http.Request) {
+	if h.samlIDP == nil {
+		h.logger.Errorw("HandleMetadata: SAML IdP not initialized")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	rawXML, err := xml.MarshalIndent(h.samlIDP.Metadata(), "", "  ")
+	if err != nil {
+		h.logger.Errorw("HandleMetadata: failed to marshal metadata", "error", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	sigMethod := h.config.SAMLSignatureMethod
+	if sigMethod == "" && h.samlIDP.SignatureMethod != "" {
+		sigMethod = h.samlIDP.SignatureMethod
+	}
+
+	digestMethod := h.config.SAMLDigestMethod
+
+	enrichedXML, err := EnrichMetadataXML(rawXML, sigMethod, digestMethod)
+	if err != nil {
+		h.logger.Warnw("HandleMetadata: failed to enrich metadata XML, serving raw XML", "error", err)
+		enrichedXML = rawXML
+	}
+
+	w.Header().Set("Content-Type", "application/samlmetadata+xml")
+	if _, err := w.Write(enrichedXML); err != nil {
+		h.logger.Errorw("HandleMetadata: failed to write response", "error", err)
+	}
+}
+
+// EnrichMetadataXML injects OASIS SAML 2.0 Metadata Profile for Algorithm Support
+// (<alg:SigningMethod> and <alg:DigestMethod>) into the <IDPSSODescriptor> element,
+// positioned immediately before the first <KeyDescriptor> element to adhere to the
+// SAML 2.0 metadata schema sequence requirements, while preserving all existing
+// <KeyDescriptor> elements intact.
+func EnrichMetadataXML(rawXML []byte, sigMethodURI, digestMethodURI string) ([]byte, error) {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromBytes(rawXML); err != nil {
+		return nil, fmt.Errorf("read metadata XML: %w", err)
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return nil, errors.New("metadata XML document is empty")
+	}
+
+	if sigMethodURI == "" && digestMethodURI == "" {
+		return rawXML, nil
+	}
+
+	var idpSSO *etree.Element
+	if root.Tag == "IDPSSODescriptor" {
+		idpSSO = root
+	} else {
+		idpSSO = root.FindElement("//IDPSSODescriptor")
+	}
+
+	if idpSSO == nil {
+		return rawXML, nil
+	}
+
+	// Locate or create <Extensions> within <IDPSSODescriptor>.
+	extensions := idpSSO.SelectElement("Extensions")
+	if extensions == nil {
+		extensions = etree.NewElement("Extensions")
+		if idpSSO.Space != "" {
+			extensions.Space = idpSSO.Space
+		}
+		extensions.CreateAttr("xmlns:alg", "urn:oasis:names:tc:SAML:metadata:algsupport")
+
+		// SAML metadata schema requires <Extensions> to precede <KeyDescriptor>.
+		keyDesc := idpSSO.SelectElement("KeyDescriptor")
+		if keyDesc != nil {
+			idpSSO.InsertChildAt(keyDesc.Index(), extensions)
+		} else {
+			idpSSO.InsertChildAt(0, extensions)
+		}
+	} else {
+		if extensions.SelectAttr("xmlns:alg") == nil {
+			extensions.CreateAttr("xmlns:alg", "urn:oasis:names:tc:SAML:metadata:algsupport")
+		}
+	}
+
+	// Add <alg:SigningMethod> if provided and not already present.
+	if sigMethodURI != "" && extensions.FindElement("alg:SigningMethod") == nil {
+		sm := extensions.CreateElement("alg:SigningMethod")
+		sm.CreateAttr("Algorithm", sigMethodURI)
+	}
+
+	// Add <alg:DigestMethod> if provided and not already present.
+	if digestMethodURI != "" && extensions.FindElement("alg:DigestMethod") == nil {
+		dm := extensions.CreateElement("alg:DigestMethod")
+		dm.CreateAttr("Algorithm", digestMethodURI)
+	}
+
+	doc.Indent(2)
+	return doc.WriteToBytes()
 }
