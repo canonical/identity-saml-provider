@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.2](https://github.com/canonical/identity-saml-provider/compare/v0.2.1...v0.2.2) (2026-10-17)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/go-chi/chi/v5 to v5.4.0 ([afe1780](https://github.com/canonical/identity-saml-provider/commit/afe17806df6978a5f18c165c61374ee6499a193f))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.4.0 ([#326](https://github.com/canonical/identity-saml-provider/issues/326)) ([319ff87](https://github.com/canonical/identity-saml-provider/commit/319ff879167b1339c0256395fee3c6c983e2c9ea))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.5.0 ([f1edb49](https://github.com/canonical/identity-saml-provider/commit/f1edb494cad3b67a258ede95e91ca3b008d4360a))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.5.0 ([#328](https://github.com/canonical/identity-saml-provider/issues/328)) ([db1dadc](https://github.com/canonical/identity-saml-provider/commit/db1dadca24cc5b316c3eb6e37d022e49cb03616a))
+* **deps:** update module github.com/russellhaering/goxmldsig to v1.6.1 ([34d66b9](https://github.com/canonical/identity-saml-provider/commit/34d66b969a594b9ee929ba3583f48085e4e20571))
+* **deps:** update module github.com/russellhaering/goxmldsig to v1.6.1 ([#323](https://github.com/canonical/identity-saml-provider/issues/323)) ([f700e14](https://github.com/canonical/identity-saml-provider/commit/f700e147b0ff9fdc2edffb72a2abc9c99396c52f))
+
 ## [0.2.1](https://github.com/canonical/identity-saml-provider/compare/v0.2.0...v0.2.1) (2026-10-12)
 
 
