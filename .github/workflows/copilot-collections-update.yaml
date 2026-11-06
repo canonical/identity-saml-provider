@@ -10,5 +10,5 @@ permissions:
 
 jobs:
   check-update:
-    uses: canonical/copilot-collections/.github/workflows/auto_update_collections.yaml@7dd62d1f7310644a37512a57610909bab1912669 # main
+    uses: canonical/copilot-collections/.github/workflows/auto_update_collections.yaml@b33daf853e9df2498edf8ada3ba6d15333ca21bc # main
     secrets: inherit
