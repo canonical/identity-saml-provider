@@ -1,5 +1,5 @@
 copilot:
-  version: "v0.20.0"
+  version: "v0.23.0"
   collections:
     - core
     - common-go
