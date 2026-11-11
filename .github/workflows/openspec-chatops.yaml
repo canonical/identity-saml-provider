@@ -14,7 +14,7 @@ jobs:
     # Trigger only if comment is on a PR AND contains /archive-spec
     if: >
       github.event.issue.pull_request &&
-      contains(github.event.comment.body, '/archive-spec') &&
+      startsWith(github.event.comment.body, '/archive-spec') &&
       (
         github.event.comment.author_association == 'OWNER' ||
         github.event.comment.author_association == 'MEMBER' ||
