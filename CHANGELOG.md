@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.2.2](https://github.com/canonical/identity-saml-provider/compare/v0.2.1...v0.2.2) (2026-11-14)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/crewjam/saml to v0.5.2 ([7b02fe5](https://github.com/canonical/identity-saml-provider/commit/7b02fe5a4238c81756de2ca14113d4a840b01c49))
+* **deps:** update module github.com/crewjam/saml to v0.5.2 ([#393](https://github.com/canonical/identity-saml-provider/issues/393)) ([dff1e0e](https://github.com/canonical/identity-saml-provider/commit/dff1e0edee87d19208d68c1874501217ef96977a))
+* **deps:** update module github.com/crewjam/saml to v0.6.2 ([9437f94](https://github.com/canonical/identity-saml-provider/commit/9437f948066d61f7b01c26fb8930101d6f0dcbcc))
+* **deps:** update module github.com/crewjam/saml to v0.6.2 ([#397](https://github.com/canonical/identity-saml-provider/issues/397)) ([a262cb7](https://github.com/canonical/identity-saml-provider/commit/a262cb786cc0fe51040a69eeb95747f3e799bb90))
+* **deps:** update module github.com/crewjam/saml to v0.6.3 ([44913c9](https://github.com/canonical/identity-saml-provider/commit/44913c9b1f60aea403a9eb93b0028558ee1769ec))
+* **deps:** update module github.com/crewjam/saml to v0.6.3 ([#399](https://github.com/canonical/identity-saml-provider/issues/399)) ([8d339fd](https://github.com/canonical/identity-saml-provider/commit/8d339fd9f399b6ac8aec83d2fd5bf6121bf798bd))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.4.0 ([afe1780](https://github.com/canonical/identity-saml-provider/commit/afe17806df6978a5f18c165c61374ee6499a193f))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.4.0 ([#326](https://github.com/canonical/identity-saml-provider/issues/326)) ([319ff87](https://github.com/canonical/identity-saml-provider/commit/319ff879167b1339c0256395fee3c6c983e2c9ea))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.5.0 ([f1edb49](https://github.com/canonical/identity-saml-provider/commit/f1edb494cad3b67a258ede95e91ca3b008d4360a))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.5.0 ([#328](https://github.com/canonical/identity-saml-provider/issues/328)) ([db1dadc](https://github.com/canonical/identity-saml-provider/commit/db1dadca24cc5b316c3eb6e37d022e49cb03616a))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.12.0 ([98d6ab6](https://github.com/canonical/identity-saml-provider/commit/98d6ab65815b643e5909c56dad8f959adaafd13d))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.12.0 ([#379](https://github.com/canonical/identity-saml-provider/issues/379)) ([122f5ea](https://github.com/canonical/identity-saml-provider/commit/122f5ead2a1c0ef3a0a7e02b64d5f26cfdb1efed))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.13.0 ([fc7e7e1](https://github.com/canonical/identity-saml-provider/commit/fc7e7e1070cddbb3d30deef9585cd14b97df1809))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.13.0 ([#411](https://github.com/canonical/identity-saml-provider/issues/411)) ([246ce67](https://github.com/canonical/identity-saml-provider/commit/246ce67d661179f087e87df92999829d7568eb6e))
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.0 ([22d84a3](https://github.com/canonical/identity-saml-provider/commit/22d84a3b1e9b9fce4885270370c2a86470989ee1))
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.0 ([#407](https://github.com/canonical/identity-saml-provider/issues/407)) ([05dbf11](https://github.com/canonical/identity-saml-provider/commit/05dbf11ba8ba7ff36da64599be040eeddece5591))
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.1 ([3a33169](https://github.com/canonical/identity-saml-provider/commit/3a33169587ec190160514b80a28a277f15d50f13))
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.1 ([#414](https://github.com/canonical/identity-saml-provider/issues/414)) ([553325c](https://github.com/canonical/identity-saml-provider/commit/553325c9e23beb2b202de47595fc3d2c166688a8))
+* **deps:** update module github.com/russellhaering/goxmldsig to v1.6.1 ([34d66b9](https://github.com/canonical/identity-saml-provider/commit/34d66b969a594b9ee929ba3583f48085e4e20571))
+* **deps:** update module github.com/russellhaering/goxmldsig to v1.6.1 ([#323](https://github.com/canonical/identity-saml-provider/issues/323)) ([f700e14](https://github.com/canonical/identity-saml-provider/commit/f700e147b0ff9fdc2edffb72a2abc9c99396c52f))
+* **deps:** update module golang.org/x/oauth2 to v0.38.0 ([15f5c54](https://github.com/canonical/identity-saml-provider/commit/15f5c54eaf2296e8c7fc5b22e3e9972cd9967e5d))
+* **deps:** update module golang.org/x/oauth2 to v0.38.0 ([#403](https://github.com/canonical/identity-saml-provider/issues/403)) ([13617b1](https://github.com/canonical/identity-saml-provider/commit/13617b1eac0b72db7afa3d3aff3a003c707c779d))
+
 ## [0.2.1](https://github.com/canonical/identity-saml-provider/compare/v0.2.0...v0.2.1) (2026-10-12)
 
 
