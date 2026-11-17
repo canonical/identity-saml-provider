@@ -16,7 +16,7 @@ import (
 )
 
 func TestServiceProviderSubcommands(t *testing.T) {
-	expected := map[string]bool{"create": false}
+	expected := map[string]bool{"create": false, "list": false}
 	for _, sub := range serviceProviderCmd.Commands() {
 		if _, ok := expected[sub.Name()]; ok {
 			expected[sub.Name()] = true

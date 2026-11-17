@@ -28,6 +28,10 @@ type ServiceProviderService interface {
 	Register(ctx context.Context, sp *domain.ServiceProvider) error
 	GetByEntityID(ctx context.Context, entityID string) (*domain.ServiceProvider, error)
 
+	// List returns every registered service provider, sorted by
+	// entity_id.
+	List(ctx context.Context) ([]*domain.ServiceProvider, error)
+
 	// UpdateAttributeMapping replaces the SP's attribute mapping with
 	// the validated mapping argument. A nil mapping is rejected with
 	// *domain.ErrValidation; use ClearAttributeMapping to remove a

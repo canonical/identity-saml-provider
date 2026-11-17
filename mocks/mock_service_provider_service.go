@@ -70,6 +70,21 @@ func (mr *MockServiceProviderServiceMockRecorder) GetByEntityID(ctx, entityID an
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByEntityID", reflect.TypeOf((*MockServiceProviderService)(nil).GetByEntityID), ctx, entityID)
 }
 
+// List mocks base method.
+func (m *MockServiceProviderService) List(ctx context.Context) ([]*domain.ServiceProvider, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "List", ctx)
+	ret0, _ := ret[0].([]*domain.ServiceProvider)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// List indicates an expected call of List.
+func (mr *MockServiceProviderServiceMockRecorder) List(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockServiceProviderService)(nil).List), ctx)
+}
+
 // Register mocks base method.
 func (m *MockServiceProviderService) Register(ctx context.Context, sp *domain.ServiceProvider) error {
 	m.ctrl.T.Helper()

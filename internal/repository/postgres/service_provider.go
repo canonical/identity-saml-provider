@@ -127,6 +127,67 @@ func (r *ServiceProviderRepo) GetByEntityID(ctx context.Context, entityID string
 	return &sp, nil
 }
 
+// List retrieves every registered service provider, sorted by
+// entity_id. Returns a non-nil empty slice when no service providers
+// exist.
+func (r *ServiceProviderRepo) List(ctx context.Context) ([]*domain.ServiceProvider, error) {
+	ctx, span := r.tracer.Start(ctx, "repo.postgres.list_sps")
+	defer span.End()
+	span.SetAttributes(attribute.String("db.system", "postgresql"))
+
+	query, args, err := psql.
+		Select("entity_id", "acs_url", "acs_binding", "attribute_mapping").
+		From("service_providers").
+		OrderBy("entity_id").
+		ToSql()
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("build list service providers query: %w", err)
+	}
+
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("query list service providers: %w", err)
+	}
+	defer rows.Close()
+
+	sps := make([]*domain.ServiceProvider, 0)
+	for rows.Next() {
+		sp := &domain.ServiceProvider{}
+		var mappingJSON *string
+		if err := rows.Scan(
+			&sp.EntityID, &sp.ACSURL, &sp.ACSBinding, &mappingJSON,
+		); err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return nil, fmt.Errorf("scan service provider row: %w", err)
+		}
+
+		// Deserialize attribute mapping if present.
+		if mappingJSON != nil && *mappingJSON != "" {
+			var mapping domain.AttributeMapping
+			if err := json.Unmarshal([]byte(*mappingJSON), &mapping); err != nil {
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+				return nil, fmt.Errorf("unmarshal attribute mapping for SP %s: %w", sp.EntityID, err)
+			}
+			sp.AttributeMapping = &mapping
+		}
+
+		sps = append(sps, sp)
+	}
+	if err := rows.Err(); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, fmt.Errorf("iterate service provider rows: %w", err)
+	}
+
+	return sps, nil
+}
+
 // GetAttributeMapping retrieves only the attribute mapping for a
 // service provider. Returns nil (without error) if the SP exists but
 // has no mapping configured. Returns *domain.ErrNotFound if the SP

@@ -25,6 +25,11 @@ type SessionRepository interface {
 type ServiceProviderRepository interface {
 	Save(ctx context.Context, sp *domain.ServiceProvider) error
 	GetByEntityID(ctx context.Context, entityID string) (*domain.ServiceProvider, error)
+
+	// List returns every registered service provider, sorted by
+	// entity_id. Implementations SHALL return a non-nil empty slice
+	// when no service providers exist.
+	List(ctx context.Context) ([]*domain.ServiceProvider, error)
 	GetAttributeMapping(ctx context.Context, entityID string) (*domain.AttributeMapping, error)
 
 	// UpdateAttributeMapping replaces the attribute_mapping JSONB
