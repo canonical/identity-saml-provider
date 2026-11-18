@@ -13,7 +13,7 @@ on:
       - "*"
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -31,9 +31,50 @@ jobs:
   unit-test:
     uses: ./.github/workflows/unittest.yaml
 
-  gh-publish:
-    if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
+  gh-publish-branch:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    permissions:
+      packages: write
+      contents: read
     needs: [ build, unit-test ]
     uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@00995831ff788db43992012900820edf7967305f # v1.19.2
     with:
       rock: ${{ needs.build.outputs.rock }}
+
+  gh-publish-candidate:
+    if: ${{ github.ref_type == 'tag' }}
+    permissions:
+      packages: write
+      contents: read
+    needs: [ build, unit-test ]
+    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@00995831ff788db43992012900820edf7967305f # v1.19.2
+    with:
+      rock: ${{ needs.build.outputs.rock }}
+      candidate: true
+
+  scan:
+    permissions:
+      packages: read
+      contents: read
+      security-events: write
+      actions: read
+    if: ${{ !cancelled() && (needs.gh-publish-branch.result == 'success' || needs.gh-publish-candidate.result == 'success') }}
+    needs: [ gh-publish-branch, gh-publish-candidate ]
+    uses: canonical/identity-team/.github/workflows/_rock-scan.yaml@00995831ff788db43992012900820edf7967305f # v1.19.2
+    with:
+      image: ${{ needs.gh-publish-candidate.outputs.image || needs.gh-publish-branch.outputs.image }}
+      exit-code: '1'
+      severity: 'HIGH,CRITICAL'
+      ignore-unfixed: true
+
+  promote:
+    permissions:
+      packages: write
+      contents: write
+    if: ${{ !cancelled() && github.ref_type == 'tag' && needs.gh-publish-candidate.result == 'success' && needs.scan.result == 'success' }}
+    needs: [ gh-publish-candidate, scan ]
+    uses: canonical/identity-team/.github/workflows/_rock-promote.yaml@00995831ff788db43992012900820edf7967305f # v1.19.2
+    with:
+      candidate-image: ${{ needs.gh-publish-candidate.outputs.image }}
+      release-tag: ${{ github.ref_name }}
+      promote-stable: true
