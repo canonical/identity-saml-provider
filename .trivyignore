@@ -1,0 +1,4 @@
+# Trivy ignore list for the candidate/scan/promote pipeline.
+# Add one CVE ID per line (optionally followed by a comment) to suppress
+# known false positives. Currently empty: the pipeline scans with
+# ignore-unfixed: true and fails on HIGH,CRITICAL findings.
