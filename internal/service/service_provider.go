@@ -66,6 +66,19 @@ func (s *serviceProviderService) GetByEntityID(ctx context.Context, entityID str
 	return sp, nil
 }
 
+func (s *serviceProviderService) List(ctx context.Context) ([]*domain.ServiceProvider, error) {
+	ctx, span := s.tracer.Start(ctx, "service.sp.list")
+	defer span.End()
+
+	sps, err := s.repo.List(ctx)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return nil, err // propagates infrastructure error
+	}
+	return sps, nil
+}
+
 func (s *serviceProviderService) UpdateAttributeMapping(ctx context.Context, entityID string, mapping *domain.AttributeMapping) error {
 	ctx, span := s.tracer.Start(ctx, "service.sp.update_attribute_mapping")
 	defer span.End()

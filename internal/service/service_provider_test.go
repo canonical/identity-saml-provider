@@ -183,6 +183,84 @@ func TestServiceProviderService_GetByEntityID(t *testing.T) {
 	}
 }
 
+func TestServiceProviderService_List(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		setupMock func(repo *mocks.MockServiceProviderRepository)
+		wantErr   bool
+		validate  func(t *testing.T, result []*domain.ServiceProvider)
+	}{
+		{
+			name: "success",
+			setupMock: func(repo *mocks.MockServiceProviderRepository) {
+				repo.EXPECT().List(gomock.Any()).Return([]*domain.ServiceProvider{
+					{EntityID: "https://a.example.com", ACSURL: "https://a.example.com/acs"},
+					{EntityID: "https://b.example.com", ACSURL: "https://b.example.com/acs"},
+				}, nil)
+			},
+			validate: func(t *testing.T, result []*domain.ServiceProvider) {
+				if len(result) != 2 {
+					t.Fatalf("expected 2 service providers, got %d", len(result))
+				}
+				if result[0].EntityID != "https://a.example.com" {
+					t.Errorf("EntityID = %q, want %q", result[0].EntityID, "https://a.example.com")
+				}
+			},
+		},
+		{
+			name: "empty list",
+			setupMock: func(repo *mocks.MockServiceProviderRepository) {
+				repo.EXPECT().List(gomock.Any()).Return([]*domain.ServiceProvider{}, nil)
+			},
+			validate: func(t *testing.T, result []*domain.ServiceProvider) {
+				if result == nil {
+					t.Error("expected non-nil slice, got nil")
+				}
+				if len(result) != 0 {
+					t.Errorf("expected 0 service providers, got %d", len(result))
+				}
+			},
+		},
+		{
+			name: "repository error",
+			setupMock: func(repo *mocks.MockServiceProviderRepository) {
+				repo.EXPECT().List(gomock.Any()).Return(nil, errors.New("connection refused"))
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctrl := gomock.NewController(t)
+
+			mockRepo := mocks.NewMockServiceProviderRepository(ctrl)
+			logger := logging.NewNopLogger()
+
+			tt.setupMock(mockRepo)
+
+			svc := service.NewServiceProviderService(mockRepo, logger, tracing.NewNoopTracer())
+			result, err := svc.List(context.Background())
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.validate != nil {
+				tt.validate(t, result)
+			}
+		})
+	}
+}
+
 func TestServiceProviderService_UpdateAttributeMapping(t *testing.T) {
 	t.Parallel()
 
