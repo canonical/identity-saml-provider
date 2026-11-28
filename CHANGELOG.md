@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/canonical/identity-saml-provider/compare/v0.2.2...v0.2.3) (2026-11-28)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.2 ([7a24ba3](https://github.com/canonical/identity-saml-provider/commit/7a24ba3110432be4275767e3c8f12fc20caf5622))
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.2 ([#442](https://github.com/canonical/identity-saml-provider/issues/442)) ([69ec529](https://github.com/canonical/identity-saml-provider/commit/69ec5299e38ae463bf6e1164cc0b50c8d69293ab))
+
 ## [0.2.2](https://github.com/canonical/identity-saml-provider/compare/v0.2.1...v0.2.2) (2026-11-18)
 
 
